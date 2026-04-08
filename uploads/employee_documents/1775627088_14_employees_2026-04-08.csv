@@ -1,0 +1,13 @@
+ID,"Employee ID",Name,Email,Department,Position,"Basic Salary (RM)",Nationality,"IC Number","Passport No",Phone,"Bank Name","Bank Account","Join Date",Status,"Annual Leave Entitlement","Medical Leave Entitlement","Used Annual Leave","Used Medical Leave"
+22,EMP012,"Abdul Qader",gm.abdul.qader@ipinfra.com.my,Management,"General Manager",3000.00,Non-Malaysian,"IC NEEDS UPDATE",,,MAYBANK,,2020-01-01,active,14,14,0,0
+2,EMP0011,"Ahmad Faiz",ahmad@ipinfra.com,IT,"Network Engineer",4500.00,Malaysian,900101-01-5678,,,,,2021-03-15,active,14,14,9,0
+14,EMP004,"IZAT HAKIMI BIN MOHAMED ISMAYATIM",izat@ipinfra.com.my,Technical,"Network Engineer",2800.00,Malaysian,001118-01-XXXX,,013-9250413,"BANK ISLAM",12300020080371,2025-09-01,active,14,14,0,0
+17,EMP007,"MOHAMAD NOR IKHWAN BIN MOHD NOR",ikhwan@ipinfra.com.my,Technical,"Senior Network Engineer",4500.00,Malaysian,981229-01-XXXX,,014-2949545,"BANK ISLAM",03063020430563,2022-12-01,active,14,14,0,0
+18,EMP008,"MUHAMMAD ADLYN SYAMIL BIN ABD RAZAK",adlynsyamil@gmail.com,Technical,"Junior Network Engineer",2800.00,Malaysian,040914-01-XXXX,,013-2112770,MAYBANK,162021888976,2026-01-19,active,14,14,0,0
+20,EMP010,"MUHAMMAD NAZMI BIN NOR ASHARUDDIN",namyyson@gmail.com,Technical,"Network Engineer",3500.00,Malaysian,020501-01-XXXX,,011-17932175,MAYBANK,153104392961,2026-03-27,active,14,14,0,0
+16,EMP006,"MUHAMMAD NUR RAIHAN BIN AZIZI",raihan@ipinfra.com.my,Technical,"Network Engineer",3500.00,Malaysian,990204-01-XXXX,,011-10083701,MAYBANK,164165028048,2025-02-03,active,14,14,0,0
+21,EMP011,"MUHAMMAD SUFEIL BIN YUSOFF",sufeilyusoff@gmail.com,Technical,"Senior Network Engineer",4800.00,Malaysian,871201-01-XXXX,,019-6319373,MAYBANK,114160807473,2026-04-01,active,14,14,0,0
+15,EMP005,"MUHAMMAD SYAZWAN BIN OTHMAN",syazwan@ipinfra.com.my,Technical,"Network Engineer",3500.00,Malaysian,980716-01-XXXX,,013-3441601,MAYBANK,151418276481,2026-01-02,active,14,14,0,0
+19,EMP009,"NURHADFINA BINTI HAILES",nurhadfinahailes@gmail.com,Admin,"Admin Executive",3000.00,Malaysian,041015-01-XXXX,,019-9388875,MAYBANK,,2026-03-09,active,14,14,0,0
+4,EMP0033,"Raj Kumar",raj@ipinfra.com,IT,"System Analyst",5200.00,Malaysian,880303-01-3456,,,,,2020-09-10,active,14,14,1,2
+3,EMP0022,"Siti Nuraini",siti@ipinfra.com,Admin,"Admin Executive",3800.00,Malaysian,910202-01-9012,,,,,2021-06-20,active,10,8,0,0

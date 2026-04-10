@@ -66,27 +66,30 @@ for ($i = 0; $i < 7; $i++) {
 </head>
 <body class="bg-gradient-to-br from-slate-50 via-blue-50 to-indigo-100 min-h-screen pb-20">
 
-    <!-- Mobile Header -->
-    <div class="bg-gradient-to-r from-slate-900 to-gray-800 text-white sticky top-0 z-30 shadow-xl">
-        <div class="flex justify-between items-center px-4 py-3">
-            <div class="flex items-center gap-2">
-                <button onclick="history.back()" class="text-white text-xl mr-2 hover:scale-110 transition">
-                    <i class="fas fa-arrow-left"></i>
-                </button>
-                <div class="w-9 h-9 bg-white/20 rounded-xl flex items-center justify-center backdrop-blur">
-                    <span class="text-white font-bold text-sm">IN</span>
-                </div>
-                <div>
-                    <p class="text-xs text-blue-200">IPINFRA NETWORKS</p>
-                    <p class="text-xs font-semibold">Attendance</p>
-                </div>
+<!-- Premium Mobile Header -->
+<div class="bg-gradient-to-r from-slate-900 via-indigo-900 to-slate-900 text-white sticky top-0 z-40 shadow-2xl">
+    <div class="flex justify-between items-center px-4 py-4">
+        <div class="flex items-center gap-3">
+            <!-- MENU BUTTON - Left side -->
+            <button onclick="toggleSidebar()" class="text-white/80 hover:text-white p-2 rounded-full hover:bg-white/10">
+                <i class="fas fa-bars text-xl"></i>
+            </button>
+            <div class="w-10 h-10 bg-gradient-to-br from-blue-500 to-indigo-600 rounded-xl flex items-center justify-center shadow-lg">
+                <span class="text-white font-bold text-sm">IN</span>
             </div>
-            <button onclick="toggleSidebar()" class="text-white text-2xl hover:scale-110 transition">
-                <i class="fas fa-bars"></i>
+            <div>
+                <p class="text-xs text-blue-200 font-medium">IPINFRA NETWORKS</p>
+                <p class="text-sm font-bold tracking-wide">Admin Portal</p>
+            </div>
+        </div>
+        <div class="flex items-center gap-3">
+            <!-- BACK BUTTON - Right side -->
+            <button onclick="history.back()" class="text-white/80 hover:text-white p-2 rounded-full hover:bg-white/10">
+                <i class="fas fa-arrow-left text-lg"></i>
             </button>
         </div>
     </div>
-
+</div>
 <!-- SIDEBAR -->
 <div id="sidebar" class="fixed top-0 left-0 h-full w-72 bg-gradient-to-b from-gray-900 to-gray-950 text-white z-50 transform -translate-x-full transition-transform duration-300 shadow-2xl overflow-y-auto">
     <div class="p-6 border-b border-gray-800">

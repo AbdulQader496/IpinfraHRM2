@@ -175,44 +175,43 @@ $employees = mysqli_query($conn, "SELECT * FROM employees WHERE role='employee' 
 </head>
 <body class="bg-gradient-to-br from-slate-50 via-blue-50 to-indigo-50 min-h-screen">
 
-    <!-- Mobile Header -->
-    <div class="bg-gradient-to-r from-slate-900 via-indigo-900 to-slate-900 text-white sticky top-0 z-40 shadow-2xl">
-        <div class="flex justify-between items-center px-4 py-4">
-            <div class="flex items-center gap-3">
-                <button onclick="history.back()" class="text-white/80 hover:text-white transition-all p-2 rounded-full hover:bg-white/10">
-                    <i class="fas fa-arrow-left text-lg"></i>
-                </button>
-                <div class="w-10 h-10 bg-gradient-to-br from-blue-500 to-indigo-600 rounded-xl flex items-center justify-center shadow-lg">
-                    <span class="text-white font-bold text-sm">IN</span>
-                </div>
-                <div>
-                    <p class="text-xs text-blue-200 font-medium">IPINFRA NETWORKS</p>
-                    <p class="text-sm font-bold tracking-wide">Employee Directory</p>
-                </div>
+<!-- Mobile Header -->
+<div class="bg-gradient-to-r from-slate-900 via-indigo-900 to-slate-900 text-white sticky top-0 z-40 shadow-2xl">
+    <div class="flex justify-between items-center px-4 py-4">
+        <div class="flex items-center gap-3">
+            <!-- MENU BUTTON - Left side -->
+            <button onclick="toggleSidebar()" class="text-white/80 hover:text-white transition-all p-2 rounded-full hover:bg-white/10">
+                <i class="fas fa-bars text-xl"></i>
+            </button>
+            <div class="w-10 h-10 bg-gradient-to-br from-blue-500 to-indigo-600 rounded-xl flex items-center justify-center shadow-lg">
+                <span class="text-white font-bold text-sm">IN</span>
             </div>
-            <div class="flex items-center gap-2">
-                <button onclick="toggleSearch()" class="text-white/80 hover:text-white p-2 rounded-full hover:bg-white/10">
-                    <i class="fas fa-search text-lg"></i>
-                </button>
-                <button onclick="toggleSidebar()" class="text-white/80 hover:text-white p-2 rounded-full hover:bg-white/10">
-                    <i class="fas fa-bars text-xl"></i>
-                </button>
+            <div>
+                <p class="text-xs text-blue-200 font-medium">IPINFRA NETWORKS</p>
+                <p class="text-sm font-bold tracking-wide">Employee Directory</p>
             </div>
         </div>
-        
-        <!-- Search Bar -->
-        <div id="searchBar" class="hidden px-4 pb-4">
-            <form method="GET" class="relative">
-                <i class="fas fa-search absolute left-4 top-1/2 transform -translate-y-1/2 text-gray-400"></i>
-                <input type="text" name="search" value="<?php echo htmlspecialchars($search); ?>" 
-                       placeholder="Search by name, ID, or email..." 
-                       class="w-full pl-12 pr-4 py-3 rounded-xl bg-white/10 border border-white/20 text-white placeholder-white/50 focus:outline-none focus:ring-2 focus:ring-blue-400">
-                <button type="submit" class="absolute right-2 top-1/2 transform -translate-y-1/2 bg-blue-600 text-white px-4 py-1.5 rounded-lg text-sm hover:bg-blue-700 transition">
-                    Search
-                </button>
-            </form>
+        <div class="flex items-center gap-2">
+            <!-- SEARCH BUTTON - Right side -->
+            <button onclick="toggleSearch()" class="text-white/80 hover:text-white p-2 rounded-full hover:bg-white/10">
+                <i class="fas fa-search text-lg"></i>
+            </button>
         </div>
     </div>
+    
+    <!-- Search Bar -->
+    <div id="searchBar" class="hidden px-4 pb-4">
+        <form method="GET" class="relative">
+            <i class="fas fa-search absolute left-4 top-1/2 transform -translate-y-1/2 text-gray-400"></i>
+            <input type="text" name="search" value="<?php echo htmlspecialchars($search); ?>" 
+                   placeholder="Search by name, ID, or email..." 
+                   class="w-full pl-12 pr-4 py-3 rounded-xl bg-white/10 border border-white/20 text-white placeholder-white/50 focus:outline-none focus:ring-2 focus:ring-blue-400">
+            <button type="submit" class="absolute right-2 top-1/2 transform -translate-y-1/2 bg-blue-600 text-white px-4 py-1.5 rounded-lg text-sm hover:bg-blue-700 transition">
+                Search
+            </button>
+        </form>
+    </div>
+</div>
 <!-- SIDEBAR -->
 <div id="sidebar" class="fixed top-0 left-0 h-full w-72 bg-gradient-to-b from-gray-900 to-gray-950 text-white z-50 transform -translate-x-full transition-transform duration-300 shadow-2xl overflow-y-auto">
     <div class="p-6 border-b border-gray-800">

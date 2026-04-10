@@ -160,26 +160,25 @@ $categories = mysqli_query($conn, "SELECT * FROM asset_categories ORDER BY categ
 </head>
 <body class="bg-gradient-to-br from-gray-50 to-gray-100 min-h-screen pb-20">
     
-    <!-- Mobile Header -->
-    <div class="bg-gradient-to-r from-gray-900 to-gray-800 text-white sticky top-0 z-30 shadow-lg">
-        <div class="flex justify-between items-center px-4 py-3">
-            <div class="flex items-center gap-2">
-                <button onclick="history.back()" class="text-white text-xl mr-2">
-                    <i class="fas fa-arrow-left"></i>
-                </button>
-                <div class="w-8 h-8 bg-white/20 rounded-lg flex items-center justify-center">
-                    <span class="text-white font-bold text-sm">IN</span>
-                </div>
-                <div>
-                    <p class="text-xs text-gray-300">IPINFRA NETWORKS</p>
-                    <p class="text-xs font-bold">Asset Management</p>
-                </div>
-            </div>
-            <button onclick="toggleSidebar()" class="text-white text-2xl">
-                <i class="fas fa-bars"></i>
+<!-- Premium Mobile Header -->
+<div class="bg-gradient-to-r from-slate-900 via-indigo-900 to-slate-900 text-white sticky top-0 z-40 shadow-2xl">
+    <div class="flex justify-between items-center px-4 py-4">
+        <div class="flex items-center gap-3">
+            <!-- MENU BUTTON - Left side -->
+            <button onclick="toggleSidebar()" class="text-white/80 hover:text-white p-2 rounded-full hover:bg-white/10">
+                <i class="fas fa-bars text-xl"></i>
             </button>
+            <div class="w-10 h-10 bg-gradient-to-br from-blue-500 to-indigo-600 rounded-xl flex items-center justify-center shadow-lg">
+                <span class="text-white font-bold text-sm">IN</span>
+            </div>
+            <div>
+                <p class="text-xs text-blue-200 font-medium">IPINFRA NETWORKS</p>
+                <p class="text-sm font-bold tracking-wide">Admin Portal</p>
+            </div>
         </div>
+        <!-- No back button - just empty space or nothing -->
     </div>
+</div>
 
 <!-- SIDEBAR -->
 <div id="sidebar" class="fixed top-0 left-0 h-full w-72 bg-gradient-to-b from-gray-900 to-gray-950 text-white z-50 transform -translate-x-full transition-transform duration-300 shadow-2xl overflow-y-auto">

@@ -107,25 +107,42 @@ $documents = mysqli_query($conn, "SELECT d.*
 </head>
 <body class="bg-gradient-to-br from-gray-50 to-gray-100 min-h-screen pb-20">
 
-<!-- HEADER -->
-<div class="bg-gradient-to-r from-blue-800 to-blue-900 text-white sticky top-0 z-30 shadow-lg">
-    <div class="flex justify-between items-center px-4 py-3">
-        <div class="flex items-center gap-2">
-            <button onclick="history.back()" class="text-white text-xl">
-                <i class="fas fa-arrow-left"></i>
+<!-- Premium Header -->
+<div class="bg-gradient-to-r from-slate-900 via-indigo-900 to-slate-900 text-white sticky top-0 z-40 shadow-2xl backdrop-blur-sm">
+    <div class="flex items-center justify-between px-5 py-4">
+        <div class="flex items-center gap-3">
+            <!-- Menu Button -->
+            <button onclick="toggleSidebar()" class="relative group">
+                <div class="w-10 h-10 rounded-xl bg-white/10 backdrop-blur-sm flex items-center justify-center group-hover:bg-white/20 transition-all duration-300 group-hover:scale-105">
+                    <i class="fas fa-bars text-lg"></i>
+                </div>
             </button>
-            <div class="w-8 h-8 bg-white/20 rounded-lg flex items-center justify-center">
-                <span class="text-white font-bold text-sm">IN</span>
+            
+            <!-- Logo -->
+            <div class="relative">
+                <div class="w-10 h-10 bg-gradient-to-br from-blue-500 via-indigo-500 to-purple-600 rounded-xl flex items-center justify-center shadow-lg shadow-indigo-500/20 animate-pulse">
+                    <span class="text-white font-bold text-sm">IN</span>
+                </div>
+                <div class="absolute -top-1 -right-1 w-3 h-3 bg-green-400 rounded-full border-2 border-slate-900"></div>
             </div>
-            <div>
-                <p class="text-xs text-blue-200">IPINFRA NETWORKS</p>
-                <p class="text-xs font-bold">My Management</p>
+            
+            <!-- Brand -->
+            <div class="hidden sm:block">
+                <p class="text-xs text-blue-200 font-medium tracking-wide">IPINFRA NETWORKS</p>
+                <p class="text-sm font-bold tracking-tight">Employee Portal</p>
             </div>
         </div>
-        <button onclick="toggleSidebar()" class="text-white text-2xl">
-            <i class="fas fa-bars"></i>
-        </button>
+        
+        <!-- Right side - Empty for now, can add profile/user later -->
+        <div class="flex items-center gap-2">
+            <div class="w-8 h-8 rounded-full bg-gradient-to-br from-blue-500 to-indigo-500 flex items-center justify-center shadow-lg">
+                <span class="text-white text-xs font-bold"><?php echo substr($_SESSION['user_name'], 0, 1); ?></span>
+            </div>
+        </div>
     </div>
+    
+    <!-- Subtle bottom border glow -->
+    <div class="h-0.5 bg-gradient-to-r from-transparent via-indigo-400 to-transparent"></div>
 </div>
 
 <!-- SIDEBAR -->

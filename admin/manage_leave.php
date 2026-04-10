@@ -81,6 +81,50 @@ if (isset($_GET['action']) && isset($_GET['id'])) {
     exit();
 }
 
+// ========================================
+// ADJUST LEAVE BALANCE - FULL CONTROL
+// ========================================
+if (isset($_POST['adjust_leave'])) {
+    $employee_id = $_POST['employee_id'];
+    $adjust_type = $_POST['adjust_type'];
+    $adjust_field = $_POST['adjust_field'];
+    $action_type = $_POST['action_type'];
+    $adjust_amount = $_POST['adjust_amount'];
+    
+    if ($adjust_type == 'annual') {
+        if ($adjust_field == 'entitlement') {
+            if ($action_type == 'add') {
+                mysqli_query($conn, "UPDATE employees SET annual_leave_entitlement = annual_leave_entitlement + $adjust_amount WHERE id = $employee_id");
+            } else {
+                mysqli_query($conn, "UPDATE employees SET annual_leave_entitlement = annual_leave_entitlement - $adjust_amount WHERE id = $employee_id");
+            }
+        } else {
+            if ($action_type == 'add') {
+                mysqli_query($conn, "UPDATE employees SET used_annual_leave = used_annual_leave + $adjust_amount WHERE id = $employee_id");
+            } else {
+                mysqli_query($conn, "UPDATE employees SET used_annual_leave = used_annual_leave - $adjust_amount WHERE id = $employee_id");
+            }
+        }
+    } else {
+        if ($adjust_field == 'entitlement') {
+            if ($action_type == 'add') {
+                mysqli_query($conn, "UPDATE employees SET medical_leave_entitlement = medical_leave_entitlement + $adjust_amount WHERE id = $employee_id");
+            } else {
+                mysqli_query($conn, "UPDATE employees SET medical_leave_entitlement = medical_leave_entitlement - $adjust_amount WHERE id = $employee_id");
+            }
+        } else {
+            if ($action_type == 'add') {
+                mysqli_query($conn, "UPDATE employees SET used_medical_leave = used_medical_leave + $adjust_amount WHERE id = $employee_id");
+            } else {
+                mysqli_query($conn, "UPDATE employees SET used_medical_leave = used_medical_leave - $adjust_amount WHERE id = $employee_id");
+            }
+        }
+    }
+    
+    header('Location: manage_leave.php');
+    exit();
+}
+
 // Get all employees with leave balances
 $employees_balance = mysqli_query($conn, "SELECT 
     id, name, employee_id, department,
@@ -94,7 +138,9 @@ $employees_balance = mysqli_query($conn, "SELECT
 $leaves = mysqli_query($conn, "SELECT l.*, e.name, e.employee_id, e.department 
     FROM leaves l JOIN employees e ON l.employee_id = e.id ORDER BY applied_at DESC");
 
-// Get leave types
+// ========================================
+// GET LEAVE TYPES - THIS WAS MISSING!
+// ========================================
 $leave_types = mysqli_query($conn, "SELECT * FROM leave_types ORDER BY leave_name");
 ?>
 <!DOCTYPE html>
@@ -114,81 +160,80 @@ $leave_types = mysqli_query($conn, "SELECT * FROM leave_types ORDER BY leave_nam
     </style>
 </head>
 <body class="bg-gradient-to-br from-gray-50 to-gray-100 min-h-screen pb-20">
-    <!-- Mobile Header -->
-    <div class="bg-gradient-to-r from-gray-900 to-gray-800 text-white sticky top-0 z-30 shadow-lg">
-        <div class="flex justify-between items-center px-4 py-3">
-            <div class="flex items-center gap-2">
-                <button onclick="history.back()" class="text-white text-xl mr-2">
-                    <i class="fas fa-arrow-left"></i>
-                </button>
-                <div class="w-8 h-8 bg-white/20 rounded-lg flex items-center justify-center">
-                    <span class="text-white font-bold text-sm">IN</span>
-                </div>
-                <div>
-                    <p class="text-xs text-gray-300">IPINFRA NETWORKS</p>
-                    <p class="text-xs font-bold">Leave Management</p>
-                </div>
-            </div>
-            <button onclick="toggleSidebar()" class="text-white text-2xl">
-                <i class="fas fa-bars"></i>
+<!-- Premium Mobile Header -->
+<div class="bg-gradient-to-r from-slate-900 via-indigo-900 to-slate-900 text-white sticky top-0 z-40 shadow-2xl">
+    <div class="flex justify-between items-center px-4 py-4">
+        <div class="flex items-center gap-3">
+            <!-- MENU BUTTON - Left side -->
+            <button onclick="toggleSidebar()" class="text-white/80 hover:text-white p-2 rounded-full hover:bg-white/10">
+                <i class="fas fa-bars text-xl"></i>
             </button>
-        </div>
-    </div>
-<!-- SIDEBAR -->
-<div id="sidebar" class="fixed top-0 left-0 h-full w-72 bg-gradient-to-b from-gray-900 to-gray-950 text-white z-50 transform -translate-x-full transition-transform duration-300 shadow-2xl overflow-y-auto">
-    <div class="p-6 border-b border-gray-800">
-        <div class="flex items-center gap-3 mb-4">
-            <div class="w-12 h-12 bg-white rounded-xl flex items-center justify-center">
-                <span class="text-gray-900 font-bold text-xl">IN</span>
+            <div class="w-10 h-10 bg-gradient-to-br from-blue-500 to-indigo-600 rounded-xl flex items-center justify-center shadow-lg">
+                <span class="text-white font-bold text-sm">IN</span>
             </div>
             <div>
-                <h2 class="font-bold"><?php echo $_SESSION['user_name']; ?></h2>
-                <p class="text-xs text-gray-400">Administrator</p>
+                <p class="text-xs text-blue-200 font-medium">IPINFRA NETWORKS</p>
+                <p class="text-sm font-bold tracking-wide">Admin Portal</p>
             </div>
         </div>
-        <button onclick="toggleSidebar()" class="absolute top-4 right-4 text-white/60 hover:text-white">
-            <i class="fas fa-times text-xl"></i>
-        </button>
+        <!-- No back button - just empty space or nothing -->
     </div>
-    <nav class="p-4">
-        <a href="dashboard.php" class="flex items-center gap-3 py-3 px-4 rounded-xl hover:bg-gray-800/30 transition mb-1">
-            <i class="fas fa-tachometer-alt w-5"></i> Dashboard
-        </a>
-        <a href="employees.php" class="flex items-center gap-3 py-3 px-4 rounded-xl hover:bg-gray-800/30 transition mb-1">
-            <i class="fas fa-users w-5"></i> Employees
-        </a>
-        <a href="manage_leave.php" class="flex items-center gap-3 py-3 px-4 rounded-xl hover:bg-gray-800/30 transition mb-1">
-            <i class="fas fa-calendar-check w-5"></i> Leave Management
-        </a>
-        <a href="manage_claim.php" class="flex items-center gap-3 py-3 px-4 rounded-xl hover:bg-gray-800/30 transition mb-1">
-            <i class="fas fa-receipt w-5"></i> Claim Management
-        </a>
-        <a href="attendance.php" class="flex items-center gap-3 py-3 px-4 rounded-xl hover:bg-gray-800/30 transition mb-1">
-            <i class="fas fa-fingerprint w-5"></i> Attendance
-        </a>
-        <a href="manage_assets.php" class="flex items-center gap-3 py-3 px-4 rounded-xl hover:bg-gray-800/30 transition mb-1">
-            <i class="fas fa-boxes w-5"></i> Asset Management
-        </a>
-        <a href="manage_gallery.php" class="flex items-center gap-3 py-3 px-4 rounded-xl hover:bg-gray-800/30 transition mb-1">
-            <i class="fas fa-images w-5"></i> Gallery Management
-        </a>
-        <a href="management.php" class="flex items-center gap-3 py-3 px-4 rounded-xl bg-gray-800/50 mb-1">
-            <i class="fas fa-briefcase w-5"></i> Management
-        </a>
-        <a href="payroll.php" class="flex items-center gap-3 py-3 px-4 rounded-xl hover:bg-gray-800/30 transition mb-1">
-            <i class="fas fa-file-invoice-dollar w-5"></i> Payroll
-        </a>
-        <a href="holidays.php" class="flex items-center gap-3 py-3 px-4 rounded-xl hover:bg-gray-800/30 transition mb-1">
-            <i class="fas fa-calendar-alt w-5"></i> Holidays
-        </a>
-        <div class="border-t border-gray-800 my-4"></div>
-        <a href="../logout.php" class="flex items-center gap-3 py-3 px-4 rounded-xl bg-red-600/20 text-red-300 hover:bg-red-600/30 transition">
-            <i class="fas fa-sign-out-alt w-5"></i> Logout
-        </a>
-    </nav>
 </div>
+    <!-- SIDEBAR -->
+    <div id="sidebar" class="fixed top-0 left-0 h-full w-72 bg-gradient-to-b from-gray-900 to-gray-950 text-white z-50 transform -translate-x-full transition-transform duration-300 shadow-2xl overflow-y-auto">
+        <div class="p-6 border-b border-gray-800">
+            <div class="flex items-center gap-3 mb-4">
+                <div class="w-12 h-12 bg-white rounded-xl flex items-center justify-center">
+                    <span class="text-gray-900 font-bold text-xl">IN</span>
+                </div>
+                <div>
+                    <h2 class="font-bold"><?php echo $_SESSION['user_name']; ?></h2>
+                    <p class="text-xs text-gray-400">Administrator</p>
+                </div>
+            </div>
+            <button onclick="toggleSidebar()" class="absolute top-4 right-4 text-white/60 hover:text-white">
+                <i class="fas fa-times text-xl"></i>
+            </button>
+        </div>
+        <nav class="p-4">
+            <a href="dashboard.php" class="flex items-center gap-3 py-3 px-4 rounded-xl hover:bg-gray-800/30 transition mb-1">
+                <i class="fas fa-tachometer-alt w-5"></i> Dashboard
+            </a>
+            <a href="employees.php" class="flex items-center gap-3 py-3 px-4 rounded-xl hover:bg-gray-800/30 transition mb-1">
+                <i class="fas fa-users w-5"></i> Employees
+            </a>
+            <a href="manage_leave.php" class="flex items-center gap-3 py-3 px-4 rounded-xl hover:bg-gray-800/30 transition mb-1">
+                <i class="fas fa-calendar-check w-5"></i> Leave Management
+            </a>
+            <a href="manage_claim.php" class="flex items-center gap-3 py-3 px-4 rounded-xl hover:bg-gray-800/30 transition mb-1">
+                <i class="fas fa-receipt w-5"></i> Claim Management
+            </a>
+            <a href="attendance.php" class="flex items-center gap-3 py-3 px-4 rounded-xl hover:bg-gray-800/30 transition mb-1">
+                <i class="fas fa-fingerprint w-5"></i> Attendance
+            </a>
+            <a href="manage_assets.php" class="flex items-center gap-3 py-3 px-4 rounded-xl hover:bg-gray-800/30 transition mb-1">
+                <i class="fas fa-boxes w-5"></i> Asset Management
+            </a>
+            <a href="manage_gallery.php" class="flex items-center gap-3 py-3 px-4 rounded-xl hover:bg-gray-800/30 transition mb-1">
+                <i class="fas fa-images w-5"></i> Gallery Management
+            </a>
+            <a href="management.php" class="flex items-center gap-3 py-3 px-4 rounded-xl bg-gray-800/50 mb-1">
+                <i class="fas fa-briefcase w-5"></i> Management
+            </a>
+            <a href="payroll.php" class="flex items-center gap-3 py-3 px-4 rounded-xl hover:bg-gray-800/30 transition mb-1">
+                <i class="fas fa-file-invoice-dollar w-5"></i> Payroll
+            </a>
+            <a href="holidays.php" class="flex items-center gap-3 py-3 px-4 rounded-xl hover:bg-gray-800/30 transition mb-1">
+                <i class="fas fa-calendar-alt w-5"></i> Holidays
+            </a>
+            <div class="border-t border-gray-800 my-4"></div>
+            <a href="../logout.php" class="flex items-center gap-3 py-3 px-4 rounded-xl bg-red-600/20 text-red-300 hover:bg-red-600/30 transition">
+                <i class="fas fa-sign-out-alt w-5"></i> Logout
+            </a>
+        </nav>
+    </div>
 
-<div id="overlay" class="fixed inset-0 bg-black/50 z-40 hidden" onclick="toggleSidebar()"></div>
+    <div id="overlay" class="fixed inset-0 bg-black/50 z-40 hidden" onclick="toggleSidebar()"></div>
 
     <!-- Main Content -->
     <div class="px-4 py-6 pb-24 max-w-7xl mx-auto">
@@ -218,6 +263,7 @@ $leave_types = mysqli_query($conn, "SELECT * FROM leave_types ORDER BY leave_nam
                     <?php if(mysqli_num_rows($leaves) > 0): ?>
                         <?php while ($row = mysqli_fetch_assoc($leaves)): ?>
                         <div class="p-4">
+                            <!-- Leave request display (same as before) -->
                             <div class="flex justify-between items-start mb-2 flex-wrap gap-2">
                                 <div>
                                     <div class="flex items-center gap-2 flex-wrap">
@@ -410,40 +456,66 @@ $leave_types = mysqli_query($conn, "SELECT * FROM leave_types ORDER BY leave_nam
     </div>
 
     <!-- Adjust Leave Modal -->
-    <div id="adjustModal" class="hidden fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
-        <div class="bg-white rounded-2xl max-w-md w-full">
-            <div class="p-4 border-b flex justify-between items-center">
-                <h2 class="text-lg font-bold">Adjust Leave Balance</h2>
-                <button onclick="closeAdjustModal()" class="text-gray-500">&times;</button>
+    <div id="adjustModal" class="hidden fixed inset-0 bg-black/50 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+        <div class="bg-white rounded-2xl max-w-md w-full shadow-2xl">
+            <div class="bg-gradient-to-r from-blue-600 to-indigo-600 p-4 rounded-t-2xl">
+                <div class="flex justify-between items-center">
+                    <div>
+                        <h2 class="text-lg font-bold text-white">Adjust Leave Balance</h2>
+                        <p class="text-xs text-blue-100 mt-1">Modify entitlement or taken leave</p>
+                    </div>
+                    <button onclick="closeAdjustModal()" class="text-white hover:text-gray-200">
+                        <i class="fas fa-times text-xl"></i>
+                    </button>
+                </div>
             </div>
-            <form method="POST" class="p-4 space-y-4">
+            <form method="POST" class="p-5 space-y-4">
                 <input type="hidden" name="employee_id" id="adj_employee_id">
                 <div class="bg-blue-50 p-3 rounded-xl">
                     <p class="font-medium text-gray-800" id="adj_employee_name"></p>
                     <p class="text-xs text-gray-500" id="adj_employee_id_display"></p>
                 </div>
+                
                 <div>
-                    <label class="block text-gray-700 text-sm font-medium mb-1">Leave Type</label>
-                    <select name="adjust_type" id="adj_type" required class="w-full px-4 py-3 border border-gray-200 rounded-xl">
+                    <label class="block text-gray-700 text-sm font-semibold mb-2">Leave Type</label>
+                    <select name="adjust_type" id="adj_type" required class="w-full px-4 py-2.5 border-2 border-gray-200 rounded-xl focus:border-blue-500">
                         <option value="annual">Annual Leave</option>
                         <option value="medical">Medical Leave</option>
                     </select>
                 </div>
+                
                 <div>
-                    <label class="block text-gray-700 text-sm font-medium mb-1">Action</label>
-                    <select name="action_type" id="adj_action" required class="w-full px-4 py-3 border border-gray-200 rounded-xl">
-                        <option value="add">Add Days (+)</option>
-                        <option value="subtract">Deduct Days (-)</option>
+                    <label class="block text-gray-700 text-sm font-semibold mb-2">What to Adjust?</label>
+                    <select name="adjust_field" id="adj_field" required class="w-full px-4 py-2.5 border-2 border-gray-200 rounded-xl focus:border-blue-500">
+                        <option value="entitlement">📊 Total Entitlement (Days per Year)</option>
+                        <option value="used">📉 Leave Taken / Used</option>
                     </select>
                 </div>
+                
                 <div>
-                    <label class="block text-gray-700 text-sm font-medium mb-1">Number of Days</label>
-                    <input type="number" name="adjust_amount" id="adj_amount" required min="0.5" step="0.5" class="w-full px-4 py-3 border border-gray-200 rounded-xl">
+                    <label class="block text-gray-700 text-sm font-semibold mb-2">Action</label>
+                    <select name="action_type" id="adj_action" required class="w-full px-4 py-2.5 border-2 border-gray-200 rounded-xl focus:border-blue-500">
+                        <option value="add">➕ Add Days (+)</option>
+                        <option value="subtract">➖ Deduct Days (-)</option>
+                    </select>
                 </div>
-                <div class="bg-yellow-50 p-3 rounded-xl text-xs text-yellow-700">
-                    <i class="fas fa-info-circle mr-1"></i> Adding days increases remaining balance. Deducting days decreases remaining balance.
+                
+                <div>
+                    <label class="block text-gray-700 text-sm font-semibold mb-2">Number of Days</label>
+                    <input type="number" name="adjust_amount" id="adj_amount" required min="0.5" step="0.5" class="w-full px-4 py-2.5 border-2 border-gray-200 rounded-xl focus:border-blue-500" placeholder="Enter number of days">
                 </div>
-                <button type="submit" name="adjust_leave" class="w-full bg-blue-600 text-white py-3 rounded-xl font-semibold">Apply Adjustment</button>
+                
+                <div class="bg-gradient-to-r from-yellow-50 to-amber-50 p-4 rounded-xl text-xs text-amber-800 space-y-1">
+                    <p><i class="fas fa-info-circle mr-1"></i> <strong>Understanding the options:</strong></p>
+                    <p>• <strong>Total Entitlement</strong> - Changes the total days employee gets per year</p>
+                    <p>• <strong>Leave Taken / Used</strong> - Adjusts how many days already consumed</p>
+                    <p>• Adding to entitlement INCREASES available balance</p>
+                    <p>• Adding to used leave DECREASES available balance</p>
+                </div>
+                
+                <button type="submit" name="adjust_leave" class="w-full bg-gradient-to-r from-blue-600 to-indigo-600 text-white py-3 rounded-xl font-semibold hover:shadow-lg transition transform hover:scale-105">
+                    <i class="fas fa-save mr-2"></i> Apply Adjustment
+                </button>
             </form>
         </div>
     </div>

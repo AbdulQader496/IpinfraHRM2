@@ -121,32 +121,37 @@ $upcoming_holidays = mysqli_query($conn, "SELECT * FROM holidays WHERE holiday_d
 </head>
 <body class="bg-gradient-to-br from-slate-50 via-blue-50 to-indigo-50 min-h-screen pb-20">
 
-    <!-- Premium Mobile Header -->
-    <div class="bg-gradient-to-r from-slate-900 via-indigo-900 to-slate-900 text-white sticky top-0 z-40 shadow-2xl">
-        <div class="flex justify-between items-center px-4 py-4">
-            <div class="flex items-center gap-3">
-                <div class="w-10 h-10 bg-gradient-to-br from-blue-500 to-indigo-600 rounded-xl flex items-center justify-center shadow-lg">
-                    <span class="text-white font-bold text-sm">IN</span>
-                </div>
-                <div>
-                    <p class="text-xs text-blue-200 font-medium">IPINFRA NETWORKS</p>
-                    <p class="text-sm font-bold tracking-wide">Admin Portal</p>
-                </div>
+<!-- Premium Mobile Header -->
+<div class="bg-gradient-to-r from-slate-900 via-indigo-900 to-slate-900 text-white sticky top-0 z-40 shadow-2xl">
+    <div class="flex justify-between items-center px-4 py-4">
+        <div class="flex items-center gap-3">
+            <!-- MENU BUTTON - Now on LEFT side -->
+            <button onclick="toggleSidebar()" class="text-white/80 hover:text-white p-2 rounded-full hover:bg-white/10">
+                <i class="fas fa-bars text-xl"></i>
+            </button>
+            <div class="w-10 h-10 bg-gradient-to-br from-blue-500 to-indigo-600 rounded-xl flex items-center justify-center shadow-lg">
+                <span class="text-white font-bold text-sm">IN</span>
             </div>
-            <div class="flex items-center gap-3">
-                <div class="relative">
-                    <i class="fas fa-bell text-white/80 text-lg"></i>
-                    <?php if($pending_leaves + $pending_claims > 0): ?>
-                        <span class="absolute -top-1 -right-2 w-4 h-4 bg-red-500 rounded-full text-[10px] flex items-center justify-center notification-badge"><?php echo $pending_leaves + $pending_claims; ?></span>
-                    <?php endif; ?>
-                </div>
-                <button onclick="toggleSidebar()" class="text-white/80 hover:text-white p-2 rounded-full hover:bg-white/10">
-                    <i class="fas fa-bars text-xl"></i>
-                </button>
+            <div>
+                <p class="text-xs text-blue-200 font-medium">IPINFRA NETWORKS</p>
+                <p class="text-sm font-bold tracking-wide">Admin Portal</p>
             </div>
         </div>
+        <div class="flex items-center gap-3">
+            <!-- Notification Bell - Right side -->
+            <div class="relative">
+                <i class="fas fa-bell text-white/80 text-lg"></i>
+                <?php if($pending_leaves + $pending_claims > 0): ?>
+                    <span class="absolute -top-1 -right-2 w-4 h-4 bg-red-500 rounded-full text-[10px] flex items-center justify-center notification-badge"><?php echo $pending_leaves + $pending_claims; ?></span>
+                <?php endif; ?>
+            </div>
+            <!-- Back Button - Right side (optional) -->
+            <button onclick="history.back()" class="text-white/80 hover:text-white p-2 rounded-full hover:bg-white/10">
+                
+            </button>
+        </div>
     </div>
-
+</div>
 <!-- SIDEBAR -->
 <div id="sidebar" class="fixed top-0 left-0 h-full w-72 bg-gradient-to-b from-gray-900 to-gray-950 text-white z-50 transform -translate-x-full transition-transform duration-300 shadow-2xl overflow-y-auto">
     <div class="p-6 border-b border-gray-800">

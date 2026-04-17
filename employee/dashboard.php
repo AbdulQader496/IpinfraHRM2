@@ -44,14 +44,13 @@ $recent_leaves = mysqli_query($conn, "SELECT * FROM leaves WHERE employee_id = $
 // Get recent claims
 $recent_claims = mysqli_query($conn, "SELECT * FROM claims WHERE employee_id = $user_id ORDER BY applied_at DESC LIMIT 3");
 
-// Get this week's attendance summary
-$week_days = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday'];
-$week_attendance = [];
-foreach ($week_days as $day) {
-    $date = date('Y-m-d', strtotime($day . ' this week'));
-    $att = mysqli_fetch_assoc(mysqli_query($conn, "SELECT * FROM attendance WHERE employee_id = $user_id AND date = '$date'"));
-    $week_attendance[$day] = $att;
-}
+// Get announcements for employees
+$announcements = mysqli_query($conn, "SELECT * FROM announcements WHERE is_active = 1 AND (target_role = 'all' OR target_role = 'employee') AND (end_date IS NULL OR end_date >= CURDATE()) ORDER BY 
+    CASE announcement_type 
+        WHEN 'urgent' THEN 1 
+        WHEN 'holiday' THEN 2 
+        ELSE 3 
+    END, created_at DESC LIMIT 5");
 ?>
 <!DOCTYPE html>
 <html lang="en">
@@ -106,7 +105,7 @@ foreach ($week_days as $day) {
             </div>
         </div>
         
-        <!-- Right side - Empty for now, can add profile/user later -->
+        <!-- Right side -->
         <div class="flex items-center gap-2">
             <div class="w-8 h-8 rounded-full bg-gradient-to-br from-blue-500 to-indigo-500 flex items-center justify-center shadow-lg">
                 <span class="text-white text-xs font-bold"><?php echo substr($_SESSION['user_name'], 0, 1); ?></span>
@@ -266,31 +265,66 @@ foreach ($week_days as $day) {
             </div>
         </div>
 
-        <!-- This Week Attendance Summary -->
-        <div class="bg-white rounded-xl shadow-md p-4 mb-6">
-            <h3 class="font-semibold text-gray-800 mb-3 flex items-center gap-2">
-                <i class="fas fa-calendar-week text-blue-600"></i> This Week's Attendance
-            </h3>
-            <div class="grid grid-cols-5 gap-2">
-                <?php foreach ($week_days as $day): 
-                    $att = $week_attendance[$day];
-                    $status = 'absent';
-                    $color = 'bg-red-100 text-red-600';
-                    if ($att && $att['clock_out']) {
-                        $status = 'present';
-                        $color = $att['status'] == 'late' ? 'bg-orange-100 text-orange-600' : 'bg-green-100 text-green-600';
-                    } elseif ($att && $att['clock_in']) {
-                        $status = 'active';
-                        $color = 'bg-yellow-100 text-yellow-600';
-                    }
-                ?>
-                <div class="text-center">
-                    <p class="text-xs font-medium text-gray-500"><?php echo substr($day, 0, 3); ?></p>
-                    <div class="<?php echo $color; ?> rounded-lg p-2 mt-1">
-                        <i class="fas <?php echo $status == 'present' ? 'fa-check-circle' : ($status == 'active' ? 'fa-clock' : 'fa-times-circle'); ?> text-sm"></i>
-                    </div>
+        <!-- ANNOUNCEMENTS SECTION (Replaces This Week's Attendance) -->
+        <div class="bg-white rounded-xl shadow-md overflow-hidden mb-6">
+            <div class="bg-gradient-to-r from-purple-50 to-indigo-50 px-4 py-3 border-b">
+                <div class="flex items-center justify-between">
+                    <h3 class="font-semibold text-gray-800 flex items-center gap-2">
+                        <i class="fas fa-bullhorn text-purple-600"></i> Announcements
+                    </h3>
+                    <span class="text-xs text-gray-400">Latest updates</span>
                 </div>
-                <?php endforeach; ?>
+            </div>
+            <div class="divide-y max-h-80 overflow-y-auto">
+                <?php if(mysqli_num_rows($announcements) > 0): ?>
+                    <?php while($ann = mysqli_fetch_assoc($announcements)): 
+                        $type_colors = [
+                            'general' => 'bg-blue-100 text-blue-700',
+                            'urgent' => 'bg-red-100 text-red-700',
+                            'holiday' => 'bg-green-100 text-green-700',
+                            'event' => 'bg-purple-100 text-purple-700'
+                        ];
+                        $type_icons = [
+                            'general' => 'fa-info-circle',
+                            'urgent' => 'fa-exclamation-triangle',
+                            'holiday' => 'fa-gift',
+                            'event' => 'fa-calendar-day'
+                        ];
+                        $type_color = $type_colors[$ann['announcement_type']] ?? 'bg-gray-100 text-gray-700';
+                        $type_icon = $type_icons[$ann['announcement_type']] ?? 'fa-bullhorn';
+                    ?>
+                    <div class="p-4 hover:bg-gray-50 transition">
+                        <div class="flex items-start gap-3">
+                            <div class="w-8 h-8 rounded-full <?php echo $type_color; ?> flex items-center justify-center flex-shrink-0">
+                                <i class="fas <?php echo $type_icon; ?> text-sm"></i>
+                            </div>
+                            <div class="flex-1">
+                                <div class="flex items-center gap-2 flex-wrap mb-1">
+                                    <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium <?php echo $type_color; ?>">
+                                        <?php echo ucfirst($ann['announcement_type']); ?>
+                                    </span>
+                                    <span class="text-xs text-gray-400">
+                                        <i class="far fa-clock mr-1"></i><?php echo date('d M Y', strtotime($ann['created_at'])); ?>
+                                    </span>
+                                </div>
+                                <p class="font-semibold text-gray-800 text-sm"><?php echo htmlspecialchars($ann['title']); ?></p>
+                                <p class="text-xs text-gray-600 mt-1"><?php echo nl2br(htmlspecialchars($ann['message'])); ?></p>
+                                <?php if($ann['end_date']): ?>
+                                    <p class="text-xs text-gray-400 mt-2">
+                                        <i class="far fa-calendar-alt mr-1"></i> Valid until: <?php echo date('d M Y', strtotime($ann['end_date'])); ?>
+                                    </p>
+                                <?php endif; ?>
+                            </div>
+                        </div>
+                    </div>
+                    <?php endwhile; ?>
+                <?php else: ?>
+                    <div class="p-6 text-center text-gray-500">
+                        <i class="fas fa-bullhorn text-3xl mb-2 block text-gray-300"></i>
+                        <p class="text-sm">No announcements yet</p>
+                        <p class="text-xs text-gray-400 mt-1">Check back later for updates</p>
+                    </div>
+                <?php endif; ?>
             </div>
         </div>
 

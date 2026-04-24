@@ -2,9 +2,32 @@
 session_start();
 require_once 'includes/db.php';
 
+// Check if user has remember me cookie
+if (!isset($_SESSION['user_id']) && isset($_COOKIE['remember_token'])) {
+    $token = mysqli_real_escape_string($conn, $_COOKIE['remember_token']);
+    $query = "SELECT * FROM employees WHERE remember_token = '$token' AND status = 'active'";
+    $result = mysqli_query($conn, $query);
+    
+    if (mysqli_num_rows($result) == 1) {
+        $user = mysqli_fetch_assoc($result);
+        $_SESSION['user_id'] = $user['id'];
+        $_SESSION['user_name'] = $user['name'];
+        $_SESSION['role'] = $user['role'];
+        $_SESSION['employee_id'] = $user['employee_id'];
+        
+        if ($user['role'] == 'admin') {
+            header('Location: admin/dashboard.php');
+        } else {
+            header('Location: employee/dashboard.php');
+        }
+        exit();
+    }
+}
+
 if (isset($_POST['login'])) {
     $email = mysqli_real_escape_string($conn, $_POST['email']);
     $password = $_POST['password'];
+    $remember = isset($_POST['remember']) ? true : false;
     
     $query = "SELECT * FROM employees WHERE email = '$email' AND password = '$password' AND status = 'active'";
     $result = mysqli_query($conn, $query);
@@ -15,6 +38,13 @@ if (isset($_POST['login'])) {
         $_SESSION['user_name'] = $user['name'];
         $_SESSION['role'] = $user['role'];
         $_SESSION['employee_id'] = $user['employee_id'];
+        
+        // Set remember me cookie (30 days)
+        if ($remember) {
+            $token = bin2hex(random_bytes(32));
+            mysqli_query($conn, "UPDATE employees SET remember_token = '$token' WHERE id = {$user['id']}");
+            setcookie('remember_token', $token, time() + (86400 * 30), "/", "", false, true);
+        }
         
         if ($user['role'] == 'admin') {
             header('Location: admin/dashboard.php');
@@ -85,6 +115,29 @@ if (isset($_POST['login'])) {
         .toggle-password:hover {
             color: #3b82f6;
         }
+        /* Custom Checkbox */
+        .checkbox-custom {
+            width: 18px;
+            height: 18px;
+            border-radius: 4px;
+            border: 2px solid #cbd5e1;
+            transition: all 0.2s;
+            cursor: pointer;
+        }
+        .checkbox-custom:checked {
+            background-color: #2563eb;
+            border-color: #2563eb;
+            position: relative;
+        }
+        .checkbox-custom:checked::after {
+            content: '✓';
+            color: white;
+            font-size: 12px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            line-height: 1;
+        }
     </style>
 </head>
 <body class="min-h-screen flex items-center justify-center p-4 login-container">
@@ -137,7 +190,7 @@ if (isset($_POST['login'])) {
                         </div>
                     </div>
                     
-                    <div class="mb-5">
+                    <div class="mb-4">
                         <label class="block text-gray-700 text-sm font-semibold mb-2">Password</label>
                         <div class="relative">
                             <i class="fas fa-lock absolute left-4 top-1/2 -translate-y-1/2 text-gray-400 text-sm"></i>
@@ -146,6 +199,15 @@ if (isset($_POST['login'])) {
                                 placeholder="Enter your password">
                             <i class="fas fa-eye-slash toggle-password absolute right-4 top-1/2 -translate-y-1/2 text-gray-400 text-sm" id="togglePassword"></i>
                         </div>
+                    </div>
+                    
+                    <!-- Remember Me Checkbox -->
+                    <div class="flex items-center justify-between mb-6">
+                        <label class="flex items-center gap-2 cursor-pointer">
+                            <input type="checkbox" name="remember" id="remember" class="checkbox-custom appearance-none">
+                            <span class="text-sm text-gray-600 select-none">Remember Me</span>
+                        </label>
+                        <a href="#" class="text-sm text-blue-600 hover:text-blue-800 transition">Forgot Password?</a>
                     </div>
                     
                     <button type="submit" name="login" 
@@ -183,13 +245,20 @@ if (isset($_POST['login'])) {
         const password = document.getElementById('password');
 
         togglePassword.addEventListener('click', function() {
-            // Toggle the type attribute
             const type = password.getAttribute('type') === 'password' ? 'text' : 'password';
             password.setAttribute('type', type);
-            
-            // Toggle the eye icon
             this.classList.toggle('fa-eye');
             this.classList.toggle('fa-eye-slash');
+        });
+
+        // Custom checkbox styling
+        const checkbox = document.getElementById('remember');
+        checkbox.addEventListener('change', function() {
+            if (this.checked) {
+                this.classList.add('checked');
+            } else {
+                this.classList.remove('checked');
+            }
         });
     </script>
 </body>

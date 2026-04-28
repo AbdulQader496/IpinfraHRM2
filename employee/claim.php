@@ -6,6 +6,29 @@ require_once '../includes/db.php';
 $user_id = $_SESSION['user_id'];
 $message = '';
 
+// ========================================
+// PAGINATION FOR CLAIM HISTORY
+// ========================================
+$page = isset($_GET['page']) ? (int)$_GET['page'] : 1;
+$per_page = isset($_GET['per_page']) ? (int)$_GET['per_page'] : 10;
+$status_filter = isset($_GET['status']) ? $_GET['status'] : '';
+
+// Build WHERE clause for history filter
+$where = "WHERE employee_id = $user_id";
+if (!empty($status_filter)) {
+    $where .= " AND status = '$status_filter'";
+}
+
+// Get total count for pagination
+$count_query = "SELECT COUNT(*) as total FROM claims $where";
+$count_result = mysqli_query($conn, $count_query);
+$total_rows = mysqli_fetch_assoc($count_result)['total'];
+$total_pages = ceil($total_rows / $per_page);
+$offset = ($page - 1) * $per_page;
+
+// Get paginated claim history
+$history = mysqli_query($conn, "SELECT * FROM claims $where ORDER BY applied_at DESC LIMIT $offset, $per_page");
+
 if (isset($_POST['apply_claim'])) {
     $claim_type = mysqli_real_escape_string($conn, $_POST['claim_type']);
     $amount = floatval($_POST['amount']);
@@ -29,9 +52,7 @@ if (isset($_POST['apply_claim'])) {
     }
 }
 
-$history = mysqli_query($conn, "SELECT * FROM claims WHERE employee_id = $user_id ORDER BY applied_at DESC");
-
-// Get statistics
+// Get statistics (overall, not paginated)
 $total_claimed = mysqli_fetch_assoc(mysqli_query($conn, "SELECT SUM(amount) as total FROM claims WHERE employee_id = $user_id AND status = 'approved'"));
 $pending_total = mysqli_fetch_assoc(mysqli_query($conn, "SELECT SUM(amount) as total FROM claims WHERE employee_id = $user_id AND status = 'pending'"));
 ?>
@@ -51,7 +72,6 @@ $pending_total = mysqli_fetch_assoc(mysqli_query($conn, "SELECT SUM(amount) as t
 * { font-family: 'Inter', sans-serif; }
 .sidebar { transition: transform 0.3s ease-in-out; }
 
-/* Premium Animations */
 @keyframes fadeIn {
     from { opacity: 0; transform: translateY(-10px); }
     to { opacity: 1; transform: translateY(0); }
@@ -63,18 +83,15 @@ $pending_total = mysqli_fetch_assoc(mysqli_query($conn, "SELECT SUM(amount) as t
 .animate-fadeIn { animation: fadeIn 0.3s ease-out; }
 .animate-fadeInUp { animation: fadeInUp 0.4s ease-out; }
 
-/* Card Hover */
 .claim-card { transition: all 0.2s ease; }
 .claim-card:hover { transform: translateY(-2px); }
 
-/* Form Focus */
 .form-input:focus {
     border-color: #9333ea;
     box-shadow: 0 0 0 3px rgba(147, 51, 234, 0.1);
     outline: none;
 }
 
-/* Custom Scrollbar */
 ::-webkit-scrollbar { width: 6px; }
 ::-webkit-scrollbar-track { background: #f1f1f1; border-radius: 10px; }
 ::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 10px; }
@@ -87,14 +104,12 @@ $pending_total = mysqli_fetch_assoc(mysqli_query($conn, "SELECT SUM(amount) as t
 <div class="bg-gradient-to-r from-slate-900 via-indigo-900 to-slate-900 text-white sticky top-0 z-40 shadow-2xl backdrop-blur-sm">
     <div class="flex items-center justify-between px-5 py-4">
         <div class="flex items-center gap-3">
-            <!-- Menu Button -->
             <button onclick="toggleSidebar()" class="relative group">
                 <div class="w-10 h-10 rounded-xl bg-white/10 backdrop-blur-sm flex items-center justify-center group-hover:bg-white/20 transition-all duration-300 group-hover:scale-105">
                     <i class="fas fa-bars text-lg"></i>
                 </div>
             </button>
             
-            <!-- Logo -->
             <div class="relative">
                 <div class="w-10 h-10 bg-gradient-to-br from-blue-500 via-indigo-500 to-purple-600 rounded-xl flex items-center justify-center shadow-lg shadow-indigo-500/20 animate-pulse">
                     <span class="text-white font-bold text-sm">IN</span>
@@ -102,24 +117,21 @@ $pending_total = mysqli_fetch_assoc(mysqli_query($conn, "SELECT SUM(amount) as t
                 <div class="absolute -top-1 -right-1 w-3 h-3 bg-green-400 rounded-full border-2 border-slate-900"></div>
             </div>
             
-            <!-- Brand -->
             <div class="hidden sm:block">
                 <p class="text-xs text-blue-200 font-medium tracking-wide">IPINFRA NETWORKS</p>
                 <p class="text-sm font-bold tracking-tight">Employee Portal</p>
             </div>
         </div>
         
-        <!-- Right side - Empty for now, can add profile/user later -->
         <div class="flex items-center gap-2">
             <div class="w-8 h-8 rounded-full bg-gradient-to-br from-blue-500 to-indigo-500 flex items-center justify-center shadow-lg">
                 <span class="text-white text-xs font-bold"><?php echo substr($_SESSION['user_name'], 0, 1); ?></span>
             </div>
         </div>
     </div>
-    
-    <!-- Subtle bottom border glow -->
     <div class="h-0.5 bg-gradient-to-r from-transparent via-indigo-400 to-transparent"></div>
 </div>
+
 <!-- SIDEBAR -->
 <div id="sidebar" class="fixed top-0 left-0 h-full w-72 bg-gradient-to-b from-blue-900 to-blue-950 text-white z-50 transform -translate-x-full transition-transform duration-300 shadow-2xl overflow-y-auto">
     <div class="p-6 border-b border-blue-800">
@@ -146,7 +158,7 @@ $pending_total = mysqli_fetch_assoc(mysqli_query($conn, "SELECT SUM(amount) as t
         <a href="leave.php" class="flex items-center gap-3 py-3 px-4 rounded-xl hover:bg-blue-800/30 transition mb-1">
             <i class="fas fa-calendar-alt w-5"></i> Apply Leave
         </a>
-        <a href="claim.php" class="flex items-center gap-3 py-3 px-4 rounded-xl hover:bg-blue-800/30 transition mb-1">
+        <a href="claim.php" class="flex items-center gap-3 py-3 px-4 rounded-xl bg-blue-800/50 mb-1">
             <i class="fas fa-receipt w-5"></i> Apply Claim
         </a>
         <a href="gallery.php" class="flex items-center gap-3 py-3 px-4 rounded-xl hover:bg-blue-800/30 transition mb-1">
@@ -155,7 +167,7 @@ $pending_total = mysqli_fetch_assoc(mysqli_query($conn, "SELECT SUM(amount) as t
         <a href="assets.php" class="flex items-center gap-3 py-3 px-4 rounded-xl hover:bg-blue-800/30 transition mb-1">
             <i class="fas fa-boxes w-5"></i> Asset Tracker
         </a>
-        <a href="management.php" class="flex items-center gap-3 py-3 px-4 rounded-xl bg-blue-800/50 mb-1">
+        <a href="management.php" class="flex items-center gap-3 py-3 px-4 rounded-xl hover:bg-blue-800/30 transition mb-1">
             <i class="fas fa-briefcase w-5"></i> My Management
         </a>
         <a href="payslip.php" class="flex items-center gap-3 py-3 px-4 rounded-xl hover:bg-blue-800/30 transition mb-1">
@@ -267,18 +279,35 @@ $pending_total = mysqli_fetch_assoc(mysqli_query($conn, "SELECT SUM(amount) as t
         </form>
     </div>
 
-    <!-- Claim History -->
+    <!-- Claim History with Pagination & Filter -->
     <div class="bg-white rounded-2xl shadow-xl overflow-hidden">
         <div class="bg-gradient-to-r from-gray-50 to-white px-5 py-4 border-b">
-            <div class="flex items-center gap-2">
-                <i class="fas fa-history text-purple-500 text-xl"></i>
-                <h3 class="font-semibold text-gray-800">Claim History</h3>
-                <span class="text-xs text-gray-400 ml-auto">Total: <?php echo mysqli_num_rows($history); ?> claims</span>
+            <div class="flex items-center justify-between flex-wrap gap-3">
+                <div class="flex items-center gap-2">
+                    <i class="fas fa-history text-purple-500 text-xl"></i>
+                    <h3 class="font-semibold text-gray-800">Claim History</h3>
+                    <span class="text-xs text-gray-400">(<?php echo $total_rows; ?> total)</span>
+                </div>
+                
+                <!-- Status Filter Dropdown -->
+                <form method="GET" class="flex gap-2">
+                    <select name="status" class="text-sm border border-gray-200 rounded-lg px-3 py-1.5">
+                        <option value="">All Status</option>
+                        <option value="pending" <?php echo $status_filter == 'pending' ? 'selected' : ''; ?>>Pending</option>
+                        <option value="approved" <?php echo $status_filter == 'approved' ? 'selected' : ''; ?>>Approved</option>
+                        <option value="rejected" <?php echo $status_filter == 'rejected' ? 'selected' : ''; ?>>Rejected</option>
+                    </select>
+                    <input type="hidden" name="page" value="1">
+                    <button type="submit" class="bg-purple-600 text-white px-3 py-1.5 rounded-lg text-sm">Filter</button>
+                    <?php if($status_filter): ?>
+                        <a href="claim.php" class="bg-gray-200 text-gray-700 px-3 py-1.5 rounded-lg text-sm">Clear</a>
+                    <?php endif; ?>
+                </form>
             </div>
         </div>
         
-        <div class="divide-y divide-gray-100">
-            <?php if(mysqli_num_rows($history) > 0): ?>
+        <?php if(mysqli_num_rows($history) > 0): ?>
+            <div class="divide-y divide-gray-100">
                 <?php while ($row = mysqli_fetch_assoc($history)): 
                     $status_color = $row['status'] == 'approved' ? 'green' : ($row['status'] == 'rejected' ? 'red' : 'yellow');
                     $status_icon = $row['status'] == 'approved' ? 'check-circle' : ($row['status'] == 'rejected' ? 'times-circle' : 'clock');
@@ -309,16 +338,49 @@ $pending_total = mysqli_fetch_assoc(mysqli_query($conn, "SELECT SUM(amount) as t
                     </div>
                 </div>
                 <?php endwhile; ?>
-            <?php else: ?>
-                <div class="p-8 text-center">
-                    <div class="w-16 h-16 bg-gray-100 rounded-full flex items-center justify-center mx-auto mb-3">
-                        <i class="fas fa-receipt text-2xl text-gray-400"></i>
-                    </div>
-                    <p class="text-gray-500 font-medium">No claims submitted yet</p>
-                    <p class="text-xs text-gray-400 mt-1">Submit a claim to get started</p>
+            </div>
+            
+            <!-- Pagination -->
+            <?php if($total_pages > 1): ?>
+            <div class="bg-gray-50 px-4 py-3 border-t flex justify-between items-center flex-wrap gap-2">
+                <p class="text-sm text-gray-500">
+                    Showing <?php echo $offset + 1; ?> to <?php echo min($offset + $per_page, $total_rows); ?> of <?php echo $total_rows; ?> records
+                </p>
+                <div class="flex gap-1">
+                    <?php if($page > 1): ?>
+                        <a href="?page=1&per_page=<?php echo $per_page; ?>&status=<?php echo $status_filter; ?>" class="px-3 py-1 bg-white border rounded-lg text-sm hover:bg-gray-100">First</a>
+                        <a href="?page=<?php echo $page-1; ?>&per_page=<?php echo $per_page; ?>&status=<?php echo $status_filter; ?>" class="px-3 py-1 bg-white border rounded-lg text-sm hover:bg-gray-100">← Prev</a>
+                    <?php endif; ?>
+                    
+                    <span class="px-3 py-1 bg-purple-600 text-white rounded-lg text-sm"><?php echo $page; ?></span>
+                    
+                    <?php if($page < $total_pages): ?>
+                        <a href="?page=<?php echo $page+1; ?>&per_page=<?php echo $per_page; ?>&status=<?php echo $status_filter; ?>" class="px-3 py-1 bg-white border rounded-lg text-sm hover:bg-gray-100">Next →</a>
+                        <a href="?page=<?php echo $total_pages; ?>&per_page=<?php echo $per_page; ?>&status=<?php echo $status_filter; ?>" class="px-3 py-1 bg-white border rounded-lg text-sm hover:bg-gray-100">Last</a>
+                    <?php endif; ?>
                 </div>
+                <div class="flex items-center gap-2">
+                    <span class="text-xs text-gray-500">Show:</span>
+                    <select onchange="window.location.href=this.value" class="text-sm border rounded px-2 py-1">
+                        <option value="?per_page=10&page=1&status=<?php echo $status_filter; ?>" <?php echo $per_page == 10 ? 'selected' : ''; ?>>10</option>
+                        <option value="?per_page=25&page=1&status=<?php echo $status_filter; ?>" <?php echo $per_page == 25 ? 'selected' : ''; ?>>25</option>
+                        <option value="?per_page=50&page=1&status=<?php echo $status_filter; ?>" <?php echo $per_page == 50 ? 'selected' : ''; ?>>50</option>
+                    </select>
+                </div>
+            </div>
             <?php endif; ?>
-        </div>
+            
+        <?php else: ?>
+            <div class="p-8 text-center">
+                <div class="w-16 h-16 bg-gray-100 rounded-full flex items-center justify-center mx-auto mb-3">
+                    <i class="fas fa-receipt text-2xl text-gray-400"></i>
+                </div>
+                <p class="text-gray-500 font-medium">No claims found</p>
+                <?php if($status_filter): ?>
+                    <a href="claim.php" class="text-purple-600 text-sm mt-2 inline-block">Clear filter</a>
+                <?php endif; ?>
+            </div>
+        <?php endif; ?>
     </div>
 </div>
 

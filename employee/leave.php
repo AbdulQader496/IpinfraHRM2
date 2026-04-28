@@ -7,6 +7,29 @@ require_once '../includes/functions.php';
 $user_id = $_SESSION['user_id'];
 $message = '';
 
+// ========================================
+// PAGINATION FOR LEAVE HISTORY
+// ========================================
+$page = isset($_GET['page']) ? (int)$_GET['page'] : 1;
+$per_page = isset($_GET['per_page']) ? (int)$_GET['per_page'] : 10;
+$status_filter = isset($_GET['status']) ? $_GET['status'] : '';
+
+// Build WHERE clause for history filter
+$where = "WHERE employee_id = $user_id";
+if (!empty($status_filter)) {
+    $where .= " AND status = '$status_filter'";
+}
+
+// Get total count for pagination
+$count_query = "SELECT COUNT(*) as total FROM leaves $where";
+$count_result = mysqli_query($conn, $count_query);
+$total_rows = mysqli_fetch_assoc($count_result)['total'];
+$total_pages = ceil($total_rows / $per_page);
+$offset = ($page - 1) * $per_page;
+
+// Get paginated leave history
+$history = mysqli_query($conn, "SELECT * FROM leaves $where ORDER BY applied_at DESC LIMIT $offset, $per_page");
+
 // Get available leave types from database
 $leave_types = mysqli_query($conn, "SELECT * FROM leave_types WHERE status = 'active' ORDER BY leave_name");
 
@@ -20,14 +43,12 @@ if (isset($_POST['apply_leave'])) {
     // Calculate total days (including half day)
     if ($half_day != 'none') {
         $total_days = 0.5;
-        // For half day, end_date same as start_date
         $end_date = $start_date;
     } else {
         $total_days = (strtotime($end_date) - strtotime($start_date)) / 86400 + 1;
     }
     
     $attachment = '';
-    // Check if attachment is required for this leave type
     $type_query = mysqli_query($conn, "SELECT requires_attachment FROM leave_types WHERE leave_code = '$leave_type'");
     $type_data = mysqli_fetch_assoc($type_query);
     $requires_attachment = $type_data ? $type_data['requires_attachment'] : 0;
@@ -53,7 +74,6 @@ if (isset($_POST['apply_leave'])) {
     }
 }
 
-$history = mysqli_query($conn, "SELECT * FROM leaves WHERE employee_id = $user_id ORDER BY applied_at DESC");
 $balance = getLeaveBalance($user_id);
 ?>
 <!DOCTYPE html>
@@ -103,14 +123,12 @@ $balance = getLeaveBalance($user_id);
 <div class="bg-gradient-to-r from-slate-900 via-indigo-900 to-slate-900 text-white sticky top-0 z-40 shadow-2xl backdrop-blur-sm">
     <div class="flex items-center justify-between px-5 py-4">
         <div class="flex items-center gap-3">
-            <!-- Menu Button -->
             <button onclick="toggleSidebar()" class="relative group">
                 <div class="w-10 h-10 rounded-xl bg-white/10 backdrop-blur-sm flex items-center justify-center group-hover:bg-white/20 transition-all duration-300 group-hover:scale-105">
                     <i class="fas fa-bars text-lg"></i>
                 </div>
             </button>
             
-            <!-- Logo -->
             <div class="relative">
                 <div class="w-10 h-10 bg-gradient-to-br from-blue-500 via-indigo-500 to-purple-600 rounded-xl flex items-center justify-center shadow-lg shadow-indigo-500/20 animate-pulse">
                     <span class="text-white font-bold text-sm">IN</span>
@@ -118,25 +136,22 @@ $balance = getLeaveBalance($user_id);
                 <div class="absolute -top-1 -right-1 w-3 h-3 bg-green-400 rounded-full border-2 border-slate-900"></div>
             </div>
             
-            <!-- Brand -->
             <div class="hidden sm:block">
                 <p class="text-xs text-blue-200 font-medium tracking-wide">IPINFRA NETWORKS</p>
                 <p class="text-sm font-bold tracking-tight">Employee Portal</p>
             </div>
         </div>
         
-        <!-- Right side - Empty for now, can add profile/user later -->
         <div class="flex items-center gap-2">
             <div class="w-8 h-8 rounded-full bg-gradient-to-br from-blue-500 to-indigo-500 flex items-center justify-center shadow-lg">
                 <span class="text-white text-xs font-bold"><?php echo substr($_SESSION['user_name'], 0, 1); ?></span>
             </div>
         </div>
     </div>
-    
-    <!-- Subtle bottom border glow -->
     <div class="h-0.5 bg-gradient-to-r from-transparent via-indigo-400 to-transparent"></div>
 </div>
 
+<!-- SIDEBAR -->
 <div id="sidebar" class="fixed top-0 left-0 h-full w-72 bg-gradient-to-b from-blue-900 to-blue-950 text-white z-50 transform -translate-x-full transition-transform duration-300 shadow-2xl overflow-y-auto">
     <div class="p-6 border-b border-blue-800">
         <div class="flex items-center gap-3 mb-4">
@@ -195,13 +210,12 @@ $balance = getLeaveBalance($user_id);
 <!-- MAIN CONTENT -->
 <div class="px-4 py-6 max-w-2xl mx-auto">
     
-    <!-- Header -->
     <div class="text-center mb-6 animate-fadeInUp">
         <h1 class="text-2xl font-bold text-gray-800">🏖️ Leave Application</h1>
         <p class="text-sm text-gray-500 mt-1">Request time off and track your leave balance</p>
     </div>
 
-    <!-- Premium Balance Cards -->
+    <!-- Balance Cards -->
     <div class="grid grid-cols-2 gap-4 mb-6">
         <div class="balance-card bg-gradient-to-br from-green-500 to-emerald-600 text-white p-5 rounded-2xl shadow-lg">
             <div class="flex items-center justify-between">
@@ -279,7 +293,6 @@ $balance = getLeaveBalance($user_id);
                 </select>
             </div>
             
-            <!-- Half Day Option (visible for certain leave types) -->
             <div id="halfDayContainer" style="display: none;">
                 <label class="block text-gray-700 text-sm font-semibold mb-2">Leave Duration</label>
                 <select name="half_day" id="half_day" class="w-full px-4 py-2.5 border-2 border-gray-200 rounded-xl focus:border-blue-500 transition">
@@ -324,15 +337,34 @@ $balance = getLeaveBalance($user_id);
         </form>
     </div>
 
-    <!-- Leave History -->
-    <?php if(mysqli_num_rows($history) > 0): ?>
+    <!-- Leave History with Pagination & Filter -->
+    <?php if($total_rows > 0): ?>
     <div class="bg-white rounded-2xl shadow-xl overflow-hidden">
         <div class="bg-gradient-to-r from-gray-50 to-white px-5 py-4 border-b">
-            <div class="flex items-center gap-2">
-                <i class="fas fa-history text-blue-500 text-xl"></i>
-                <h3 class="font-semibold text-gray-800">Leave History</h3>
+            <div class="flex items-center justify-between flex-wrap gap-3">
+                <div class="flex items-center gap-2">
+                    <i class="fas fa-history text-blue-500 text-xl"></i>
+                    <h3 class="font-semibold text-gray-800">Leave History</h3>
+                    <span class="text-xs text-gray-400">(<?php echo $total_rows; ?> total)</span>
+                </div>
+                
+                <!-- Status Filter Dropdown -->
+                <form method="GET" class="flex gap-2">
+                    <select name="status" class="text-sm border border-gray-200 rounded-lg px-3 py-1.5">
+                        <option value="">All Status</option>
+                        <option value="pending" <?php echo $status_filter == 'pending' ? 'selected' : ''; ?>>Pending</option>
+                        <option value="approved" <?php echo $status_filter == 'approved' ? 'selected' : ''; ?>>Approved</option>
+                        <option value="rejected" <?php echo $status_filter == 'rejected' ? 'selected' : ''; ?>>Rejected</option>
+                    </select>
+                    <input type="hidden" name="page" value="1">
+                    <button type="submit" class="bg-blue-600 text-white px-3 py-1.5 rounded-lg text-sm">Filter</button>
+                    <?php if($status_filter): ?>
+                        <a href="leave.php" class="bg-gray-200 text-gray-700 px-3 py-1.5 rounded-lg text-sm">Clear</a>
+                    <?php endif; ?>
+                </form>
             </div>
         </div>
+        
         <div class="divide-y divide-gray-100">
             <?php while($leave = mysqli_fetch_assoc($history)): 
                 $days = $leave['total_days'] ?: ((strtotime($leave['end_date']) - strtotime($leave['start_date'])) / 86400 + 1);
@@ -363,11 +395,48 @@ $balance = getLeaveBalance($user_id);
             </div>
             <?php endwhile; ?>
         </div>
+        
+        <!-- Pagination -->
+        <?php if($total_pages > 1): ?>
+        <div class="bg-gray-50 px-4 py-3 border-t flex justify-between items-center flex-wrap gap-2">
+            <p class="text-sm text-gray-500">
+                Showing <?php echo $offset + 1; ?> to <?php echo min($offset + $per_page, $total_rows); ?> of <?php echo $total_rows; ?> records
+            </p>
+            <div class="flex gap-1">
+                <?php if($page > 1): ?>
+                    <a href="?page=1&per_page=<?php echo $per_page; ?>&status=<?php echo $status_filter; ?>" class="px-3 py-1 bg-white border rounded-lg text-sm hover:bg-gray-100">First</a>
+                    <a href="?page=<?php echo $page-1; ?>&per_page=<?php echo $per_page; ?>&status=<?php echo $status_filter; ?>" class="px-3 py-1 bg-white border rounded-lg text-sm hover:bg-gray-100">← Prev</a>
+                <?php endif; ?>
+                
+                <span class="px-3 py-1 bg-blue-600 text-white rounded-lg text-sm"><?php echo $page; ?></span>
+                
+                <?php if($page < $total_pages): ?>
+                    <a href="?page=<?php echo $page+1; ?>&per_page=<?php echo $per_page; ?>&status=<?php echo $status_filter; ?>" class="px-3 py-1 bg-white border rounded-lg text-sm hover:bg-gray-100">Next →</a>
+                    <a href="?page=<?php echo $total_pages; ?>&per_page=<?php echo $per_page; ?>&status=<?php echo $status_filter; ?>" class="px-3 py-1 bg-white border rounded-lg text-sm hover:bg-gray-100">Last</a>
+                <?php endif; ?>
+            </div>
+            <div class="flex items-center gap-2">
+                <span class="text-xs text-gray-500">Show:</span>
+                <select onchange="window.location.href=this.value" class="text-sm border rounded px-2 py-1">
+                    <option value="?per_page=10&page=1&status=<?php echo $status_filter; ?>" <?php echo $per_page == 10 ? 'selected' : ''; ?>>10</option>
+                    <option value="?per_page=25&page=1&status=<?php echo $status_filter; ?>" <?php echo $per_page == 25 ? 'selected' : ''; ?>>25</option>
+                    <option value="?per_page=50&page=1&status=<?php echo $status_filter; ?>" <?php echo $per_page == 50 ? 'selected' : ''; ?>>50</option>
+                </select>
+            </div>
+        </div>
+        <?php endif; ?>
+    </div>
+    <?php else: ?>
+    <div class="bg-white rounded-2xl shadow-xl p-8 text-center">
+        <i class="fas fa-calendar-alt text-4xl text-gray-300 mb-3 block"></i>
+        <p class="text-gray-500">No leave history found</p>
+        <?php if($status_filter): ?>
+            <a href="leave.php" class="text-blue-600 text-sm mt-2 inline-block">Clear filter</a>
+        <?php endif; ?>
     </div>
     <?php endif; ?>
 </div>
 
-<!-- JS -->
 <script>
 function toggleSidebar() {
     document.getElementById('sidebar').classList.toggle('-translate-x-full');
@@ -387,12 +456,10 @@ function toggleHalfDayOption() {
     const endDate = document.getElementById('end_date');
     const attachmentRequiredSpan = document.getElementById('attachmentRequired');
     
-    // Get selected option
     const select = document.getElementById('leave_type');
     const selectedOption = select.options[select.selectedIndex];
     const requiresAttachment = selectedOption.getAttribute('data-requires-attachment');
     
-    // Show/hide half day for certain leave types
     const halfDayTypes = ['annual', 'emergency', 'unpaid'];
     if (halfDayTypes.includes(leaveType)) {
         halfDayContainer.style.display = 'block';
@@ -401,7 +468,6 @@ function toggleHalfDayOption() {
         document.getElementById('half_day').value = 'none';
     }
     
-    // Update attachment requirement text
     if (requiresAttachment == '1') {
         attachmentRequiredSpan.innerHTML = '(Required)';
         attachmentRequiredSpan.classList.add('text-red-500');
@@ -417,7 +483,6 @@ function updateEndDate() {
     const endDateInput = document.getElementById('end_date');
     
     if (halfDay !== 'none') {
-        // For half day, end date is same as start date
         endDateContainer.style.display = 'none';
         endDateInput.value = document.getElementById('start_date').value;
         endDateInput.required = false;
@@ -427,7 +492,6 @@ function updateEndDate() {
     }
 }
 
-// Listen for half day changes
 document.getElementById('half_day')?.addEventListener('change', updateEndDate);
 </script>
 

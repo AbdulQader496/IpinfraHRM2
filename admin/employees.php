@@ -17,6 +17,12 @@ if (isset($_POST['add_employee'])) {
     $basic_salary = floatval($_POST['basic_salary']);
     $join_date = mysqli_real_escape_string($conn, $_POST['join_date']);
     
+    // NEW FIELDS
+    $phone = mysqli_real_escape_string($conn, $_POST['phone']);
+    $address = mysqli_real_escape_string($conn, $_POST['address']);
+    $bank_name = mysqli_real_escape_string($conn, $_POST['bank_name']);
+    $bank_account = mysqli_real_escape_string($conn, $_POST['bank_account']);
+    
     // Handle profile picture upload
     $profile_pic = '';
     if (isset($_FILES['profile_pic']) && $_FILES['profile_pic']['error'] == 0) {
@@ -31,8 +37,9 @@ if (isset($_POST['add_employee'])) {
     
     $is_subject = ($nationality == 'Malaysian') ? 1 : 0;
     
-    $query = "INSERT INTO employees (employee_id, name, ic_number, passport_no, nationality, email, password, department, position, basic_salary, join_date, profile_pic, is_subject_to_statutory) 
-              VALUES ('$employee_id', '$name', '$ic_number', '$passport_no', '$nationality', '$email', '$password', '$department', '$position', '$basic_salary', '$join_date', '$profile_pic', '$is_subject')";
+    // UPDATED INSERT QUERY with new fields
+    $query = "INSERT INTO employees (employee_id, name, ic_number, passport_no, nationality, email, password, department, position, basic_salary, join_date, profile_pic, is_subject_to_statutory, phone, address, bank_name, bank_account) 
+              VALUES ('$employee_id', '$name', '$ic_number', '$passport_no', '$nationality', '$email', '$password', '$department', '$position', '$basic_salary', '$join_date', '$profile_pic', '$is_subject', '$phone', '$address', '$bank_name', '$bank_account')";
     mysqli_query($conn, $query);
     header('Location: employees.php');
     exit();
@@ -655,84 +662,117 @@ $employees = mysqli_query($conn, "SELECT * FROM employees WHERE role='employee' 
         </div>
     </div>
 
-    <!-- Add Employee Modal -->
-    <div id="addModal" class="hidden fixed inset-0 bg-black/50 backdrop-blur-sm z-50 flex items-center justify-center p-4 overflow-y-auto">
-        <div class="bg-white rounded-2xl max-w-md w-full modal-enter shadow-2xl">
-            <div class="sticky top-0 bg-white rounded-t-2xl p-5 border-b border-gray-100 flex justify-between items-center">
-                <div>
-                    <h2 class="text-xl font-bold text-gray-800">Add New Employee</h2>
-                    <p class="text-xs text-gray-500 mt-1">Fill in the employee details below</p>
-                </div>
-                <button onclick="document.getElementById('addModal').classList.add('hidden')" class="text-gray-400 hover:text-gray-600 transition p-2 rounded-full hover:bg-gray-100">
-                    <i class="fas fa-times text-xl"></i>
-                </button>
+<!-- Add Employee Modal - COMPLETE with all fields -->
+<div id="addModal" class="hidden fixed inset-0 bg-black/50 backdrop-blur-sm z-50 flex items-center justify-center p-4 overflow-y-auto">
+    <div class="bg-white rounded-2xl max-w-md w-full modal-enter shadow-2xl">
+        <div class="sticky top-0 bg-white rounded-t-2xl p-5 border-b border-gray-100 flex justify-between items-center">
+            <div>
+                <h2 class="text-xl font-bold text-gray-800">Add New Employee</h2>
+                <p class="text-xs text-gray-500 mt-1">Fill in the employee details below</p>
             </div>
-            <form method="POST" class="p-5 space-y-4 max-h-[70vh] overflow-y-auto" enctype="multipart/form-data">
-                <div class="text-center mb-4">
-                    <div class="relative inline-block">
-                        <div id="add_profile_preview" class="w-24 h-24 rounded-full bg-gradient-to-br from-blue-500 to-purple-600 flex items-center justify-center mx-auto shadow-lg">
-                            <i class="fas fa-camera text-white text-2xl"></i>
-                        </div>
-                        <label class="absolute bottom-0 right-0 bg-blue-600 text-white p-1.5 rounded-full cursor-pointer hover:bg-blue-700 transition">
-                            <i class="fas fa-upload text-xs"></i>
-                            <input type="file" name="profile_pic" id="add_profile_pic" class="hidden" accept="image/*" onchange="previewImage(this, 'add_profile_preview')">
-                        </label>
+            <button onclick="document.getElementById('addModal').classList.add('hidden')" class="text-gray-400 hover:text-gray-600 transition p-2 rounded-full hover:bg-gray-100">
+                <i class="fas fa-times text-xl"></i>
+            </button>
+        </div>
+        <form method="POST" class="p-5 space-y-4 max-h-[70vh] overflow-y-auto" enctype="multipart/form-data">
+            <!-- Profile Picture -->
+            <div class="text-center mb-4">
+                <div class="relative inline-block">
+                    <div id="add_profile_preview" class="w-24 h-24 rounded-full bg-gradient-to-br from-blue-500 to-purple-600 flex items-center justify-center mx-auto shadow-lg">
+                        <i class="fas fa-camera text-white text-2xl"></i>
                     </div>
-                    <p class="text-xs text-gray-500 mt-2">Profile Picture (Optional)</p>
+                    <label class="absolute bottom-0 right-0 bg-blue-600 text-white p-1.5 rounded-full cursor-pointer hover:bg-blue-700 transition">
+                        <i class="fas fa-upload text-xs"></i>
+                        <input type="file" name="profile_pic" id="add_profile_pic" class="hidden" accept="image/*" onchange="previewImage(this, 'add_profile_preview')">
+                    </label>
                 </div>
-                
-                <div class="grid grid-cols-2 gap-3">
-                    <input type="text" name="employee_id" placeholder="Employee ID" required class="w-full px-4 py-3 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500">
-                    <input type="text" name="name" placeholder="Full Name" required class="w-full px-4 py-3 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500">
-                </div>
-                
-                <div>
-                    <label class="block text-sm font-medium text-gray-700 mb-2">Nationality</label>
-                    <select name="nationality" id="add_nationality" required class="w-full px-4 py-3 border border-gray-200 rounded-xl" onchange="toggleStatutoryFields('add')">
-                        <option value="Malaysian">Malaysian (Subject to EPF/SOCSO/EIS)</option>
-                        <option value="Non-Malaysian">Non-Malaysian / Expat</option>
-                    </select>
-                </div>
-                
-                <div id="add_ic_field">
-                    <input type="text" name="ic_number" placeholder="IC Number" class="w-full px-4 py-3 border border-gray-200 rounded-xl">
-                </div>
-                <div id="add_passport_field" style="display:none;">
-                    <input type="text" name="passport_no" placeholder="Passport Number" class="w-full px-4 py-3 border border-gray-200 rounded-xl">
-                </div>
-                
-                <input type="email" name="email" placeholder="Email Address" required class="w-full px-4 py-3 border border-gray-200 rounded-xl">
-                <input type="text" name="password" placeholder="Password" value="password123" required class="w-full px-4 py-3 border border-gray-200 rounded-xl">
-                
+                <p class="text-xs text-gray-500 mt-2">Profile Picture (Optional)</p>
+            </div>
+            
+            <!-- Basic Information -->
+            <div class="grid grid-cols-2 gap-3">
+                <input type="text" name="employee_id" placeholder="Employee ID" required class="w-full px-4 py-3 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500">
+                <input type="text" name="name" placeholder="Full Name" required class="w-full px-4 py-3 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500">
+            </div>
+            
+            <!-- Nationality -->
+            <div>
+                <label class="block text-sm font-medium text-gray-700 mb-2">Nationality</label>
+                <select name="nationality" id="add_nationality" required class="w-full px-4 py-3 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500" onchange="toggleStatutoryFields('add')">
+                    <option value="Malaysian">Malaysian (Subject to EPF/SOCSO/EIS)</option>
+                    <option value="Non-Malaysian">Non-Malaysian / Expat</option>
+                </select>
+            </div>
+            
+            <!-- IC / Passport -->
+            <div id="add_ic_field">
+                <input type="text" name="ic_number" placeholder="IC Number" class="w-full px-4 py-3 border border-gray-200 rounded-xl">
+            </div>
+            <div id="add_passport_field" style="display:none;">
+                <input type="text" name="passport_no" placeholder="Passport Number" class="w-full px-4 py-3 border border-gray-200 rounded-xl">
+            </div>
+            
+            <!-- Contact Information -->
+            <div class="border-t border-gray-100 pt-4">
+                <h3 class="font-semibold text-gray-700 mb-3">Contact Information</h3>
+                <input type="email" name="email" placeholder="Email Address" required class="w-full px-4 py-3 border border-gray-200 rounded-xl mb-2">
+                <input type="text" name="phone" placeholder="Phone Number" class="w-full px-4 py-3 border border-gray-200 rounded-xl mb-2">
+                <textarea name="address" rows="2" placeholder="Address" class="w-full px-4 py-3 border border-gray-200 rounded-xl"></textarea>
+            </div>
+            
+            <!-- Job Information -->
+            <div class="border-t border-gray-100 pt-4">
+                <h3 class="font-semibold text-gray-700 mb-3">Job Information</h3>
                 <div class="grid grid-cols-2 gap-3">
                     <input type="text" name="department" placeholder="Department" required class="w-full px-4 py-3 border border-gray-200 rounded-xl">
                     <input type="text" name="position" placeholder="Position" required class="w-full px-4 py-3 border border-gray-200 rounded-xl">
                 </div>
-                
+            </div>
+            
+            <!-- Salary & Joining -->
+            <div class="border-t border-gray-100 pt-4">
+                <h3 class="font-semibold text-gray-700 mb-3">Salary & Employment</h3>
                 <div class="grid grid-cols-2 gap-3">
                     <input type="number" step="0.01" name="basic_salary" placeholder="Basic Salary (RM)" required class="w-full px-4 py-3 border border-gray-200 rounded-xl">
                     <input type="date" name="join_date" required class="w-full px-4 py-3 border border-gray-200 rounded-xl">
                 </div>
-                
-                <div class="bg-gradient-to-r from-blue-50 to-indigo-50 p-4 rounded-xl" id="add_statutory_note">
-                    <div class="flex items-start gap-2">
-                        <i class="fas fa-info-circle text-blue-600 mt-0.5"></i>
-                        <p class="text-xs text-blue-800">Malaysian employees: EPF (11%), SOCSO (0.5%), EIS (0.2%) will be deducted automatically.</p>
-                    </div>
+                <p class="text-xs text-gray-500 mt-1">📅 Date of Joining: The date employee started working at the company</p>
+            </div>
+            
+            <!-- Bank Information -->
+            <div class="border-t border-gray-100 pt-4">
+                <h3 class="font-semibold text-gray-700 mb-3">Bank Information</h3>
+                <input type="text" name="bank_name" placeholder="Bank Name" class="w-full px-4 py-3 border border-gray-200 rounded-xl mb-2">
+                <input type="text" name="bank_account" placeholder="Bank Account Number" class="w-full px-4 py-3 border border-gray-200 rounded-xl">
+            </div>
+            
+            <!-- Login Information -->
+            <div class="border-t border-gray-100 pt-4">
+                <h3 class="font-semibold text-gray-700 mb-3">Login Information</h3>
+                <input type="text" name="password" placeholder="Password" value="password123" required class="w-full px-4 py-3 border border-gray-200 rounded-xl">
+                <p class="text-xs text-gray-500 mt-1">Default password: password123 (employee can change after login)</p>
+            </div>
+            
+            <!-- Statutory Note -->
+            <div class="bg-gradient-to-r from-blue-50 to-indigo-50 p-4 rounded-xl" id="add_statutory_note">
+                <div class="flex items-start gap-2">
+                    <i class="fas fa-info-circle text-blue-600 mt-0.5"></i>
+                    <p class="text-xs text-blue-800">Malaysian employees: EPF (11%), SOCSO (0.5%), EIS (0.2%) will be deducted automatically.</p>
                 </div>
-                
-                <div class="flex gap-3 pt-3">
-                    <button type="submit" name="add_employee" class="flex-1 bg-gradient-to-r from-blue-600 to-indigo-600 text-white py-3 rounded-xl font-semibold hover:shadow-lg transition transform hover:scale-105">
-                        <i class="fas fa-save mr-2"></i> Save Employee
-                    </button>
-                    <button type="button" onclick="document.getElementById('addModal').classList.add('hidden')" class="flex-1 bg-gray-100 text-gray-700 py-3 rounded-xl font-semibold hover:bg-gray-200 transition">
-                        Cancel
-                    </button>
-                </div>
-            </form>
-        </div>
+            </div>
+            
+            <!-- Buttons -->
+            <div class="flex gap-3 pt-3">
+                <button type="submit" name="add_employee" class="flex-1 bg-gradient-to-r from-blue-600 to-indigo-600 text-white py-3 rounded-xl font-semibold hover:shadow-lg transition transform hover:scale-105">
+                    <i class="fas fa-save mr-2"></i> Save Employee
+                </button>
+                <button type="button" onclick="document.getElementById('addModal').classList.add('hidden')" class="flex-1 bg-gray-100 text-gray-700 py-3 rounded-xl font-semibold hover:bg-gray-200 transition">
+                    Cancel
+                </button>
+            </div>
+        </form>
     </div>
-
+</div>
     <!-- Edit Employee Modal -->
     <div id="editModal" class="hidden fixed inset-0 bg-black/50 backdrop-blur-sm z-50 flex items-center justify-center p-4 overflow-y-auto">
         <div class="bg-white rounded-2xl max-w-md w-full modal-enter shadow-2xl">

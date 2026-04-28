@@ -3,6 +3,38 @@ require_once '../includes/auth.php';
 redirectIfNotAdmin();
 require_once '../includes/db.php';
 
+// ========================================
+// PAGINATION & FILTERS
+// ========================================
+$page = isset($_GET['page']) ? (int)$_GET['page'] : 1;
+$per_page = isset($_GET['per_page']) ? (int)$_GET['per_page'] : 10;
+$search = isset($_GET['search']) ? mysqli_real_escape_string($conn, $_GET['search']) : '';
+$category_filter = isset($_GET['category']) ? (int)$_GET['category'] : '';
+$status_filter = isset($_GET['status']) ? $_GET['status'] : '';
+
+// Build WHERE clause for assets
+$where = "WHERE 1=1";
+if (!empty($search)) {
+    $where .= " AND (a.asset_name LIKE '%$search%' OR a.asset_code LIKE '%$search%' OR a.brand LIKE '%$search%' OR a.model LIKE '%$search%')";
+}
+if (!empty($category_filter)) {
+    $where .= " AND a.category_id = $category_filter";
+}
+if (!empty($status_filter)) {
+    if ($status_filter == 'available') {
+        $where .= " AND a.available_quantity > 0";
+    } elseif ($status_filter == 'outofstock') {
+        $where .= " AND a.available_quantity = 0";
+    }
+}
+
+// Get total count for pagination
+$count_query = "SELECT COUNT(*) as total FROM assets a $where";
+$count_result = mysqli_query($conn, $count_query);
+$total_rows = mysqli_fetch_assoc($count_result)['total'];
+$total_pages = ceil($total_rows / $per_page);
+$offset = ($page - 1) * $per_page;
+
 // Add new asset
 if (isset($_POST['add_asset'])) {
     $asset_code = mysqli_real_escape_string($conn, $_POST['asset_code']);
@@ -115,12 +147,14 @@ $pending_requests = mysqli_query($conn, "SELECT ar.*, e.name, e.employee_id, e.d
     WHERE ar.status = 'pending' 
     ORDER BY ar.created_at ASC");
 
-// Get all assets
+// Get paginated assets with filters
 $assets = mysqli_query($conn, "SELECT a.*, c.category_name, 
     (SELECT SUM(quantity) FROM asset_requests WHERE asset_id = a.id AND status = 'approved' AND returned_date IS NULL) as assigned_out
     FROM assets a 
     JOIN asset_categories c ON a.category_id = c.id 
-    ORDER BY a.status, a.asset_name");
+    $where 
+    ORDER BY a.asset_name 
+    LIMIT $offset, $per_page");
 
 $categories = mysqli_query($conn, "SELECT * FROM asset_categories ORDER BY category_name");
 ?>
@@ -136,35 +170,26 @@ $categories = mysqli_query($conn, "SELECT * FROM asset_categories ORDER BY categ
     <style>
         * { font-family: 'Inter', sans-serif; }
         .sidebar { transition: transform 0.3s ease-in-out; }
-        
-        /* Premium Animations */
         @keyframes fadeInUp {
             from { opacity: 0; transform: translateY(20px); }
             to { opacity: 1; transform: translateY(0); }
         }
         .animate-fadeInUp { animation: fadeInUp 0.4s ease-out; }
-        
-        /* Card Hover */
         .card-hover { transition: all 0.2s ease; }
         .card-hover:hover { transform: translateY(-2px); box-shadow: 0 10px 25px -5px rgba(0,0,0,0.1); }
-        
-        /* Table Row Hover */
         .table-row { transition: all 0.2s ease; }
         .table-row:hover { background-color: #f8fafc; }
-        
-        /* Custom Scrollbar */
         ::-webkit-scrollbar { width: 6px; height: 6px; }
         ::-webkit-scrollbar-track { background: #f1f1f1; border-radius: 10px; }
         ::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 10px; }
     </style>
 </head>
 <body class="bg-gradient-to-br from-gray-50 to-gray-100 min-h-screen pb-20">
-    
+
 <!-- Premium Mobile Header -->
 <div class="bg-gradient-to-r from-slate-900 via-indigo-900 to-slate-900 text-white sticky top-0 z-40 shadow-2xl">
     <div class="flex justify-between items-center px-4 py-4">
         <div class="flex items-center gap-3">
-            <!-- MENU BUTTON - Left side -->
             <button onclick="toggleSidebar()" class="text-white/80 hover:text-white p-2 rounded-full hover:bg-white/10">
                 <i class="fas fa-bars text-xl"></i>
             </button>
@@ -176,7 +201,6 @@ $categories = mysqli_query($conn, "SELECT * FROM asset_categories ORDER BY categ
                 <p class="text-sm font-bold tracking-wide">Admin Portal</p>
             </div>
         </div>
-        <!-- No back button - just empty space or nothing -->
     </div>
 </div>
 
@@ -212,13 +236,13 @@ $categories = mysqli_query($conn, "SELECT * FROM asset_categories ORDER BY categ
         <a href="attendance.php" class="flex items-center gap-3 py-3 px-4 rounded-xl hover:bg-gray-800/30 transition mb-1">
             <i class="fas fa-fingerprint w-5"></i> Attendance
         </a>
-        <a href="manage_assets.php" class="flex items-center gap-3 py-3 px-4 rounded-xl hover:bg-gray-800/30 transition mb-1">
+        <a href="manage_assets.php" class="flex items-center gap-3 py-3 px-4 rounded-xl bg-gray-800/50 mb-1">
             <i class="fas fa-boxes w-5"></i> Asset Management
         </a>
         <a href="manage_gallery.php" class="flex items-center gap-3 py-3 px-4 rounded-xl hover:bg-gray-800/30 transition mb-1">
             <i class="fas fa-images w-5"></i> Gallery Management
         </a>
-        <a href="management.php" class="flex items-center gap-3 py-3 px-4 rounded-xl bg-gray-800/50 mb-1">
+        <a href="management.php" class="flex items-center gap-3 py-3 px-4 rounded-xl hover:bg-gray-800/30 transition mb-1">
             <i class="fas fa-briefcase w-5"></i> Management
         </a>
         <a href="payroll.php" class="flex items-center gap-3 py-3 px-4 rounded-xl hover:bg-gray-800/30 transition mb-1">
@@ -236,143 +260,198 @@ $categories = mysqli_query($conn, "SELECT * FROM asset_categories ORDER BY categ
 
 <div id="overlay" class="fixed inset-0 bg-black/50 z-40 hidden" onclick="toggleSidebar()"></div>
 
-    <!-- Main Content -->
-    <div class="px-4 py-6 pb-24 max-w-7xl mx-auto">
-        
-        <!-- Header -->
-        <div class="mb-6 animate-fadeInUp">
-            <h1 class="text-2xl font-bold text-gray-800">📦 Asset Management</h1>
-            <p class="text-sm text-gray-500 mt-1">Manage company assets, stock quantities, and track assignments</p>
-        </div>
+<!-- Main Content -->
+<div class="px-4 py-6 pb-24 max-w-7xl mx-auto">
+    
+    <!-- Header -->
+    <div class="mb-6 animate-fadeInUp">
+        <h1 class="text-2xl font-bold text-gray-800">📦 Asset Management</h1>
+        <p class="text-sm text-gray-500 mt-1">Manage company assets, stock quantities, and track assignments</p>
+    </div>
 
-        <!-- Stats Cards -->
-        <div class="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
-            <div class="bg-white rounded-xl p-4 shadow-md card-hover">
-                <div class="flex items-center justify-between">
-                    <div>
-                        <p class="text-xs text-gray-500">Total Assets</p>
-                        <p class="text-2xl font-bold text-gray-800"><?php echo $stats['total_assets'] ?? 0; ?></p>
-                    </div>
-                    <div class="w-10 h-10 bg-blue-100 rounded-lg flex items-center justify-center">
-                        <i class="fas fa-boxes text-blue-600"></i>
-                    </div>
+    <!-- Stats Cards -->
+    <div class="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
+        <div class="bg-white rounded-xl p-4 shadow-md card-hover">
+            <div class="flex items-center justify-between">
+                <div>
+                    <p class="text-xs text-gray-500">Total Assets</p>
+                    <p class="text-2xl font-bold text-gray-800"><?php echo $stats['total_assets'] ?? 0; ?></p>
                 </div>
-            </div>
-            <div class="bg-white rounded-xl p-4 shadow-md card-hover">
-                <div class="flex items-center justify-between">
-                    <div>
-                        <p class="text-xs text-gray-500">Total Items</p>
-                        <p class="text-2xl font-bold text-gray-800"><?php echo $stats['total_quantity'] ?? 0; ?></p>
-                    </div>
-                    <div class="w-10 h-10 bg-green-100 rounded-lg flex items-center justify-center">
-                        <i class="fas fa-cubes text-green-600"></i>
-                    </div>
-                </div>
-            </div>
-            <div class="bg-white rounded-xl p-4 shadow-md card-hover">
-                <div class="flex items-center justify-between">
-                    <div>
-                        <p class="text-xs text-gray-500">Available</p>
-                        <p class="text-2xl font-bold text-green-600"><?php echo $stats['total_available'] ?? 0; ?></p>
-                    </div>
-                    <div class="w-10 h-10 bg-green-100 rounded-lg flex items-center justify-center">
-                        <i class="fas fa-check-circle text-green-600"></i>
-                    </div>
-                </div>
-            </div>
-            <div class="bg-white rounded-xl p-4 shadow-md card-hover">
-                <div class="flex items-center justify-between">
-                    <div>
-                        <p class="text-xs text-gray-500">Pending Requests</p>
-                        <p class="text-2xl font-bold text-orange-600"><?php echo mysqli_num_rows($pending_requests); ?></p>
-                    </div>
-                    <div class="w-10 h-10 bg-orange-100 rounded-lg flex items-center justify-center">
-                        <i class="fas fa-clock text-orange-600"></i>
-                    </div>
+                <div class="w-10 h-10 bg-blue-100 rounded-lg flex items-center justify-center">
+                    <i class="fas fa-boxes text-blue-600"></i>
                 </div>
             </div>
         </div>
-
-        <!-- Tabs -->
-        <div class="flex gap-2 mb-6 overflow-x-auto pb-2 border-b border-gray-200">
-            <button onclick="showTab('pending')" id="tabPending" class="px-5 py-2.5 rounded-lg text-sm font-medium transition-all bg-red-600 text-white shadow-sm">
-                <i class="fas fa-clock mr-1"></i> Pending (<?php echo mysqli_num_rows($pending_requests); ?>)
-            </button>
-            <button onclick="showTab('assets')" id="tabAssets" class="px-5 py-2.5 rounded-lg text-sm font-medium transition-all bg-gray-100 text-gray-700 hover:bg-gray-200">
-                <i class="fas fa-boxes mr-1"></i> All Assets
-            </button>
-            <button onclick="showTab('add')" id="tabAdd" class="px-5 py-2.5 rounded-lg text-sm font-medium transition-all bg-gray-100 text-gray-700 hover:bg-gray-200">
-                <i class="fas fa-plus-circle mr-1"></i> Add Asset
-            </button>
+        <div class="bg-white rounded-xl p-4 shadow-md card-hover">
+            <div class="flex items-center justify-between">
+                <div>
+                    <p class="text-xs text-gray-500">Total Items</p>
+                    <p class="text-2xl font-bold text-gray-800"><?php echo $stats['total_quantity'] ?? 0; ?></p>
+                </div>
+                <div class="w-10 h-10 bg-green-100 rounded-lg flex items-center justify-center">
+                    <i class="fas fa-cubes text-green-600"></i>
+                </div>
+            </div>
         </div>
+        <div class="bg-white rounded-xl p-4 shadow-md card-hover">
+            <div class="flex items-center justify-between">
+                <div>
+                    <p class="text-xs text-gray-500">Available</p>
+                    <p class="text-2xl font-bold text-green-600"><?php echo $stats['total_available'] ?? 0; ?></p>
+                </div>
+                <div class="w-10 h-10 bg-green-100 rounded-lg flex items-center justify-center">
+                    <i class="fas fa-check-circle text-green-600"></i>
+                </div>
+            </div>
+        </div>
+        <div class="bg-white rounded-xl p-4 shadow-md card-hover">
+            <div class="flex items-center justify-between">
+                <div>
+                    <p class="text-xs text-gray-500">Pending Requests</p>
+                    <p class="text-2xl font-bold text-orange-600"><?php echo mysqli_num_rows($pending_requests); ?></p>
+                </div>
+                <div class="w-10 h-10 bg-orange-100 rounded-lg flex items-center justify-center">
+                    <i class="fas fa-clock text-orange-600"></i>
+                </div>
+            </div>
+        </div>
+    </div>
 
-        <!-- Pending Requests Tab -->
-        <div id="pendingTab" class="animate-fadeInUp">
-            <?php if(mysqli_num_rows($pending_requests) > 0): ?>
-                <div class="space-y-3">
-                    <?php while($req = mysqli_fetch_assoc($pending_requests)): ?>
-                    <div class="bg-white rounded-xl shadow-md p-4 card-hover">
-                        <div class="flex flex-col md:flex-row justify-between gap-3">
-                            <div class="flex-1">
-                                <div class="flex items-center gap-2 mb-2">
-                                    <div class="w-8 h-8 rounded-full bg-blue-100 flex items-center justify-center">
-                                        <i class="fas fa-user text-blue-600 text-sm"></i>
-                                    </div>
-                                    <div>
-                                        <p class="font-semibold text-gray-800"><?php echo $req['name']; ?></p>
-                                        <p class="text-xs text-gray-500"><?php echo $req['employee_id']; ?> • <?php echo $req['department']; ?></p>
-                                    </div>
+    <!-- Tabs -->
+    <div class="flex gap-2 mb-6 overflow-x-auto pb-2 border-b border-gray-200">
+        <button onclick="showTab('pending')" id="tabPending" class="px-5 py-2.5 rounded-lg text-sm font-medium transition-all bg-red-600 text-white shadow-sm">
+            <i class="fas fa-clock mr-1"></i> Pending (<?php echo mysqli_num_rows($pending_requests); ?>)
+        </button>
+        <button onclick="showTab('assets')" id="tabAssets" class="px-5 py-2.5 rounded-lg text-sm font-medium transition-all bg-gray-100 text-gray-700 hover:bg-gray-200">
+            <i class="fas fa-boxes mr-1"></i> All Assets
+        </button>
+        <button onclick="showTab('add')" id="tabAdd" class="px-5 py-2.5 rounded-lg text-sm font-medium transition-all bg-gray-100 text-gray-700 hover:bg-gray-200">
+            <i class="fas fa-plus-circle mr-1"></i> Add Asset
+        </button>
+    </div>
+
+    <!-- Pending Requests Tab -->
+    <div id="pendingTab" class="animate-fadeInUp">
+        <?php if(mysqli_num_rows($pending_requests) > 0): ?>
+            <div class="space-y-3">
+                <?php while($req = mysqli_fetch_assoc($pending_requests)): ?>
+                <div class="bg-white rounded-xl shadow-md p-4 card-hover">
+                    <div class="flex flex-col md:flex-row justify-between gap-3">
+                        <div class="flex-1">
+                            <div class="flex items-center gap-2 mb-2">
+                                <div class="w-8 h-8 rounded-full bg-blue-100 flex items-center justify-center">
+                                    <i class="fas fa-user text-blue-600 text-sm"></i>
                                 </div>
-                                <div class="grid grid-cols-2 md:grid-cols-4 gap-2 text-sm mt-2">
-                                    <div><span class="text-gray-500">Asset:</span> <span class="font-medium"><?php echo $req['asset_name']; ?></span></div>
-                                    <div><span class="text-gray-500">Qty:</span> <span class="font-medium"><?php echo $req['quantity']; ?></span></div>
-                                    <div><span class="text-gray-500">From:</span> <span class="font-medium"><?php echo date('d M Y', strtotime($req['start_date'])); ?></span></div>
-                                    <div><span class="text-gray-500">To:</span> <span class="font-medium"><?php echo date('d M Y', strtotime($req['end_date'])); ?></span></div>
+                                <div>
+                                    <p class="font-semibold text-gray-800"><?php echo $req['name']; ?></p>
+                                    <p class="text-xs text-gray-500"><?php echo $req['employee_id']; ?> • <?php echo $req['department']; ?></p>
                                 </div>
-                                <?php if($req['purpose']): ?>
-                                    <p class="text-xs text-gray-500 mt-2"><span class="font-medium">Purpose:</span> <?php echo substr($req['purpose'], 0, 80); ?></p>
-                                <?php endif; ?>
                             </div>
-                            <div class="flex gap-2">
-                                <a href="?action=approve&request_id=<?php echo $req['id']; ?>" class="bg-green-600 hover:bg-green-700 text-white px-4 py-2 rounded-lg text-sm font-medium transition flex items-center gap-1">
-                                    <i class="fas fa-check"></i> Approve
-                                </a>
-                                <a href="?action=reject&request_id=<?php echo $req['id']; ?>" class="bg-red-600 hover:bg-red-700 text-white px-4 py-2 rounded-lg text-sm font-medium transition flex items-center gap-1">
-                                    <i class="fas fa-times"></i> Reject
-                                </a>
+                            <div class="grid grid-cols-2 md:grid-cols-4 gap-2 text-sm mt-2">
+                                <div><span class="text-gray-500">Asset:</span> <span class="font-medium"><?php echo $req['asset_name']; ?></span></div>
+                                <div><span class="text-gray-500">Qty:</span> <span class="font-medium"><?php echo $req['quantity']; ?></span></div>
+                                <div><span class="text-gray-500">From:</span> <span class="font-medium"><?php echo date('d M Y', strtotime($req['start_date'])); ?></span></div>
+                                <div><span class="text-gray-500">To:</span> <span class="font-medium"><?php echo date('d M Y', strtotime($req['end_date'])); ?></span></div>
                             </div>
+                            <?php if($req['purpose']): ?>
+                                <p class="text-xs text-gray-500 mt-2"><span class="font-medium">Purpose:</span> <?php echo substr($req['purpose'], 0, 80); ?></p>
+                            <?php endif; ?>
+                        </div>
+                        <div class="flex gap-2">
+                            <a href="?action=approve&request_id=<?php echo $req['id']; ?>" class="bg-green-600 hover:bg-green-700 text-white px-4 py-2 rounded-lg text-sm font-medium transition flex items-center gap-1">
+                                <i class="fas fa-check"></i> Approve
+                            </a>
+                            <a href="?action=reject&request_id=<?php echo $req['id']; ?>" class="bg-red-600 hover:bg-red-700 text-white px-4 py-2 rounded-lg text-sm font-medium transition flex items-center gap-1">
+                                <i class="fas fa-times"></i> Reject
+                            </a>
                         </div>
                     </div>
-                    <?php endwhile; ?>
                 </div>
-            <?php else: ?>
-                <div class="bg-white rounded-xl shadow-md p-12 text-center">
-                    <div class="w-16 h-16 bg-green-100 rounded-full flex items-center justify-center mx-auto mb-3">
-                        <i class="fas fa-check-circle text-2xl text-green-600"></i>
+                <?php endwhile; ?>
+            </div>
+        <?php else: ?>
+            <div class="bg-white rounded-xl shadow-md p-12 text-center">
+                <div class="w-16 h-16 bg-green-100 rounded-full flex items-center justify-center mx-auto mb-3">
+                    <i class="fas fa-check-circle text-2xl text-green-600"></i>
+                </div>
+                <p class="text-gray-500 font-medium">No pending requests</p>
+                <p class="text-xs text-gray-400 mt-1">All asset requests have been processed</p>
+            </div>
+        <?php endif; ?>
+    </div>
+
+    <!-- All Assets Tab with Search & Filter -->
+    <div id="assetsTab" class="hidden animate-fadeInUp">
+        <!-- Search & Filter Bar -->
+        <div class="bg-white rounded-xl shadow-md p-4 mb-4">
+            <form method="GET" class="grid grid-cols-1 md:grid-cols-5 gap-3">
+                <input type="hidden" name="tab" value="assets">
+                <div class="md:col-span-2">
+                    <div class="relative">
+                        <i class="fas fa-search absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 text-sm"></i>
+                        <input type="text" name="search" value="<?php echo htmlspecialchars($search); ?>" 
+                               placeholder="Search by name, code, brand..." 
+                               class="w-full pl-9 pr-3 py-2 border border-gray-200 rounded-lg text-sm">
                     </div>
-                    <p class="text-gray-500 font-medium">No pending requests</p>
-                    <p class="text-xs text-gray-400 mt-1">All asset requests have been processed</p>
                 </div>
-            <?php endif; ?>
+                <div>
+                    <select name="category" class="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm">
+                        <option value="">All Categories</option>
+                        <?php mysqli_data_seek($categories, 0); ?>
+                        <?php while($cat = mysqli_fetch_assoc($categories)): ?>
+                            <option value="<?php echo $cat['id']; ?>" <?php echo $category_filter == $cat['id'] ? 'selected' : ''; ?>>
+                                <?php echo $cat['category_name']; ?>
+                            </option>
+                        <?php endwhile; ?>
+                    </select>
+                </div>
+                <div>
+                    <select name="status" class="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm">
+                        <option value="">All Status</option>
+                        <option value="available" <?php echo $status_filter == 'available' ? 'selected' : ''; ?>>In Stock</option>
+                        <option value="outofstock" <?php echo $status_filter == 'outofstock' ? 'selected' : ''; ?>>Out of Stock</option>
+                    </select>
+                </div>
+                <div class="flex gap-2">
+                    <button type="submit" class="flex-1 bg-blue-600 text-white px-3 py-2 rounded-lg text-sm hover:bg-blue-700">Filter</button>
+                    <a href="?tab=assets" class="flex-1 bg-gray-200 text-gray-700 px-3 py-2 rounded-lg text-sm text-center hover:bg-gray-300">Reset</a>
+                </div>
+            </form>
         </div>
 
-        <!-- All Assets Tab -->
-        <div id="assetsTab" class="hidden animate-fadeInUp">
-            <div class="bg-white rounded-xl shadow-md overflow-hidden">
-                <div class="overflow-x-auto">
-                    <table class="w-full">
-                        <thead class="bg-gray-800 text-white">
-                            <tr>
-                                <th class="p-3 text-left text-xs font-semibold">Code</th>
-                                <th class="p-3 text-left text-xs font-semibold">Asset Name</th>
-                                <th class="p-3 text-left text-xs font-semibold">Category</th>
-                                <th class="p-3 text-center text-xs font-semibold">Total</th>
-                                <th class="p-3 text-center text-xs font-semibold">Available</th>
-                                <th class="p-3 text-center text-xs font-semibold">Status</th>
-                                <th class="p-3 text-center text-xs font-semibold">Actions</th>
-                            </tr>
-                        </thead>
-                        <tbody class="divide-y divide-gray-100">
+        <!-- Results Summary & Per Page -->
+        <div class="flex justify-between items-center mb-4">
+            <p class="text-sm text-gray-500">
+                Showing <?php echo $offset + 1; ?> to <?php echo min($offset + $per_page, $total_rows); ?> of <?php echo $total_rows; ?> assets
+            </p>
+            <div class="flex items-center gap-2">
+                <span class="text-xs text-gray-500">Show:</span>
+                <select onchange="window.location.href=this.value" class="text-sm border rounded px-2 py-1">
+                    <option value="<?php echo "?tab=assets&per_page=10&page=1&search=" . urlencode($search) . "&category=$category_filter&status=$status_filter"; ?>" <?php echo $per_page == 10 ? 'selected' : ''; ?>>10</option>
+                    <option value="<?php echo "?tab=assets&per_page=25&page=1&search=" . urlencode($search) . "&category=$category_filter&status=$status_filter"; ?>" <?php echo $per_page == 25 ? 'selected' : ''; ?>>25</option>
+                    <option value="<?php echo "?tab=assets&per_page=50&page=1&search=" . urlencode($search) . "&category=$category_filter&status=$status_filter"; ?>" <?php echo $per_page == 50 ? 'selected' : ''; ?>>50</option>
+                    <option value="<?php echo "?tab=assets&per_page=100&page=1&search=" . urlencode($search) . "&category=$category_filter&status=$status_filter"; ?>" <?php echo $per_page == 100 ? 'selected' : ''; ?>>100</option>
+                </select>
+            </div>
+        </div>
+
+        <!-- Assets Table -->
+        <div class="bg-white rounded-xl shadow-md overflow-hidden">
+            <div class="overflow-x-auto">
+                <table class="w-full">
+                    <thead class="bg-gray-800 text-white">
+                        <tr>
+                            <th class="p-3 text-left text-xs font-semibold">Code</th>
+                            <th class="p-3 text-left text-xs font-semibold">Asset Name</th>
+                            <th class="p-3 text-left text-xs font-semibold">Category</th>
+                            <th class="p-3 text-center text-xs font-semibold">Total</th>
+                            <th class="p-3 text-center text-xs font-semibold">Available</th>
+                            <th class="p-3 text-center text-xs font-semibold">Status</th>
+                            <th class="p-3 text-center text-xs font-semibold">Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody class="divide-y divide-gray-100">
+                        <?php if(mysqli_num_rows($assets) > 0): ?>
                             <?php while($asset = mysqli_fetch_assoc($assets)): ?>
                             <tr class="table-row">
                                 <td class="p-3 text-sm font-mono"><?php echo $asset['asset_code']; ?></td>
@@ -396,177 +475,220 @@ $categories = mysqli_query($conn, "SELECT * FROM asset_categories ORDER BY categ
                                     <a href="?delete=<?php echo $asset['id']; ?>" onclick="return confirm('Delete this asset?')" class="text-red-600 hover:text-red-800 text-sm">
                                         <i class="fas fa-trash"></i>
                                     </a>
-                                </td>
-                            </tr>
+                                 </td>
+                             </tr>
                             <?php endwhile; ?>
-                        </tbody>
-                    </table>
-                </div>
+                        <?php else: ?>
+                            <tr>
+                                <td colspan="7" class="p-8 text-center text-gray-500">No assets found matching your criteria</td>
+                            </tr>
+                        <?php endif; ?>
+                    </tbody>
+                </table>
             </div>
         </div>
 
-        <!-- Add Asset Tab -->
-        <div id="addTab" class="hidden animate-fadeInUp">
-            <div class="bg-white rounded-xl shadow-md p-6 max-w-3xl mx-auto">
-                <div class="text-center mb-5">
-                    <div class="w-16 h-16 bg-blue-100 rounded-full flex items-center justify-center mx-auto mb-3">
-                        <i class="fas fa-plus-circle text-2xl text-blue-600"></i>
-                    </div>
-                    <h2 class="text-xl font-bold text-gray-800">Add New Asset</h2>
-                    <p class="text-xs text-gray-500 mt-1">Enter asset details to add to inventory</p>
-                </div>
+        <!-- Pagination -->
+        <?php if($total_pages > 1): ?>
+        <div class="flex justify-between items-center mt-4 bg-white rounded-xl shadow-md px-4 py-3">
+            <p class="text-sm text-gray-500">
+                Page <?php echo $page; ?> of <?php echo $total_pages; ?>
+            </p>
+            <div class="flex gap-1">
+                <?php if($page > 1): ?>
+                    <a href="?tab=assets&page=1&per_page=<?php echo $per_page; ?>&search=<?php echo urlencode($search); ?>&category=<?php echo $category_filter; ?>&status=<?php echo $status_filter; ?>" class="px-3 py-1 bg-gray-100 border rounded-lg text-sm hover:bg-gray-200">First</a>
+                    <a href="?tab=assets&page=<?php echo $page-1; ?>&per_page=<?php echo $per_page; ?>&search=<?php echo urlencode($search); ?>&category=<?php echo $category_filter; ?>&status=<?php echo $status_filter; ?>" class="px-3 py-1 bg-gray-100 border rounded-lg text-sm hover:bg-gray-200">Previous</a>
+                <?php endif; ?>
                 
-                <form method="POST" class="space-y-4">
-                    <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
-                        <div>
-                            <label class="block text-gray-700 text-sm font-medium mb-1">Asset Code <span class="text-red-500">*</span></label>
-                            <input type="text" name="asset_code" required placeholder="e.g., LAP-001" class="w-full px-4 py-2.5 border border-gray-200 rounded-lg focus:border-blue-500 focus:outline-none">
-                        </div>
-                        <div>
-                            <label class="block text-gray-700 text-sm font-medium mb-1">Asset Name <span class="text-red-500">*</span></label>
-                            <input type="text" name="asset_name" required placeholder="e.g., Dell XPS 15" class="w-full px-4 py-2.5 border border-gray-200 rounded-lg focus:border-blue-500 focus:outline-none">
-                        </div>
-                        <div>
-                            <label class="block text-gray-700 text-sm font-medium mb-1">Quantity <span class="text-red-500">*</span></label>
-                            <input type="number" name="quantity" required value="1" min="1" class="w-full px-4 py-2.5 border border-gray-200 rounded-lg focus:border-blue-500 focus:outline-none">
-                        </div>
-                        <div>
-                            <label class="block text-gray-700 text-sm font-medium mb-1">Category <span class="text-red-500">*</span></label>
-                            <select name="category_id" required class="w-full px-4 py-2.5 border border-gray-200 rounded-lg focus:border-blue-500 focus:outline-none">
-                                <?php mysqli_data_seek($categories, 0); ?>
-                                <?php while($cat = mysqli_fetch_assoc($categories)): ?>
-                                    <option value="<?php echo $cat['id']; ?>"><?php echo $cat['category_name']; ?></option>
-                                <?php endwhile; ?>
-                            </select>
-                        </div>
-                        <div>
-                            <label class="block text-gray-700 text-sm font-medium mb-1">Brand</label>
-                            <input type="text" name="brand" placeholder="e.g., Dell, Apple" class="w-full px-4 py-2.5 border border-gray-200 rounded-lg focus:border-blue-500 focus:outline-none">
-                        </div>
-                        <div>
-                            <label class="block text-gray-700 text-sm font-medium mb-1">Model</label>
-                            <input type="text" name="model" placeholder="e.g., XPS 15" class="w-full px-4 py-2.5 border border-gray-200 rounded-lg focus:border-blue-500 focus:outline-none">
-                        </div>
-                        <div>
-                            <label class="block text-gray-700 text-sm font-medium mb-1">Serial Number</label>
-                            <input type="text" name="serial_number" placeholder="Serial/IMEI" class="w-full px-4 py-2.5 border border-gray-200 rounded-lg focus:border-blue-500 focus:outline-none">
-                        </div>
-                        <div>
-                            <label class="block text-gray-700 text-sm font-medium mb-1">Purchase Date</label>
-                            <input type="date" name="purchase_date" class="w-full px-4 py-2.5 border border-gray-200 rounded-lg focus:border-blue-500 focus:outline-none">
-                        </div>
-                        <div>
-                            <label class="block text-gray-700 text-sm font-medium mb-1">Purchase Price (RM)</label>
-                            <input type="number" step="0.01" name="purchase_price" placeholder="0.00" class="w-full px-4 py-2.5 border border-gray-200 rounded-lg focus:border-blue-500 focus:outline-none">
-                        </div>
-                        <div class="md:col-span-2">
-                            <label class="block text-gray-700 text-sm font-medium mb-1">Location</label>
-                            <input type="text" name="location" placeholder="e.g., IT Store Room" class="w-full px-4 py-2.5 border border-gray-200 rounded-lg focus:border-blue-500 focus:outline-none">
-                        </div>
-                    </div>
-                    <button type="submit" name="add_asset" class="w-full bg-blue-600 hover:bg-blue-700 text-white py-3 rounded-lg font-semibold transition mt-2">
-                        <i class="fas fa-save mr-2"></i> Add Asset to Inventory
-                    </button>
-                </form>
+                <span class="px-3 py-1 bg-blue-600 text-white rounded-lg text-sm"><?php echo $page; ?></span>
+                
+                <?php if($page < $total_pages): ?>
+                    <a href="?tab=assets&page=<?php echo $page+1; ?>&per_page=<?php echo $per_page; ?>&search=<?php echo urlencode($search); ?>&category=<?php echo $category_filter; ?>&status=<?php echo $status_filter; ?>" class="px-3 py-1 bg-gray-100 border rounded-lg text-sm hover:bg-gray-200">Next</a>
+                    <a href="?tab=assets&page=<?php echo $total_pages; ?>&per_page=<?php echo $per_page; ?>&search=<?php echo urlencode($search); ?>&category=<?php echo $category_filter; ?>&status=<?php echo $status_filter; ?>" class="px-3 py-1 bg-gray-100 border rounded-lg text-sm hover:bg-gray-200">Last</a>
+                <?php endif; ?>
             </div>
         </div>
+        <?php endif; ?>
     </div>
 
-    <!-- Update Quantity Modal -->
-    <div id="quantityModal" class="hidden fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
-        <div class="bg-white rounded-xl max-w-md w-full">
-            <div class="p-4 border-b flex justify-between items-center">
-                <h2 class="text-lg font-bold">Update Stock Quantity</h2>
-                <button onclick="closeQuantityModal()" class="text-gray-400 hover:text-gray-600">
-                    <i class="fas fa-times text-xl"></i>
-                </button>
+    <!-- Add Asset Tab -->
+    <div id="addTab" class="hidden animate-fadeInUp">
+        <div class="bg-white rounded-xl shadow-md p-6 max-w-3xl mx-auto">
+            <div class="text-center mb-5">
+                <div class="w-16 h-16 bg-blue-100 rounded-full flex items-center justify-center mx-auto mb-3">
+                    <i class="fas fa-plus-circle text-2xl text-blue-600"></i>
+                </div>
+                <h2 class="text-xl font-bold text-gray-800">Add New Asset</h2>
+                <p class="text-xs text-gray-500 mt-1">Enter asset details to add to inventory</p>
             </div>
-            <form method="POST" class="p-4 space-y-4">
-                <input type="hidden" name="asset_id" id="qty_asset_id">
-                <div class="bg-blue-50 p-3 rounded-lg text-center">
-                    <p class="font-medium text-gray-800" id="qty_asset_name"></p>
+            
+            <form method="POST" class="space-y-4">
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div>
+                        <label class="block text-gray-700 text-sm font-medium mb-1">Asset Code <span class="text-red-500">*</span></label>
+                        <input type="text" name="asset_code" required placeholder="e.g., LAP-001" class="w-full px-4 py-2.5 border border-gray-200 rounded-lg focus:border-blue-500 focus:outline-none">
+                    </div>
+                    <div>
+                        <label class="block text-gray-700 text-sm font-medium mb-1">Asset Name <span class="text-red-500">*</span></label>
+                        <input type="text" name="asset_name" required placeholder="e.g., Dell XPS 15" class="w-full px-4 py-2.5 border border-gray-200 rounded-lg focus:border-blue-500 focus:outline-none">
+                    </div>
+                    <div>
+                        <label class="block text-gray-700 text-sm font-medium mb-1">Quantity <span class="text-red-500">*</span></label>
+                        <input type="number" name="quantity" required value="1" min="1" class="w-full px-4 py-2.5 border border-gray-200 rounded-lg focus:border-blue-500 focus:outline-none">
+                    </div>
+                    <div>
+                        <label class="block text-gray-700 text-sm font-medium mb-1">Category <span class="text-red-500">*</span></label>
+                        <select name="category_id" required class="w-full px-4 py-2.5 border border-gray-200 rounded-lg focus:border-blue-500 focus:outline-none">
+                            <?php mysqli_data_seek($categories, 0); ?>
+                            <?php while($cat = mysqli_fetch_assoc($categories)): ?>
+                                <option value="<?php echo $cat['id']; ?>"><?php echo $cat['category_name']; ?></option>
+                            <?php endwhile; ?>
+                        </select>
+                    </div>
+                    <div>
+                        <label class="block text-gray-700 text-sm font-medium mb-1">Brand</label>
+                        <input type="text" name="brand" placeholder="e.g., Dell, Apple" class="w-full px-4 py-2.5 border border-gray-200 rounded-lg focus:border-blue-500 focus:outline-none">
+                    </div>
+                    <div>
+                        <label class="block text-gray-700 text-sm font-medium mb-1">Model</label>
+                        <input type="text" name="model" placeholder="e.g., XPS 15" class="w-full px-4 py-2.5 border border-gray-200 rounded-lg focus:border-blue-500 focus:outline-none">
+                    </div>
+                    <div>
+                        <label class="block text-gray-700 text-sm font-medium mb-1">Serial Number</label>
+                        <input type="text" name="serial_number" placeholder="Serial/IMEI" class="w-full px-4 py-2.5 border border-gray-200 rounded-lg focus:border-blue-500 focus:outline-none">
+                    </div>
+                    <div>
+                        <label class="block text-gray-700 text-sm font-medium mb-1">Purchase Date</label>
+                        <input type="date" name="purchase_date" class="w-full px-4 py-2.5 border border-gray-200 rounded-lg focus:border-blue-500 focus:outline-none">
+                    </div>
+                    <div>
+                        <label class="block text-gray-700 text-sm font-medium mb-1">Purchase Price (RM)</label>
+                        <input type="number" step="0.01" name="purchase_price" placeholder="0.00" class="w-full px-4 py-2.5 border border-gray-200 rounded-lg focus:border-blue-500 focus:outline-none">
+                    </div>
+                    <div class="md:col-span-2">
+                        <label class="block text-gray-700 text-sm font-medium mb-1">Location</label>
+                        <input type="text" name="location" placeholder="e.g., IT Store Room" class="w-full px-4 py-2.5 border border-gray-200 rounded-lg focus:border-blue-500 focus:outline-none">
+                    </div>
                 </div>
-                <div>
-                    <label class="block text-gray-700 text-sm font-medium mb-1">New Total Quantity</label>
-                    <input type="number" name="new_quantity" id="new_quantity" required min="0" class="w-full px-4 py-2.5 border border-gray-200 rounded-lg focus:border-blue-500 focus:outline-none">
-                    <p class="text-xs text-gray-500 mt-1">Available quantity will auto-adjust based on assigned items</p>
-                </div>
-                <button type="submit" name="update_quantity" class="w-full bg-blue-600 hover:bg-blue-700 text-white py-2.5 rounded-lg font-semibold transition">
-                    Update Quantity
+                <button type="submit" name="add_asset" class="w-full bg-blue-600 hover:bg-blue-700 text-white py-3 rounded-lg font-semibold transition mt-2">
+                    <i class="fas fa-save mr-2"></i> Add Asset to Inventory
                 </button>
             </form>
         </div>
     </div>
+</div>
 
-    <!-- Mobile Bottom Navigation -->
-    <div class="fixed bottom-0 left-0 right-0 bg-white border-t border-gray-200 md:hidden shadow-lg z-20">
-        <div class="flex justify-around py-2">
-            <a href="dashboard.php" class="flex flex-col items-center py-1 px-3 text-gray-500">
-                <i class="fas fa-home text-xl"></i>
-                <span class="text-xs mt-1">Home</span>
-            </a>
-            <a href="employees.php" class="flex flex-col items-center py-1 px-3 text-gray-500">
-                <i class="fas fa-users text-xl"></i>
-                <span class="text-xs mt-1">Staff</span>
-            </a>
-            <a href="manage_assets.php" class="flex flex-col items-center py-1 px-3 text-blue-600">
-                <i class="fas fa-boxes text-xl"></i>
-                <span class="text-xs mt-1">Assets</span>
-            </a>
-            <a href="payroll.php" class="flex flex-col items-center py-1 px-3 text-gray-500">
-                <i class="fas fa-file-invoice-dollar text-xl"></i>
-                <span class="text-xs mt-1">Payroll</span>
-            </a>
+<!-- Update Quantity Modal -->
+<div id="quantityModal" class="hidden fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
+    <div class="bg-white rounded-xl max-w-md w-full">
+        <div class="p-4 border-b flex justify-between items-center">
+            <h2 class="text-lg font-bold">Update Stock Quantity</h2>
+            <button onclick="closeQuantityModal()" class="text-gray-400 hover:text-gray-600">
+                <i class="fas fa-times text-xl"></i>
+            </button>
         </div>
+        <form method="POST" class="p-4 space-y-4">
+            <input type="hidden" name="asset_id" id="qty_asset_id">
+            <div class="bg-blue-50 p-3 rounded-lg text-center">
+                <p class="font-medium text-gray-800" id="qty_asset_name"></p>
+            </div>
+            <div>
+                <label class="block text-gray-700 text-sm font-medium mb-1">New Total Quantity</label>
+                <input type="number" name="new_quantity" id="new_quantity" required min="0" class="w-full px-4 py-2.5 border border-gray-200 rounded-lg focus:border-blue-500 focus:outline-none">
+                <p class="text-xs text-gray-500 mt-1">Available quantity will auto-adjust based on assigned items</p>
+            </div>
+            <button type="submit" name="update_quantity" class="w-full bg-blue-600 hover:bg-blue-700 text-white py-2.5 rounded-lg font-semibold transition">
+                Update Quantity
+            </button>
+        </form>
     </div>
+</div>
 
-    <script>
-        function toggleSidebar() {
-            document.getElementById('sidebar').classList.toggle('-translate-x-full');
-            document.getElementById('overlay').classList.toggle('hidden');
+<!-- Mobile Bottom Navigation -->
+<div class="fixed bottom-0 left-0 right-0 bg-white border-t border-gray-200 md:hidden shadow-lg z-20">
+    <div class="flex justify-around py-2">
+        <a href="dashboard.php" class="flex flex-col items-center py-1 px-3 text-gray-500">
+            <i class="fas fa-home text-xl"></i>
+            <span class="text-xs mt-1">Home</span>
+        </a>
+        <a href="employees.php" class="flex flex-col items-center py-1 px-3 text-gray-500">
+            <i class="fas fa-users text-xl"></i>
+            <span class="text-xs mt-1">Staff</span>
+        </a>
+        <a href="manage_assets.php" class="flex flex-col items-center py-1 px-3 text-blue-600">
+            <i class="fas fa-boxes text-xl"></i>
+            <span class="text-xs mt-1">Assets</span>
+        </a>
+        <a href="payroll.php" class="flex flex-col items-center py-1 px-3 text-gray-500">
+            <i class="fas fa-file-invoice-dollar text-xl"></i>
+            <span class="text-xs mt-1">Payroll</span>
+        </a>
+    </div>
+</div>
+
+<script>
+    function toggleSidebar() {
+        document.getElementById('sidebar').classList.toggle('-translate-x-full');
+        document.getElementById('overlay').classList.toggle('hidden');
+    }
+    
+    // Check URL parameter for active tab
+    document.addEventListener('DOMContentLoaded', function() {
+        const urlParams = new URLSearchParams(window.location.search);
+        const tab = urlParams.get('tab');
+        if (tab === 'assets') {
+            showTab('assets');
+        } else if (tab === 'add') {
+            showTab('add');
+        } else {
+            showTab('pending');
         }
+    });
+    
+    function showTab(tab) {
+        const pending = document.getElementById('pendingTab');
+        const assets = document.getElementById('assetsTab');
+        const add = document.getElementById('addTab');
+        const tabPending = document.getElementById('tabPending');
+        const tabAssets = document.getElementById('tabAssets');
+        const tabAdd = document.getElementById('tabAdd');
         
-        function showTab(tab) {
-            const pending = document.getElementById('pendingTab');
-            const assets = document.getElementById('assetsTab');
-            const add = document.getElementById('addTab');
-            const tabPending = document.getElementById('tabPending');
-            const tabAssets = document.getElementById('tabAssets');
-            const tabAdd = document.getElementById('tabAdd');
-            
-            // Reset all tabs
-            const tabs = [tabPending, tabAssets, tabAdd];
-            tabs.forEach(t => {
+        // Reset all tabs
+        const tabs = [tabPending, tabAssets, tabAdd];
+        tabs.forEach(t => {
+            if (t) {
                 t.className = 'px-5 py-2.5 rounded-lg text-sm font-medium transition-all bg-gray-100 text-gray-700 hover:bg-gray-200';
-            });
-            
-            if (tab === 'pending') {
-                pending.classList.remove('hidden');
-                assets.classList.add('hidden');
-                add.classList.add('hidden');
-                tabPending.className = 'px-5 py-2.5 rounded-lg text-sm font-medium transition-all bg-red-600 text-white shadow-sm';
-            } else if (tab === 'assets') {
-                pending.classList.add('hidden');
-                assets.classList.remove('hidden');
-                add.classList.add('hidden');
-                tabAssets.className = 'px-5 py-2.5 rounded-lg text-sm font-medium transition-all bg-blue-600 text-white shadow-sm';
-            } else {
-                pending.classList.add('hidden');
-                assets.classList.add('hidden');
-                add.classList.remove('hidden');
-                tabAdd.className = 'px-5 py-2.5 rounded-lg text-sm font-medium transition-all bg-green-600 text-white shadow-sm';
             }
-        }
+        });
         
-        function openQuantityModal(assetId, currentQty) {
-            document.getElementById('qty_asset_id').value = assetId;
-            document.getElementById('new_quantity').value = currentQty;
-            document.getElementById('quantityModal').classList.remove('hidden');
+        if (tab === 'pending') {
+            pending.classList.remove('hidden');
+            assets.classList.add('hidden');
+            add.classList.add('hidden');
+            if (tabPending) tabPending.className = 'px-5 py-2.5 rounded-lg text-sm font-medium transition-all bg-red-600 text-white shadow-sm';
+        } else if (tab === 'assets') {
+            pending.classList.add('hidden');
+            assets.classList.remove('hidden');
+            add.classList.add('hidden');
+            if (tabAssets) tabAssets.className = 'px-5 py-2.5 rounded-lg text-sm font-medium transition-all bg-blue-600 text-white shadow-sm';
+        } else {
+            pending.classList.add('hidden');
+            assets.classList.add('hidden');
+            add.classList.remove('hidden');
+            if (tabAdd) tabAdd.className = 'px-5 py-2.5 rounded-lg text-sm font-medium transition-all bg-green-600 text-white shadow-sm';
         }
-        
-        function closeQuantityModal() {
-            document.getElementById('quantityModal').classList.add('hidden');
-        }
-    </script>
+    }
+    
+    function openQuantityModal(assetId, currentQty, assetName) {
+        document.getElementById('qty_asset_id').value = assetId;
+        document.getElementById('new_quantity').value = currentQty;
+        document.getElementById('qty_asset_name').innerHTML = assetName || 'Asset';
+        document.getElementById('quantityModal').classList.remove('hidden');
+    }
+    
+    function closeQuantityModal() {
+        document.getElementById('quantityModal').classList.add('hidden');
+    }
+</script>
 </body>
 </html>

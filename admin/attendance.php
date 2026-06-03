@@ -2,44 +2,115 @@
 require_once '../includes/auth.php';
 redirectIfNotAdmin();
 require_once '../includes/db.php';
+require_once '../includes/functions.php';
+require_once '../includes/toast_fn.php';
 
 // ========================================
-// PAGINATION & FILTERS
+// MANUAL ATTENDANCE ENTRY
 // ========================================
-$page = isset($_GET['page']) ? (int)$_GET['page'] : 1;
-$per_page = isset($_GET['per_page']) ? (int)$_GET['per_page'] : 20;
+if (isset($_POST['add_manual_attendance'])) {
+    $employee_id = intval($_POST['manual_employee_id']);
+    $attendance_date = mysqli_real_escape_string($conn, $_POST['attendance_date']);
+    $clock_in = mysqli_real_escape_string($conn, $_POST['clock_in']);
+    $clock_out = mysqli_real_escape_string($conn, $_POST['clock_out']);
+    
+    $check_query = mysqli_query($conn, "SELECT id FROM attendance WHERE employee_id = $employee_id AND date = '$attendance_date'");
+    
+    $status = 'present';
+    if (!empty($clock_in) && strtotime($clock_in) > strtotime('10:00:00')) {
+        $status = 'late';
+    }
+    
+    if (mysqli_num_rows($check_query) > 0) {
+        $update_query = "UPDATE attendance SET 
+                         clock_in = " . ($clock_in ? "'$clock_in'" : "NULL") . ",
+                         clock_out = " . ($clock_out ? "'$clock_out'" : "NULL") . ",
+                         status = '$status'
+                         WHERE employee_id = $employee_id AND date = '$attendance_date'";
+        mysqli_query($conn, $update_query);
+        $manual_message = '<div class="bg-green-100 border-l-4 border-green-500 text-green-700 px-4 py-3 rounded-xl text-sm animate-fadeIn">
+                            <i class="fas fa-check-circle mr-2"></i> Attendance updated successfully!
+                           </div>';
+    } else {
+        $insert_query = "INSERT INTO attendance (employee_id, date, clock_in, clock_out, status) 
+                         VALUES ($employee_id, '$attendance_date', " . ($clock_in ? "'$clock_in'" : "NULL") . ", " . ($clock_out ? "'$clock_out'" : "NULL") . ", '$status')";
+        mysqli_query($conn, $insert_query);
+        $manual_message = '<div class="bg-green-100 border-l-4 border-green-500 text-green-700 px-4 py-3 rounded-xl text-sm animate-fadeIn">
+                            <i class="fas fa-check-circle mr-2"></i> Attendance recorded successfully!
+                           </div>';
+    }
+}
+
+// ========================================
+// DELETE ATTENDANCE RECORD
+// ========================================
+if (isset($_GET['delete_attendance'])) {
+    $attendance_id = intval($_GET['delete_attendance']);
+    $safe_date = preg_replace('/[^0-9\-]/', '', $_GET['date'] ?? date('Y-m-d'));
+    mysqli_query($conn, "DELETE FROM attendance WHERE id = $attendance_id");
+    header("Location: attendance.php?date=" . $safe_date);
+    exit();
+}
+
+// ========================================
+// EDIT ATTENDANCE
+// ========================================
+if (isset($_POST['edit_attendance'])) {
+    $attendance_id = intval($_POST['attendance_id']);
+    $clock_in = mysqli_real_escape_string($conn, $_POST['clock_in']);
+    $clock_out = mysqli_real_escape_string($conn, $_POST['clock_out']);
+    
+    $status = 'present';
+    if (!empty($clock_in) && strtotime($clock_in) > strtotime('10:00:00')) {
+        $status = 'late';
+    }
+    
+    $update_query = "UPDATE attendance SET 
+                     clock_in = " . ($clock_in ? "'$clock_in'" : "NULL") . ",
+                     clock_out = " . ($clock_out ? "'$clock_out'" : "NULL") . ",
+                     status = '$status'
+                     WHERE id = $attendance_id";
+    $safe_date = preg_replace('/[^0-9\-]/', '', $_GET['date'] ?? date('Y-m-d'));
+    mysqli_query($conn, $update_query);
+    header("Location: attendance.php?date=" . $safe_date);
+    exit();
+}
+
+// ========================================
+// PAGINATION WITH LOAD MORE
+// ========================================
 $date = isset($_GET['date']) ? $_GET['date'] : date('Y-m-d');
 $search = isset($_GET['search']) ? mysqli_real_escape_string($conn, $_GET['search']) : '';
-$status_filter = isset($_GET['status']) ? $_GET['status'] : '';
+$page = isset($_GET['page']) ? (int)$_GET['page'] : 1;
+$per_page = 10; // 10 employees per page
 
 $selected_date = $date;
 $current_day_name = date('l', strtotime($date));
 $is_weekend = ($current_day_name == 'Saturday' || $current_day_name == 'Sunday');
 
-// Build WHERE clause for employees search
+// Build WHERE clause
 $employee_where = "WHERE e.role = 'employee'";
 if (!empty($search)) {
     $employee_where .= " AND (e.name LIKE '%$search%' OR e.employee_id LIKE '%$search%')";
 }
 
-// Get total count for pagination
+// Get total count
 $count_query = "SELECT COUNT(*) as total FROM employees e $employee_where";
 $count_result = mysqli_query($conn, $count_query);
 $total_rows = mysqli_fetch_assoc($count_result)['total'];
 $total_pages = ceil($total_rows / $per_page);
 $offset = ($page - 1) * $per_page;
 
-// Get paginated employees with attendance for selected date
-$attendance = mysqli_query($conn, "SELECT a.*, e.name, e.employee_id, e.department, e.nationality 
+// Get employees with attendance for selected date
+$attendance = mysqli_query($conn, "SELECT a.*, e.id as emp_id, e.name, e.employee_id, e.department, e.nationality 
     FROM employees e 
     LEFT JOIN attendance a ON a.employee_id = e.id AND a.date = '$date'
     $employee_where
     ORDER BY e.name 
     LIMIT $offset, $per_page");
 
-// Calculate stats (overall for the date, not just paginated)
+// Calculate stats
 if ($is_weekend) {
-    // On weekends, no attendance expected
     $completed_count = 0;
     $in_progress_count = 0;
     $late_count = 0;
@@ -67,18 +138,21 @@ if ($is_weekend) {
 $day_name = date('l', strtotime($date));
 $formatted_date = date('d F Y', strtotime($date));
 
-// Get week dates for navigation
+// Get week dates
 $week_start = date('Y-m-d', strtotime('monday this week', strtotime($date)));
 $week_dates = [];
 for ($i = 0; $i < 7; $i++) {
     $week_dates[] = date('Y-m-d', strtotime("$week_start +$i days"));
 }
 
-// Store attendance data in array
+// Store attendance data
 $attendance_data = [];
 while ($row = mysqli_fetch_assoc($attendance)) {
     $attendance_data[] = $row;
 }
+
+// Get all employees for dropdown
+$all_employees = mysqli_query($conn, "SELECT id, name, employee_id FROM employees WHERE role='employee' AND status='active' ORDER BY name");
 ?>
 <!DOCTYPE html>
 <html lang="en">
@@ -95,12 +169,27 @@ while ($row = mysqli_fetch_assoc($attendance)) {
         .status-badge { transition: all 0.2s; }
         .stat-card { transition: all 0.3s ease; }
         .stat-card:hover { transform: translateY(-2px); }
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(-10px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+        .animate-fadeIn { animation: fadeIn 0.3s ease-out; }
+        @keyframes spin {
+            from { transform: rotate(0deg); }
+            to { transform: rotate(360deg); }
+        }
+        .loading-spinner {
+            animation: spin 1s linear infinite;
+        }
         @media (max-width: 640px) {
             .attendance-table th, .attendance-table td { padding: 10px 6px; font-size: 12px; }
         }
     </style>
 </head>
 <body class="bg-gradient-to-br from-slate-50 via-blue-50 to-indigo-100 min-h-screen pb-20">
+<?php require_once '../includes/global_ui.php'; ?>
+<?php require_once '../includes/toast.php'; ?>
+<?php require_once '../includes/confirm_modal.php'; ?>
 
 <!-- Premium Mobile Header -->
 <div class="bg-gradient-to-r from-slate-900 via-indigo-900 to-slate-900 text-white sticky top-0 z-40 shadow-2xl">
@@ -252,7 +341,7 @@ while ($row = mysqli_fetch_assoc($attendance)) {
         </div>
     </div>
 
-    <!-- Stats Cards - Updated for Weekend -->
+    <!-- Stats Cards -->
     <?php if($is_weekend): ?>
     <div class="grid grid-cols-1 gap-3 mb-6">
         <div class="bg-gradient-to-br from-purple-500 to-purple-600 rounded-2xl p-4 text-white shadow-lg stat-card text-center">
@@ -288,25 +377,14 @@ while ($row = mysqli_fetch_assoc($attendance)) {
 
     <!-- Search Bar -->
     <div class="bg-white rounded-xl shadow-md p-4 mb-4">
-        <form method="GET" class="flex flex-col md:flex-row gap-3">
+        <form method="GET" class="flex flex-col md:flex-row gap-3" id="searchForm">
             <input type="hidden" name="date" value="<?php echo $date; ?>">
             <div class="flex-1 relative">
                 <i class="fas fa-search absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 text-sm"></i>
-                <input type="text" name="search" value="<?php echo htmlspecialchars($search); ?>" 
+                <input type="text" name="search" id="searchInput" value="<?php echo htmlspecialchars($search); ?>" 
                        placeholder="Search by employee name or ID..." 
                        class="w-full pl-9 pr-3 py-2 border border-gray-200 rounded-lg text-sm">
             </div>
-            <?php if(!$is_weekend): ?>
-            <div class="w-full md:w-48">
-                <select name="status" class="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm">
-                    <option value="">All Status</option>
-                    <option value="completed" <?php echo $status_filter == 'completed' ? 'selected' : ''; ?>>Completed</option>
-                    <option value="in_progress" <?php echo $status_filter == 'in_progress' ? 'selected' : ''; ?>>In Progress</option>
-                    <option value="late" <?php echo $status_filter == 'late' ? 'selected' : ''; ?>>Late</option>
-                    <option value="absent" <?php echo $status_filter == 'absent' ? 'selected' : ''; ?>>Absent</option>
-                </select>
-            </div>
-            <?php endif; ?>
             <div class="flex gap-2">
                 <button type="submit" class="bg-blue-600 text-white px-4 py-2 rounded-lg text-sm hover:bg-blue-700">Filter</button>
                 <a href="?date=<?php echo $date; ?>" class="bg-gray-200 text-gray-700 px-4 py-2 rounded-lg text-sm text-center hover:bg-gray-300">Reset</a>
@@ -314,20 +392,11 @@ while ($row = mysqli_fetch_assoc($attendance)) {
         </form>
     </div>
 
-    <!-- Results Summary & Per Page -->
+    <!-- Results Summary -->
     <div class="flex justify-between items-center mb-4">
         <p class="text-sm text-gray-500">
-            Showing <?php echo $offset + 1; ?> to <?php echo min($offset + $per_page, $total_rows); ?> of <?php echo $total_rows; ?> employees
+            Showing <?php echo count($attendance_data); ?> of <?php echo $total_rows; ?> employees
         </p>
-        <div class="flex items-center gap-2">
-            <span class="text-xs text-gray-500">Show:</span>
-            <select onchange="window.location.href=this.value" class="text-sm border rounded px-2 py-1">
-                <option value="<?php echo "?date=$date&per_page=10&page=1&search=" . urlencode($search) . "&status=$status_filter"; ?>" <?php echo $per_page == 10 ? 'selected' : ''; ?>>10</option>
-                <option value="<?php echo "?date=$date&per_page=20&page=1&search=" . urlencode($search) . "&status=$status_filter"; ?>" <?php echo $per_page == 20 ? 'selected' : ''; ?>>20</option>
-                <option value="<?php echo "?date=$date&per_page=50&page=1&search=" . urlencode($search) . "&status=$status_filter"; ?>" <?php echo $per_page == 50 ? 'selected' : ''; ?>>50</option>
-                <option value="<?php echo "?date=$date&per_page=100&page=1&search=" . urlencode($search) . "&status=$status_filter"; ?>" <?php echo $per_page == 100 ? 'selected' : ''; ?>>100</option>
-            </select>
-        </div>
     </div>
 
     <!-- Attendance Table -->
@@ -354,12 +423,15 @@ while ($row = mysqli_fetch_assoc($attendance)) {
                         <th class="p-4 text-left text-xs font-semibold text-slate-500 uppercase tracking-wider">Duration</th>
                         <?php endif; ?>
                         <th class="p-4 text-left text-xs font-semibold text-slate-500 uppercase tracking-wider">Status</th>
+                        <th class="p-4 text-center text-xs font-semibold text-slate-500 uppercase tracking-wider">Action</th>
                     </tr>
                 </thead>
-                <tbody class="divide-y divide-slate-100">
+                <tbody id="attendanceTableBody">
                     <?php if(count($attendance_data) > 0): ?>
                         <?php foreach ($attendance_data as $row): 
                             $row_status = 'absent';
+                            $attendance_id = $row['id'] ?? null;
+                            
                             if ($is_weekend) {
                                 $row_status = 'weekend';
                             } elseif ($row['clock_in'] && $row['clock_out']) {
@@ -369,9 +441,6 @@ while ($row = mysqli_fetch_assoc($attendance)) {
                             } elseif ($row['status'] == 'late') {
                                 $row_status = 'late';
                             }
-                            
-                            // Filter by status if selected
-                            if (!$is_weekend && $status_filter && $row_status != $status_filter) continue;
                         ?>
                         <tr class="hover:bg-slate-50 transition">
                             <td class="p-4">
@@ -454,40 +523,42 @@ while ($row = mysqli_fetch_assoc($attendance)) {
                                     </span>
                                 <?php endif; ?>
                             </td>
-                        </tr>
+                            
+                            <td class="p-4 text-center">
+                                <button onclick="openEditModal(<?php echo htmlspecialchars(json_encode($row)); ?>, '<?php echo $date; ?>')" 
+                                        class="text-blue-600 hover:text-blue-800 transition" title="Edit Attendance">
+                                    <i class="fas fa-edit"></i>
+                                </button>
+                                <?php if($attendance_id): ?>
+                                <a href="?delete_attendance=<?php echo $attendance_id; ?>&date=<?php echo $date; ?>" 
+                                   data-confirm="Delete this attendance record?" data-confirm-title="Delete Record"
+                                   class="text-red-500 hover:text-red-700 transition ml-2" title="Delete">
+                                    <i class="fas fa-trash"></i>
+                                </a>
+                                <?php endif; ?>
+                             </tr>
                         <?php endforeach; ?>
                     <?php else: ?>
                         <tr>
-                            <td colspan="<?php echo $is_weekend ? '3' : '6'; ?>" class="p-12 text-center text-slate-500">
+                            <td colspan="<?php echo $is_weekend ? '4' : '7'; ?>" class="p-12 text-center text-slate-500">
                                 <i class="fas fa-users text-5xl mb-3 block text-slate-300"></i>
                                 <p class="text-sm">No employees found</p>
-                            </td>
-                        </tr>
+                              </tr>
                     <?php endif; ?>
                 </tbody>
             </table>
         </div>
     </div>
 
-    <!-- Pagination -->
-    <?php if($total_pages > 1): ?>
-    <div class="flex justify-between items-center mt-4 bg-white rounded-xl shadow-md px-4 py-3">
-        <p class="text-sm text-gray-500">
-            Page <?php echo $page; ?> of <?php echo $total_pages; ?>
-        </p>
-        <div class="flex gap-1">
-            <?php if($page > 1): ?>
-                <a href="?date=<?php echo $date; ?>&page=1&per_page=<?php echo $per_page; ?>&search=<?php echo urlencode($search); ?>&status=<?php echo $status_filter; ?>" class="px-3 py-1 bg-gray-100 border rounded-lg text-sm hover:bg-gray-200">First</a>
-                <a href="?date=<?php echo $date; ?>&page=<?php echo $page-1; ?>&per_page=<?php echo $per_page; ?>&search=<?php echo urlencode($search); ?>&status=<?php echo $status_filter; ?>" class="px-3 py-1 bg-gray-100 border rounded-lg text-sm hover:bg-gray-200">Previous</a>
-            <?php endif; ?>
-            
-            <span class="px-3 py-1 bg-blue-600 text-white rounded-lg text-sm"><?php echo $page; ?></span>
-            
-            <?php if($page < $total_pages): ?>
-                <a href="?date=<?php echo $date; ?>&page=<?php echo $page+1; ?>&per_page=<?php echo $per_page; ?>&search=<?php echo urlencode($search); ?>&status=<?php echo $status_filter; ?>" class="px-3 py-1 bg-gray-100 border rounded-lg text-sm hover:bg-gray-200">Next</a>
-                <a href="?date=<?php echo $date; ?>&page=<?php echo $total_pages; ?>&per_page=<?php echo $per_page; ?>&search=<?php echo urlencode($search); ?>&status=<?php echo $status_filter; ?>" class="px-3 py-1 bg-gray-100 border rounded-lg text-sm hover:bg-gray-200">Last</a>
-            <?php endif; ?>
-        </div>
+    <!-- Load More Button -->
+    <?php if($page < $total_pages): ?>
+    <div class="mt-6 text-center">
+        <button id="loadMoreBtn" onclick="loadMore()" class="bg-gradient-to-r from-blue-600 to-indigo-600 text-white px-8 py-3 rounded-xl font-semibold hover:shadow-xl transition transform hover:scale-105 flex items-center justify-center gap-2 mx-auto">
+            <i class="fas fa-spinner hidden" id="loadMoreSpinner"></i>
+            <i class="fas fa-arrow-down"></i>
+            <span>Load More Employees</span>
+        </button>
+        <p class="text-xs text-gray-400 mt-2">Showing <?php echo $page * $per_page; ?> of <?php echo $total_rows; ?> employees</p>
     </div>
     <?php endif; ?>
 
@@ -496,6 +567,99 @@ while ($row = mysqli_fetch_assoc($attendance)) {
         <p class="text-xs text-slate-400">
             <i class="fas fa-clock mr-1"></i> Office hours: 9:30 AM - 6:00 PM (Late after 10:00 AM)
         </p>
+    </div>
+
+    <!-- Manual Attendance Entry Form (Bottom) -->
+    <div class="bg-white rounded-2xl shadow-xl p-6 mt-8">
+        <div class="flex items-center gap-3 mb-5">
+            <div class="w-10 h-10 bg-gradient-to-br from-green-500 to-emerald-600 rounded-xl flex items-center justify-center shadow-md">
+                <i class="fas fa-pen-alt text-white"></i>
+            </div>
+            <div>
+                <h2 class="text-lg font-bold text-gray-800">Manual Attendance Entry</h2>
+                <p class="text-xs text-gray-500">Record attendance for employees who forgot to clock in/out</p>
+            </div>
+        </div>
+        
+        <?php if(isset($manual_message)) echo $manual_message; ?>
+        
+        <form method="POST" action="" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-4">
+            <div class="lg:col-span-2">
+                <label class="block text-gray-700 text-sm font-semibold mb-2">Select Employee</label>
+                <select name="manual_employee_id" required class="w-full px-4 py-2.5 border-2 border-gray-200 rounded-xl focus:border-green-500 focus:outline-none">
+                    <option value="">-- Select Employee --</option>
+                    <?php 
+                    mysqli_data_seek($all_employees, 0);
+                    while($emp = mysqli_fetch_assoc($all_employees)):
+                    ?>
+                        <option value="<?php echo $emp['id']; ?>"><?php echo $emp['name']; ?> (<?php echo $emp['employee_id']; ?>)</option>
+                    <?php endwhile; ?>
+                </select>
+            </div>
+            
+            <div>
+                <label class="block text-gray-700 text-sm font-semibold mb-2">Date</label>
+                <input type="date" name="attendance_date" value="<?php echo $date; ?>" required class="w-full px-4 py-2.5 border-2 border-gray-200 rounded-xl focus:border-green-500 focus:outline-none">
+            </div>
+            
+            <div>
+                <label class="block text-gray-700 text-sm font-semibold mb-2">Clock In Time</label>
+                <input type="time" name="clock_in" class="w-full px-4 py-2.5 border-2 border-gray-200 rounded-xl focus:border-green-500 focus:outline-none">
+                <p class="text-xs text-gray-400 mt-1">Format: 09:00 (24-hour)</p>
+            </div>
+            
+            <div>
+                <label class="block text-gray-700 text-sm font-semibold mb-2">Clock Out Time</label>
+                <input type="time" name="clock_out" class="w-full px-4 py-2.5 border-2 border-gray-200 rounded-xl focus:border-green-500 focus:outline-none">
+                <p class="text-xs text-gray-400 mt-1">Format: 18:00 (24-hour)</p>
+            </div>
+            
+            <div class="lg:col-span-5">
+                <button type="submit" name="add_manual_attendance" class="w-full bg-gradient-to-r from-green-600 to-emerald-600 text-white py-2.5 rounded-xl font-semibold hover:shadow-lg transition transform hover:scale-105">
+                    <i class="fas fa-save mr-2"></i> Save Attendance
+                </button>
+            </div>
+        </form>
+    </div>
+</div>
+
+<!-- Edit Attendance Modal -->
+<div id="editModal" class="hidden fixed inset-0 bg-black/50 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+    <div class="bg-white rounded-2xl max-w-md w-full shadow-2xl">
+        <div class="bg-gradient-to-r from-blue-600 to-indigo-600 p-5 rounded-t-2xl">
+            <div class="flex justify-between items-center">
+                <div>
+                    <h2 class="text-xl font-bold text-white">Edit Attendance</h2>
+                    <p class="text-xs text-blue-100 mt-1" id="editEmployeeName"></p>
+                </div>
+                <button onclick="closeEditModal()" class="w-10 h-10 rounded-full bg-white/20 hover:bg-white/30 transition-all flex items-center justify-center">
+                    <i class="fas fa-times text-white text-xl"></i>
+                </button>
+            </div>
+        </div>
+        <form method="POST" class="p-6 space-y-4" action="">
+            <input type="hidden" name="attendance_id" id="editAttendanceId">
+            <input type="hidden" name="date" value="<?php echo $date; ?>">
+            
+            <div>
+                <label class="block text-gray-700 text-sm font-semibold mb-2">Clock In Time</label>
+                <input type="time" name="clock_in" id="editClockIn" class="w-full px-4 py-2.5 border-2 border-gray-200 rounded-xl focus:border-blue-500 focus:outline-none">
+            </div>
+            
+            <div>
+                <label class="block text-gray-700 text-sm font-semibold mb-2">Clock Out Time</label>
+                <input type="time" name="clock_out" id="editClockOut" class="w-full px-4 py-2.5 border-2 border-gray-200 rounded-xl focus:border-blue-500 focus:outline-none">
+            </div>
+            
+            <div class="flex gap-3 pt-3">
+                <button type="submit" name="edit_attendance" class="flex-1 bg-blue-600 text-white py-2.5 rounded-xl font-semibold hover:bg-blue-700 transition">
+                    Update Attendance
+                </button>
+                <button type="button" onclick="closeEditModal()" class="flex-1 bg-gray-200 text-gray-700 py-2.5 rounded-xl font-semibold hover:bg-gray-300 transition">
+                    Cancel
+                </button>
+            </div>
+        </form>
     </div>
 </div>
 
@@ -522,6 +686,11 @@ while ($row = mysqli_fetch_assoc($attendance)) {
 </div>
 
 <script>
+    let currentPage = <?php echo $page; ?>;
+    const totalPages = <?php echo $total_pages; ?>;
+    const currentDate = '<?php echo $date; ?>';
+    const currentSearch = '<?php echo addslashes($search); ?>';
+    
     function toggleSidebar() {
         document.getElementById('sidebar').classList.toggle('-translate-x-full');
         document.getElementById('overlay').classList.toggle('hidden');
@@ -533,7 +702,7 @@ while ($row = mysqli_fetch_assoc($attendance)) {
         let year = currentDate.getFullYear();
         let month = String(currentDate.getMonth() + 1).padStart(2, '0');
         let day = String(currentDate.getDate()).padStart(2, '0');
-        window.location.href = `?date=${year}-${month}-${day}`;
+        window.location.href = `?date=${year}-${month}-${day}&search=${encodeURIComponent(currentSearch)}`;
     }
     
     function goToday() {
@@ -541,12 +710,74 @@ while ($row = mysqli_fetch_assoc($attendance)) {
         let year = today.getFullYear();
         let month = String(today.getMonth() + 1).padStart(2, '0');
         let day = String(today.getDate()).padStart(2, '0');
-        window.location.href = `?date=${year}-${month}-${day}`;
+        window.location.href = `?date=${year}-${month}-${day}&search=${encodeURIComponent(currentSearch)}`;
     }
     
     function goToDate() {
         let date = document.getElementById('datePicker').value;
-        window.location.href = `?date=${date}`;
+        window.location.href = `?date=${date}&search=${encodeURIComponent(currentSearch)}`;
+    }
+    
+    function loadMore() {
+        const nextPage = currentPage + 1;
+        const spinner = document.getElementById('loadMoreSpinner');
+        const btnText = document.querySelector('#loadMoreBtn span:not(.hidden)');
+        const btn = document.getElementById('loadMoreBtn');
+        
+        // Show loading state
+        spinner.classList.remove('hidden');
+        btn.disabled = true;
+        
+        fetch(`load_more_attendance.php?page=${nextPage}&date=${currentDate}&search=${encodeURIComponent(currentSearch)}`)
+            .then(response => response.text())
+            .then(data => {
+                // Append new rows to table
+                document.getElementById('attendanceTableBody').insertAdjacentHTML('beforeend', data);
+                currentPage = nextPage;
+                
+                // Hide load more button if reached last page
+                if (currentPage >= totalPages) {
+                    btn.style.display = 'none';
+                }
+                
+                // Update the showing count
+                const showingCount = document.querySelector('.text-sm.text-gray-500');
+                if (showingCount) {
+                    const newCount = Math.min(currentPage * 10, <?php echo $total_rows; ?>);
+                    showingCount.innerHTML = `Showing ${newCount} of <?php echo $total_rows; ?> employees`;
+                }
+                
+                spinner.classList.add('hidden');
+                btn.disabled = false;
+            })
+            .catch(error => {
+                console.error('Error:', error);
+                spinner.classList.add('hidden');
+                btn.disabled = false;
+            });
+    }
+    
+    function openEditModal(employee, date) {
+        document.getElementById('editAttendanceId').value = employee.id;
+        document.getElementById('editEmployeeName').innerHTML = employee.name + ' (' + employee.employee_id + ')';
+        
+        if (employee.clock_in) {
+            document.getElementById('editClockIn').value = employee.clock_in.substring(0, 5);
+        } else {
+            document.getElementById('editClockIn').value = '';
+        }
+        
+        if (employee.clock_out) {
+            document.getElementById('editClockOut').value = employee.clock_out.substring(0, 5);
+        } else {
+            document.getElementById('editClockOut').value = '';
+        }
+        
+        document.getElementById('editModal').classList.remove('hidden');
+    }
+    
+    function closeEditModal() {
+        document.getElementById('editModal').classList.add('hidden');
     }
 </script>
 </body>

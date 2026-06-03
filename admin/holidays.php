@@ -137,7 +137,7 @@ $holidays = mysqli_query($conn, "SELECT * FROM holidays ORDER BY holiday_date DE
                         <p class="font-medium text-gray-800"><?php echo $row['holiday_name']; ?></p>
                         <p class="text-xs text-gray-500"><?php echo date('l, d F Y', strtotime($row['holiday_date'])); ?></p>
                     </div>
-                    <a href="?delete=<?php echo $row['id']; ?>" onclick="return confirm('Delete holiday?')" class="text-red-500">
+                    <a href="?delete=<?php echo $row['id']; ?>" data-confirm="Delete this holiday from the calendar?" data-confirm-title="Delete Holiday" class="text-red-500">
                         <i class="fas fa-trash text-lg"></i>
                     </a>
                 </div>

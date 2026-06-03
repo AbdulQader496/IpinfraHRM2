@@ -2,6 +2,8 @@
 require_once '../includes/auth.php';
 redirectIfNotAdmin();
 require_once '../includes/db.php';
+require_once '../includes/functions.php';
+require_once '../includes/toast_fn.php';
 
 // ========================================
 // PAGINATION & FILTERS
@@ -9,7 +11,7 @@ require_once '../includes/db.php';
 $page = isset($_GET['page']) ? (int)$_GET['page'] : 1;
 $per_page = isset($_GET['per_page']) ? (int)$_GET['per_page'] : 10;
 $search = isset($_GET['search']) ? mysqli_real_escape_string($conn, $_GET['search']) : '';
-$status_filter = isset($_GET['status']) ? $_GET['status'] : '';
+$status_filter = isset($_GET['status']) ? $_GET['status'] : 'pending';
 $type_filter = isset($_GET['type']) ? $_GET['type'] : '';
 $date_from = isset($_GET['date_from']) ? $_GET['date_from'] : '';
 $date_to = isset($_GET['date_to']) ? $_GET['date_to'] : '';
@@ -39,8 +41,9 @@ $total_rows = mysqli_fetch_assoc($count_result)['total'];
 $total_pages = ceil($total_rows / $per_page);
 $offset = ($page - 1) * $per_page;
 
-// Get paginated claims
-$claims = mysqli_query($conn, "SELECT c.*, e.name, e.employee_id, e.department 
+// Get paginated claims with attachment count
+$claims = mysqli_query($conn, "SELECT c.*, e.name, e.employee_id, e.department,
+    (SELECT COUNT(*) FROM claim_attachments WHERE claim_id = c.id) as attachments_count
     FROM claims c 
     JOIN employees e ON c.employee_id = e.id 
     $where 
@@ -58,6 +61,27 @@ $stats = mysqli_fetch_assoc($stats_query);
 
 // Get unique claim types for filter dropdown
 $claim_types = mysqli_query($conn, "SELECT DISTINCT claim_type FROM claims");
+
+// Handle Approve/Reject (uses 'act' param to avoid conflict with 'type' filter)
+if (isset($_GET['action']) && isset($_GET['act'])) {
+    $id = (int)$_GET['action'];
+    $action = $_GET['act'];
+    $status = ($action == 'approve') ? 'approved' : 'rejected';
+
+    mysqli_query($conn, "UPDATE claims SET status='$status', reviewed_at=NOW() WHERE id=$id");
+
+    $claim = mysqli_fetch_assoc(mysqli_query($conn, "SELECT employee_id FROM claims WHERE id=$id"));
+    addNotification($claim['employee_id'], 'Claim ' . ucfirst($status), 'Your claim has been ' . $status);
+
+    if ($status === 'approved') {
+        showToast('Claim approved and will be added to next payroll.', 'success');
+    } else {
+        showToast('Claim rejected.', 'warning');
+    }
+
+    header("Location: manage_claim.php?page=$page&per_page=$per_page&search=" . urlencode($search) . "&status=$status_filter&type=$type_filter&date_from=$date_from&date_to=$date_to");
+    exit();
+}
 ?>
 <!DOCTYPE html>
 <html lang="en">
@@ -78,9 +102,25 @@ $claim_types = mysqli_query($conn, "SELECT DISTINCT claim_type FROM claims");
         .badge { transition: all 0.2s ease; }
         .btn-action { transition: all 0.2s ease; }
         .btn-action:hover { transform: translateY(-1px); box-shadow: 0 4px 6px -1px rgba(0,0,0,0.1); }
+        .attachment-preview {
+            transition: all 0.2s ease;
+        }
+        .attachment-preview:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 4px 6px -1px rgba(0,0,0,0.1);
+        }
+
+        @keyframes floatY {
+            0%, 100% { transform: translateY(0px); }
+            50% { transform: translateY(-12px); }
+        }
+        .empty-state-svg { animation: floatY 3.4s ease-in-out infinite; }
     </style>
 </head>
 <body class="bg-gradient-to-br from-gray-50 to-gray-100 min-h-screen pb-20">
+<?php require_once '../includes/global_ui.php'; ?>
+<?php require_once '../includes/toast.php'; ?>
+<?php require_once '../includes/confirm_modal.php'; ?>
 
 <!-- Premium Mobile Header -->
 <div class="bg-gradient-to-r from-slate-900 via-indigo-900 to-slate-900 text-white sticky top-0 z-40 shadow-2xl">
@@ -327,12 +367,41 @@ $claim_types = mysqli_query($conn, "SELECT DISTINCT claim_type FROM claims");
                                 </div>
                             <?php endif; ?>
                             
-                            <?php if($row['attachment']): ?>
-                                <div class="mt-2">
-                                    <a href="../uploads/<?php echo $row['attachment']; ?>" target="_blank" class="inline-flex items-center gap-2 text-xs text-purple-600 hover:text-purple-800 bg-purple-50 px-3 py-1.5 rounded-lg transition">
-                                        <i class="fas fa-paperclip"></i> View Receipt / Attachment
-                                    </a>
+                            <!-- Attachments Section -->
+                            <?php
+                            $attachments = mysqli_query($conn, "SELECT * FROM claim_attachments WHERE claim_id = {$row['id']}");
+                            if (mysqli_num_rows($attachments) > 0):
+                            ?>
+                            <div class="mt-3">
+                                <p class="text-xs text-gray-500 mb-2"><i class="fas fa-paperclip mr-1"></i> Attachments (<?php echo mysqli_num_rows($attachments); ?> files):</p>
+                                <div class="flex flex-wrap gap-2">
+                                    <?php while($att = mysqli_fetch_assoc($attachments)): 
+                                        $file_ext = pathinfo($att['file_name'], PATHINFO_EXTENSION);
+                                        $is_image = in_array(strtolower($file_ext), ['jpg', 'jpeg', 'png', 'gif', 'webp']);
+                                        $is_pdf = strtolower($file_ext) == 'pdf';
+                                        $is_zip = in_array(strtolower($file_ext), ['zip', 'rar', '7z']);
+                                    ?>
+                                    <div class="attachment-preview bg-gray-100 rounded-lg p-2 inline-flex items-center gap-2">
+                                        <?php if($is_image): ?>
+                                            <i class="fas fa-image text-blue-500"></i>
+                                        <?php elseif($is_pdf): ?>
+                                            <i class="fas fa-file-pdf text-red-500"></i>
+                                        <?php elseif($is_zip): ?>
+                                            <i class="fas fa-file-archive text-yellow-600"></i>
+                                        <?php else: ?>
+                                            <i class="fas fa-file-alt text-gray-500"></i>
+                                        <?php endif; ?>
+                                        <span class="text-xs text-gray-600 max-w-[150px] truncate"><?php echo $att['file_name']; ?></span>
+                                        <a href="../uploads/claims/<?php echo $att['file_path']; ?>" target="_blank" class="text-blue-500 hover:text-blue-700" title="View">
+                                            <i class="fas fa-eye text-xs"></i>
+                                        </a>
+                                        <a href="../uploads/claims/<?php echo $att['file_path']; ?>" download class="text-green-500 hover:text-green-700" title="Download">
+                                            <i class="fas fa-download text-xs"></i>
+                                        </a>
+                                    </div>
+                                    <?php endwhile; ?>
                                 </div>
+                            </div>
                             <?php endif; ?>
                         </div>
                         
@@ -346,10 +415,10 @@ $claim_types = mysqli_query($conn, "SELECT DISTINCT claim_type FROM claims");
                             
                             <?php if ($row['status'] == 'pending'): ?>
                                 <div class="flex gap-2 mt-4">
-                                    <a href="?action=approve&id=<?php echo $row['id']; ?>&page=<?php echo $page; ?>&per_page=<?php echo $per_page; ?>&search=<?php echo urlencode($search); ?>&status=<?php echo $status_filter; ?>&type=<?php echo $type_filter; ?>&date_from=<?php echo $date_from; ?>&date_to=<?php echo $date_to; ?>" class="btn-action flex-1 md:flex-none bg-gradient-to-r from-green-600 to-emerald-600 text-white px-6 py-2 rounded-xl text-sm font-semibold hover:shadow-lg inline-flex items-center justify-center gap-1">
+                                    <a href="?action=<?php echo $row['id']; ?>&act=approve&page=<?php echo $page; ?>&per_page=<?php echo $per_page; ?>&search=<?php echo urlencode($search); ?>&status=<?php echo $status_filter; ?>&type=<?php echo urlencode($type_filter); ?>&date_from=<?php echo $date_from; ?>&date_to=<?php echo $date_to; ?>" class="btn-action flex-1 md:flex-none bg-gradient-to-r from-green-600 to-emerald-600 text-white px-6 py-2 rounded-xl text-sm font-semibold hover:shadow-lg inline-flex items-center justify-center gap-1">
                                         <i class="fas fa-check"></i> Approve
                                     </a>
-                                    <a href="?action=reject&id=<?php echo $row['id']; ?>&page=<?php echo $page; ?>&per_page=<?php echo $per_page; ?>&search=<?php echo urlencode($search); ?>&status=<?php echo $status_filter; ?>&type=<?php echo $type_filter; ?>&date_from=<?php echo $date_from; ?>&date_to=<?php echo $date_to; ?>" class="btn-action flex-1 md:flex-none bg-gradient-to-r from-red-600 to-rose-600 text-white px-6 py-2 rounded-xl text-sm font-semibold hover:shadow-lg inline-flex items-center justify-center gap-1">
+                                    <a href="?action=<?php echo $row['id']; ?>&act=reject&page=<?php echo $page; ?>&per_page=<?php echo $per_page; ?>&search=<?php echo urlencode($search); ?>&status=<?php echo $status_filter; ?>&type=<?php echo urlencode($type_filter); ?>&date_from=<?php echo $date_from; ?>&date_to=<?php echo $date_to; ?>" class="btn-action flex-1 md:flex-none bg-gradient-to-r from-red-600 to-rose-600 text-white px-6 py-2 rounded-xl text-sm font-semibold hover:shadow-lg inline-flex items-center justify-center gap-1">
                                         <i class="fas fa-times"></i> Reject
                                     </a>
                                 </div>
@@ -390,12 +459,44 @@ $claim_types = mysqli_query($conn, "SELECT DISTINCT claim_type FROM claims");
         <?php endif; ?>
         
     <?php else: ?>
-        <div class="bg-white rounded-2xl shadow-md p-12 text-center">
-            <div class="w-24 h-24 bg-gradient-to-br from-purple-100 to-pink-100 rounded-full flex items-center justify-center mx-auto mb-4">
-                <i class="fas fa-receipt text-4xl text-purple-600"></i>
+        <div class="bg-white rounded-2xl shadow-md py-16 px-8 text-center">
+            <div class="flex justify-center mb-6">
+                <svg class="empty-state-svg" width="150" height="150" viewBox="0 0 120 120" fill="none" xmlns="http://www.w3.org/2000/svg" style="filter: drop-shadow(0 10px 30px rgba(147,51,234,0.18));">
+                    <!-- Receipt body -->
+                    <rect x="20" y="12" width="80" height="90" rx="9" fill="#faf5ff"/>
+                    <rect x="20" y="12" width="80" height="90" rx="9" stroke="#9333ea" stroke-width="2.5" fill="none"/>
+                    <!-- Zigzag tear edge -->
+                    <path d="M20 88 L27 96 L34 88 L41 96 L48 88 L55 96 L62 88 L69 96 L76 88 L83 96 L90 88 L97 96 L100 96 L100 104 L20 104 Z" fill="#faf5ff" stroke="#9333ea" stroke-width="2" stroke-linejoin="round"/>
+                    <!-- Magnifying glass circle -->
+                    <circle cx="60" cy="44" r="19" fill="#ede9fe"/>
+                    <circle cx="60" cy="44" r="19" stroke="#9333ea" stroke-width="2.5" fill="none"/>
+                    <!-- Magnifying glass handle -->
+                    <line x1="74" y1="58" x2="83" y2="67" stroke="#9333ea" stroke-width="3.5" stroke-linecap="round"/>
+                    <!-- Question mark inside glass -->
+                    <text x="60" y="52" text-anchor="middle" font-size="22" font-weight="800" fill="#9333ea" font-family="Inter,sans-serif">?</text>
+                    <!-- Lines representing list rows -->
+                    <rect x="32" y="72" width="56" height="4" rx="2" fill="#9333ea" opacity="0.25"/>
+                    <rect x="38" y="80" width="44" height="4" rx="2" fill="#9333ea" opacity="0.15"/>
+                    <!-- Sparkles -->
+                    <circle cx="98" cy="16" r="3.5" fill="#c084fc" opacity="0.7"/>
+                    <circle cx="108" cy="28" r="2" fill="#9333ea" opacity="0.35"/>
+                    <circle cx="88" cy="8" r="2.5" fill="#7c3aed" opacity="0.45"/>
+                    <circle cx="14" cy="30" r="2" fill="#a855f7" opacity="0.4"/>
+                </svg>
             </div>
-            <h3 class="text-lg font-semibold text-gray-800 mb-2">No Claim Applications Found</h3>
-            <p class="text-sm text-gray-500">Try adjusting your search or filter criteria</p>
+            <h3 class="text-xl font-bold text-gray-800 mb-2">No Claim Applications Found</h3>
+            <p class="text-sm text-gray-500 mb-5 max-w-sm mx-auto">
+                <?php if(!empty($search) || !empty($status_filter) || !empty($type_filter) || !empty($date_from)): ?>
+                    No claims match your current filters. Try broadening your search criteria.
+                <?php else: ?>
+                    There are no claim applications in the system yet. They will appear here once employees start submitting claims.
+                <?php endif; ?>
+            </p>
+            <?php if(!empty($search) || !empty($type_filter) || !empty($date_from) || !empty($date_to)): ?>
+                <a href="manage_claim.php" class="inline-flex items-center gap-2 text-sm font-semibold text-purple-600 hover:text-purple-800 border border-purple-200 hover:border-purple-400 bg-purple-50 hover:bg-purple-100 px-5 py-2.5 rounded-xl transition">
+                    <i class="fas fa-undo text-xs"></i> Reset All Filters
+                </a>
+            <?php endif; ?>
         </div>
     <?php endif; ?>
 </div>

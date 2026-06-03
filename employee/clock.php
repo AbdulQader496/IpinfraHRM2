@@ -2,6 +2,7 @@
 require_once '../includes/auth.php';
 redirectIfNotLoggedIn();
 require_once '../includes/db.php';
+require_once '../includes/toast_fn.php';
 
 $user_id = $_SESSION['user_id'];
 $today = date('Y-m-d');
@@ -58,7 +59,7 @@ if (isset($_POST['clock_out']) && $attendance && !$attendance['clock_out']) {
 // ========================================
 $page = isset($_GET['page']) ? (int)$_GET['page'] : 1;
 $per_page = isset($_GET['per_page']) ? (int)$_GET['per_page'] : 10;
-$month_filter = isset($_GET['month']) ? $_GET['month'] : '';
+$month_filter = isset($_GET['month']) ? preg_replace('/[^0-9\-]/', '', $_GET['month']) : '';
 
 // Build WHERE clause for history
 $history_where = "WHERE employee_id = $user_id";
@@ -97,9 +98,24 @@ $week_attendance = mysqli_query($conn, "SELECT * FROM attendance WHERE employee_
             50% { opacity: 0.5; }
         }
         .pulse { animation: pulse 2s infinite; }
+
+        /* Live clock colon blink */
+        @keyframes colon-pulse {
+            0%, 100% { opacity: 1; }
+            50%       { opacity: 0.25; }
+        }
+        .colon-blink { animation: colon-pulse 1s ease-in-out infinite; }
+
+        /* Premium live-clock card gradient */
+        .live-clock-card {
+            background: linear-gradient(135deg, #0f172a 0%, #1e293b 50%, #0f172a 100%);
+        }
     </style>
 </head>
 <body class="bg-gradient-to-br from-gray-50 to-gray-100 min-h-screen pb-20">
+<?php require_once '../includes/global_ui.php'; ?>
+<?php require_once '../includes/toast.php'; ?>
+<?php require_once '../includes/confirm_modal.php'; ?>
 
 <!-- Premium Header -->
 <div class="bg-gradient-to-r from-slate-900 via-indigo-900 to-slate-900 text-white sticky top-0 z-40 shadow-2xl backdrop-blur-sm">
@@ -189,9 +205,42 @@ $week_attendance = mysqli_query($conn, "SELECT * FROM attendance WHERE employee_
 
 <div id="overlay" class="fixed inset-0 bg-black/50 z-40 hidden" onclick="toggleSidebar()"></div>
 
+<?php require_once '../includes/global_ui.php'; ?>
+<?php require_once '../includes/toast.php'; ?>
+
 <!-- MAIN CONTENT -->
 <div class="px-4 py-6 max-w-2xl mx-auto">
-    
+
+    <!-- ================================================ -->
+    <!-- PREMIUM LIVE DIGITAL CLOCK                        -->
+    <!-- ================================================ -->
+    <div class="live-clock-card rounded-2xl shadow-2xl p-8 mb-6 text-center relative overflow-hidden">
+        <!-- Subtle radial glow behind the digits -->
+        <div class="absolute inset-0 flex items-center justify-center pointer-events-none">
+            <div class="w-64 h-64 rounded-full bg-indigo-600/10 blur-3xl"></div>
+        </div>
+
+        <!-- Label -->
+        <p class="text-slate-400 text-xs font-semibold uppercase tracking-widest mb-4 relative">
+            <i class="fas fa-satellite-dish mr-1 text-indigo-400"></i> Live Clock
+        </p>
+
+        <!-- HH:MM:SS -->
+        <div class="flex items-center justify-center gap-1 relative mb-4" id="live-clock-wrapper">
+            <span id="lc-hours"   class="clock-number text-6xl text-white tabular-nums">--</span>
+            <span class="clock-number text-5xl text-indigo-400 colon-blink leading-none -mt-1">:</span>
+            <span id="lc-minutes" class="clock-number text-6xl text-white tabular-nums">--</span>
+            <span class="clock-number text-5xl text-indigo-400 colon-blink leading-none -mt-1">:</span>
+            <span id="lc-seconds" class="clock-number text-6xl text-white tabular-nums">--</span>
+        </div>
+
+        <!-- Day, Date, Month -->
+        <p id="lc-date" class="text-slate-300 text-lg font-medium tracking-wide relative">
+            <?php echo date('l, d F Y'); ?>
+        </p>
+    </div>
+    <!-- ================================================ -->
+
     <!-- Office Hours & Weekend Info -->
     <div class="bg-gradient-to-r from-blue-50 to-indigo-50 rounded-xl p-3 mb-4 text-center">
         <p class="text-xs text-blue-700">
@@ -202,13 +251,6 @@ $week_attendance = mysqli_query($conn, "SELECT * FROM attendance WHERE employee_
                 <i class="fas fa-calendar-times mr-1"></i> Today is <?php echo $current_day; ?> (Weekend - No clock in/out required)
             </p>
         <?php endif; ?>
-    </div>
-
-    <!-- Time Card -->
-    <div class="bg-white rounded-2xl shadow-xl p-6 mb-6 text-center">
-        <p class="text-gray-500 text-sm mb-2">Current Time</p>
-        <div class="text-5xl font-bold text-gray-800 clock-number mb-2" id="clock">--:--:--</div>
-        <p class="text-gray-500 text-sm"><?php echo date('l, d F Y'); ?></p>
     </div>
 
     <!-- Action Button -->
@@ -481,17 +523,41 @@ $week_attendance = mysqli_query($conn, "SELECT * FROM attendance WHERE employee_
 </div>
 
 <script>
+    // ── Sidebar toggle ──────────────────────────────────────
     function toggleSidebar() {
         document.getElementById('sidebar').classList.toggle('-translate-x-full');
         document.getElementById('overlay').classList.toggle('hidden');
     }
-    
-    function updateClock() {
+
+    // ── Premium live clock ──────────────────────────────────
+    const days   = ['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'];
+    const months = ['January','February','March','April','May','June',
+                    'July','August','September','October','November','December'];
+
+    function pad2(n) { return String(n).padStart(2, '0'); }
+
+    function updateLiveClock() {
         const now = new Date();
-        document.getElementById('clock').textContent = now.toLocaleTimeString('en-MY', { hour12: false });
+        const hh  = pad2(now.getHours());
+        const mm  = pad2(now.getMinutes());
+        const ss  = pad2(now.getSeconds());
+
+        // Premium display segments
+        document.getElementById('lc-hours').textContent   = hh;
+        document.getElementById('lc-minutes').textContent = mm;
+        document.getElementById('lc-seconds').textContent = ss;
+
+        // Date line: e.g. "Tuesday, 03 June 2026"
+        const dateStr = days[now.getDay()] + ', ' +
+                        pad2(now.getDate()) + ' ' +
+                        months[now.getMonth()] + ' ' +
+                        now.getFullYear();
+        document.getElementById('lc-date').textContent = dateStr;
     }
-    setInterval(updateClock, 1000);
-    updateClock();
+
+    // Kick off immediately, then every 1 000 ms
+    updateLiveClock();
+    setInterval(updateLiveClock, 1000);
 </script>
 </body>
 </html>

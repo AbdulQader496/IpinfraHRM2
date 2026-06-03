@@ -387,7 +387,7 @@ $documents = mysqli_query($conn, "SELECT d.*
                     </div>
                     <div class="mt-3 pt-3 border-t border-yellow-200">
                         <p class="text-sm"><strong>Last Working Day:</strong> <?php echo date('d M Y', strtotime($resignation['last_working_date'])); ?></p>
-                        <a href="?cancel_resignation=<?php echo $resignation['id']; ?>&tab=resignation" onclick="return confirm('Cancel your resignation request?')" class="inline-block mt-3 text-red-600 text-sm">
+                        <a href="?cancel_resignation=<?php echo $resignation['id']; ?>&tab=resignation" data-confirm="Cancel your resignation request?" data-confirm-title="Cancel Resignation" class="inline-block mt-3 text-red-600 text-sm">
                             <i class="fas fa-times-circle"></i> Cancel Request
                         </a>
                     </div>

@@ -3,6 +3,7 @@ require_once '../includes/auth.php';
 redirectIfNotAdmin();
 require_once '../includes/db.php';
 require_once '../includes/functions.php';
+require_once '../includes/toast_fn.php';
 
 // ========================================
 // PAGINATION & FILTERS
@@ -10,7 +11,7 @@ require_once '../includes/functions.php';
 $page = isset($_GET['page']) ? (int)$_GET['page'] : 1;
 $per_page = isset($_GET['per_page']) ? (int)$_GET['per_page'] : 10;
 $search = isset($_GET['search']) ? mysqli_real_escape_string($conn, $_GET['search']) : '';
-$status_filter = isset($_GET['status']) ? $_GET['status'] : '';
+$status_filter = isset($_GET['status']) ? $_GET['status'] : 'pending';
 $type_filter = isset($_GET['type']) ? $_GET['type'] : '';
 $date_from = isset($_GET['date_from']) ? $_GET['date_from'] : '';
 $date_to = isset($_GET['date_to']) ? $_GET['date_to'] : '';
@@ -52,42 +53,42 @@ $leaves = mysqli_query($conn, "SELECT l.*, e.name, e.employee_id, e.department
 // LEAVE TYPES MANAGEMENT
 // ========================================
 if (isset($_POST['add_leave_type'])) {
-    $leave_name = mysqli_real_escape_string($conn, $_POST['leave_name']);
-    $leave_code = mysqli_real_escape_string($conn, $_POST['leave_code']);
-    $days_per_year = $_POST['days_per_year'];
-    $is_paid = isset($_POST['is_paid']) ? 1 : 0;
-    $requires_attachment = isset($_POST['requires_attachment']) ? 1 : 0;
-    $max_consecutive_days = $_POST['max_consecutive_days'];
-    $color_code = $_POST['color_code'];
-    
-    mysqli_query($conn, "INSERT INTO leave_types (leave_name, leave_code, days_per_year, is_paid, requires_attachment, max_consecutive_days, color_code) 
-                         VALUES ('$leave_name', '$leave_code', $days_per_year, $is_paid, $requires_attachment, $max_consecutive_days, '$color_code')");
+    $leave_name           = mysqli_real_escape_string($conn, $_POST['leave_name']);
+    $leave_code           = mysqli_real_escape_string($conn, $_POST['leave_code']);
+    $days_per_year        = intval($_POST['days_per_year']);
+    $is_paid              = isset($_POST['is_paid']) ? 1 : 0;
+    $requires_attachment  = isset($_POST['requires_attachment']) ? 1 : 0;
+    $max_consecutive_days = intval($_POST['max_consecutive_days']);
+    $color_code           = mysqli_real_escape_string($conn, $_POST['color_code']);
+
+    mysqli_query($conn, "INSERT INTO leave_types (leave_name, leave_code, days_per_year, is_paid, requires_attachment, max_consecutive_days, color_code)
+        VALUES ('$leave_name', '$leave_code', $days_per_year, $is_paid, $requires_attachment, $max_consecutive_days, '$color_code')");
     header('Location: manage_leave.php');
     exit();
 }
 
 if (isset($_POST['update_leave_type'])) {
-    $id = $_POST['type_id'];
-    $leave_name = mysqli_real_escape_string($conn, $_POST['leave_name']);
-    $leave_code = mysqli_real_escape_string($conn, $_POST['leave_code']);
-    $days_per_year = $_POST['days_per_year'];
-    $is_paid = isset($_POST['is_paid']) ? 1 : 0;
-    $requires_attachment = isset($_POST['requires_attachment']) ? 1 : 0;
-    $max_consecutive_days = $_POST['max_consecutive_days'];
-    $status = $_POST['status'];
-    $color_code = $_POST['color_code'];
-    
-    mysqli_query($conn, "UPDATE leave_types SET 
-        leave_name='$leave_name', leave_code='$leave_code', days_per_year=$days_per_year, 
-        is_paid=$is_paid, requires_attachment=$requires_attachment, 
-        max_consecutive_days=$max_consecutive_days, status='$status', color_code='$color_code' 
+    $id                   = intval($_POST['type_id']);
+    $leave_name           = mysqli_real_escape_string($conn, $_POST['leave_name']);
+    $leave_code           = mysqli_real_escape_string($conn, $_POST['leave_code']);
+    $days_per_year        = intval($_POST['days_per_year']);
+    $is_paid              = isset($_POST['is_paid']) ? 1 : 0;
+    $requires_attachment  = isset($_POST['requires_attachment']) ? 1 : 0;
+    $max_consecutive_days = intval($_POST['max_consecutive_days']);
+    $status               = mysqli_real_escape_string($conn, $_POST['status']);
+    $color_code           = mysqli_real_escape_string($conn, $_POST['color_code']);
+
+    mysqli_query($conn, "UPDATE leave_types SET
+        leave_name='$leave_name', leave_code='$leave_code', days_per_year=$days_per_year,
+        is_paid=$is_paid, requires_attachment=$requires_attachment,
+        max_consecutive_days=$max_consecutive_days, status='$status', color_code='$color_code'
         WHERE id=$id");
     header('Location: manage_leave.php');
     exit();
 }
 
 if (isset($_GET['delete_type'])) {
-    $id = $_GET['delete_type'];
+    $id = intval($_GET['delete_type']);
     mysqli_query($conn, "DELETE FROM leave_types WHERE id=$id");
     header('Location: manage_leave.php');
     exit();
@@ -97,29 +98,30 @@ if (isset($_GET['delete_type'])) {
 // LEAVE REQUESTS HANDLING
 // ========================================
 if (isset($_GET['action']) && isset($_GET['id'])) {
-    $id = $_GET['id'];
+    $id     = intval($_GET['id']);
     $action = $_GET['action'];
     $status = ($action == 'approve') ? 'approved' : 'rejected';
-    
-    $leave_query = mysqli_query($conn, "SELECT * FROM leaves WHERE id=$id");
-    $leave = mysqli_fetch_assoc($leave_query);
-    
-    if ($leave['half_day'] != 'none') {
-        $days = 0.5;
-    } else {
-        $days = (strtotime($leave['end_date']) - strtotime($leave['start_date'])) / 86400 + 1;
+
+    $leave = mysqli_fetch_assoc(mysqli_query($conn, "SELECT * FROM leaves WHERE id=$id"));
+    if ($leave) {
+        $days = (isset($leave['half_day']) && $leave['half_day'] != 'none') ? 0.5
+              : (strtotime($leave['end_date']) - strtotime($leave['start_date'])) / 86400 + 1;
+
+        mysqli_query($conn, "UPDATE leaves SET status='$status' WHERE id=$id");
+
+        if ($status == 'approved') {
+            if ($leave['leave_type'] == 'annual') {
+                mysqli_query($conn, "UPDATE employees SET used_annual_leave = used_annual_leave + $days WHERE id = {$leave['employee_id']}");
+            } elseif ($leave['leave_type'] == 'medical') {
+                mysqli_query($conn, "UPDATE employees SET used_medical_leave = used_medical_leave + $days WHERE id = {$leave['employee_id']}");
+            }
+            addNotification($leave['employee_id'], 'Leave Approved', 'Your ' . $leave['leave_type'] . ' leave has been approved.');
+            showToast('Leave application approved successfully.', 'success');
+        } else {
+            addNotification($leave['employee_id'], 'Leave Rejected', 'Your ' . $leave['leave_type'] . ' leave has been rejected.');
+            showToast('Leave application rejected.', 'warning');
+        }
     }
-    
-    mysqli_query($conn, "UPDATE leaves SET status='$status' WHERE id=$id");
-    
-    if ($status == 'approved') {
-        $field = ($leave['leave_type'] == 'annual') ? 'used_annual_leave' : 'used_medical_leave';
-        mysqli_query($conn, "UPDATE employees SET $field = $field + $days WHERE id = {$leave['employee_id']}");
-        addNotification($leave['employee_id'], 'Leave Approved', 'Your ' . $leave['leave_type'] . ' leave has been approved.');
-    } else {
-        addNotification($leave['employee_id'], 'Leave Rejected', 'Your ' . $leave['leave_type'] . ' leave has been rejected.');
-    }
-    
     header('Location: manage_leave.php');
     exit();
 }
@@ -128,44 +130,30 @@ if (isset($_GET['action']) && isset($_GET['id'])) {
 // ADJUST LEAVE BALANCE
 // ========================================
 if (isset($_POST['adjust_leave'])) {
-    $employee_id = $_POST['employee_id'];
-    $adjust_type = $_POST['adjust_type'];
-    $adjust_field = $_POST['adjust_field'];
-    $action_type = $_POST['action_type'];
-    $adjust_amount = $_POST['adjust_amount'];
-    
+    $employee_id   = intval($_POST['employee_id']);
+    $adjust_type   = $_POST['adjust_type'];
+    $adjust_field  = $_POST['adjust_field'];
+    $action_type   = $_POST['action_type'];
+    $adjust_amount = floatval($_POST['adjust_amount']);
+    $op            = ($action_type == 'add') ? '+' : '-';
+
     if ($adjust_type == 'annual') {
-        if ($adjust_field == 'entitlement') {
-            if ($action_type == 'add') {
-                mysqli_query($conn, "UPDATE employees SET annual_leave_entitlement = annual_leave_entitlement + $adjust_amount WHERE id = $employee_id");
-            } else {
-                mysqli_query($conn, "UPDATE employees SET annual_leave_entitlement = annual_leave_entitlement - $adjust_amount WHERE id = $employee_id");
-            }
-        } else {
-            if ($action_type == 'add') {
-                mysqli_query($conn, "UPDATE employees SET used_annual_leave = used_annual_leave + $adjust_amount WHERE id = $employee_id");
-            } else {
-                mysqli_query($conn, "UPDATE employees SET used_annual_leave = used_annual_leave - $adjust_amount WHERE id = $employee_id");
-            }
-        }
+        $field = ($adjust_field == 'entitlement') ? 'annual_leave_entitlement' : 'used_annual_leave';
     } else {
-        if ($adjust_field == 'entitlement') {
-            if ($action_type == 'add') {
-                mysqli_query($conn, "UPDATE employees SET medical_leave_entitlement = medical_leave_entitlement + $adjust_amount WHERE id = $employee_id");
-            } else {
-                mysqli_query($conn, "UPDATE employees SET medical_leave_entitlement = medical_leave_entitlement - $adjust_amount WHERE id = $employee_id");
-            }
-        } else {
-            if ($action_type == 'add') {
-                mysqli_query($conn, "UPDATE employees SET used_medical_leave = used_medical_leave + $adjust_amount WHERE id = $employee_id");
-            } else {
-                mysqli_query($conn, "UPDATE employees SET used_medical_leave = used_medical_leave - $adjust_amount WHERE id = $employee_id");
-            }
-        }
+        $field = ($adjust_field == 'entitlement') ? 'medical_leave_entitlement' : 'used_medical_leave';
     }
-    
-    header('Location: manage_leave.php');
-    exit();
+    mysqli_query($conn, "UPDATE employees SET $field = $field $op $adjust_amount WHERE id = $employee_id");
+    showToast('Leave balance updated.', 'success');
+    header('Location: manage_leave.php'); exit();
+}
+
+// ========================================
+// RESET ALL LEAVE BALANCES (Year Reset)
+// ========================================
+if (isset($_POST['reset_leave_balances'])) {
+    mysqli_query($conn, "UPDATE employees SET used_annual_leave = 0, used_medical_leave = 0 WHERE role = 'employee'");
+    showToast('All leave balances reset to 0 for the new year.', 'success');
+    header('Location: manage_leave.php'); exit();
 }
 
 // Get all employees with leave balances
@@ -201,6 +189,9 @@ $leave_type_options = mysqli_query($conn, "SELECT DISTINCT leave_type FROM leave
     </style>
 </head>
 <body class="bg-gradient-to-br from-gray-50 to-gray-100 min-h-screen pb-20">
+<?php require_once '../includes/global_ui.php'; ?>
+<?php require_once '../includes/toast.php'; ?>
+<?php require_once '../includes/confirm_modal.php'; ?>
 
 <!-- Premium Mobile Header -->
 <div class="bg-gradient-to-r from-slate-900 via-indigo-900 to-slate-900 text-white sticky top-0 z-40 shadow-2xl">
@@ -502,8 +493,15 @@ $leave_type_options = mysqli_query($conn, "SELECT DISTINCT leave_type FROM leave
         </div>
 
         <div class="bg-white rounded-xl shadow-xl overflow-hidden">
-            <div class="bg-gray-50 px-4 py-3 border-b">
+            <div class="bg-gray-50 px-4 py-3 border-b flex items-center justify-between flex-wrap gap-2">
                 <p class="font-semibold text-gray-800"><i class="fas fa-chart-line mr-2 text-blue-600"></i> Employee Leave Balances</p>
+                <form method="POST" class="inline">
+                    <button type="submit" name="reset_leave_balances"
+                        data-confirm="Reset ALL employee used leave to 0? Do this at the start of a new year only." data-confirm-title="Year-End Leave Reset"
+                        class="flex items-center gap-2 bg-orange-100 hover:bg-orange-200 text-orange-700 px-4 py-1.5 rounded-lg text-sm font-semibold transition">
+                        <i class="fas fa-calendar-plus"></i> Reset All (New Year)
+                    </button>
+                </form>
             </div>
             <div class="overflow-x-auto">
                 <table class="w-full">
@@ -601,7 +599,7 @@ $leave_type_options = mysqli_query($conn, "SELECT DISTINCT leave_type FROM leave
                             </td>
                             <td class="p-3">
                                 <button onclick='openEditTypeModal(<?php echo json_encode($type); ?>)' class="text-blue-600 mr-2">Edit</button>
-                                <a href="?delete_type=<?php echo $type['id']; ?>" onclick="return confirm('Delete this leave type?')" class="text-red-600">Delete</a>
+                                <a href="?delete_type=<?php echo $type['id']; ?>" data-confirm="Delete this leave type? Employees will no longer be able to apply for it." data-confirm-title="Delete Leave Type" class="text-red-600">Delete</a>
                             </td>
                         </tr>
                         <?php endwhile; ?>

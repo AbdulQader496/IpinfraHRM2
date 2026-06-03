@@ -358,12 +358,12 @@ $pending_count = mysqli_fetch_assoc(mysqli_query($conn, "SELECT COUNT(*) as coun
                                     <div class="flex gap-2 justify-center">
                                         <button onclick="openApproveModal(<?php echo htmlspecialchars(json_encode($row)); ?>)" class="bg-green-600 hover:bg-green-700 text-white px-3 py-1 rounded-lg text-xs font-medium transition">Approve</button>
                                         <button onclick="openRejectModal(<?php echo htmlspecialchars(json_encode($row)); ?>)" class="bg-red-600 hover:bg-red-700 text-white px-3 py-1 rounded-lg text-xs font-medium transition">Reject</button>
-                                        <a href="?delete_resignation=<?php echo $row['id']; ?>" onclick="return confirm('Delete this resignation record?')" class="text-gray-500 hover:text-red-600 transition">
+                                        <a href="?delete_resignation=<?php echo $row['id']; ?>" data-confirm="Delete this resignation record?" data-confirm-title="Delete Resignation" class="text-gray-500 hover:text-red-600 transition">
                                             <i class="fas fa-trash"></i>
                                         </a>
                                     </div>
                                 <?php else: ?>
-                                    <a href="?delete_resignation=<?php echo $row['id']; ?>" onclick="return confirm('Delete this resignation record?')" class="text-red-600 hover:text-red-800 text-sm">
+                                    <a href="?delete_resignation=<?php echo $row['id']; ?>" data-confirm="Delete this resignation record?" data-confirm-title="Delete Resignation" class="text-red-600 hover:text-red-800 text-sm">
                                         <i class="fas fa-trash"></i> Delete
                                     </a>
                                 <?php endif; ?>
@@ -442,7 +442,7 @@ $pending_count = mysqli_fetch_assoc(mysqli_query($conn, "SELECT COUNT(*) as coun
                         <label class="block text-sm font-semibold text-gray-700 mb-2">Additional Notes</label>
                         <textarea name="notes" rows="2" class="w-full px-4 py-2.5 border-2 border-gray-200 rounded-xl"></textarea>
                     </div>
-                    <button type="submit" name="send_termination" class="w-full bg-gradient-to-r from-red-600 to-rose-600 text-white py-3 rounded-xl font-semibold hover:shadow-xl transition transform hover:scale-105" onclick="return confirm('Send termination notice? This will mark employee as terminated.')">
+                    <button type="submit" name="send_termination" class="w-full bg-gradient-to-r from-red-600 to-rose-600 text-white py-3 rounded-xl font-semibold hover:shadow-xl transition transform hover:scale-105" onclick="return confirmAction('Send Termination Notice', 'This will permanently mark the employee as terminated. Continue?', function(){ document.querySelector(\'form[data-termination-form]\') ? document.querySelector(\'form[data-termination-form]\').submit() : this.closest(\'form\').submit(); })">
                         <i class="fas fa-paper-plane mr-2"></i> Send Termination Notice
                     </button>
                 </form>
@@ -474,7 +474,7 @@ $pending_count = mysqli_fetch_assoc(mysqli_query($conn, "SELECT COUNT(*) as coun
                             </div>
                             <div class="flex items-center gap-2">
                                 <span class="text-xs bg-red-100 text-red-700 px-2 py-1 rounded-full">Terminated</span>
-                                <a href="?delete_termination=<?php echo $term['id']; ?>" onclick="return confirm('Delete this termination record?')" class="text-red-500 hover:text-red-700" title="Delete">
+                                <a href="?delete_termination=<?php echo $term['id']; ?>" data-confirm="Delete this termination record?" data-confirm-title="Delete Termination" class="text-red-500 hover:text-red-700" title="Delete">
                                     <i class="fas fa-trash"></i>
                                 </a>
                             </div>
@@ -573,7 +573,7 @@ $pending_count = mysqli_fetch_assoc(mysqli_query($conn, "SELECT COUNT(*) as coun
                                             <i class="fas fa-download"></i>
                                         </a>
                                     <?php endif; ?>
-                                    <a href="?delete_doc=<?php echo $doc['id']; ?>" onclick="return confirm('Delete this document?')" class="bg-red-500 text-white p-2 rounded-lg hover:bg-red-600 transition" title="Delete">
+                                    <a href="?delete_doc=<?php echo $doc['id']; ?>" data-confirm="Delete this document permanently?" data-confirm-title="Delete Document" class="bg-red-500 text-white p-2 rounded-lg hover:bg-red-600 transition" title="Delete">
                                         <i class="fas fa-trash"></i>
                                     </a>
                                 </div>

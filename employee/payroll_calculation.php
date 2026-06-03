@@ -7,9 +7,16 @@ require_once '../includes/functions.php';
 $user_id = $_SESSION['user_id'];
 $selected_month = isset($_GET['month']) ? $_GET['month'] : date('Y-m');
 
-// Get employee details
-$emp_query = mysqli_query($conn, "SELECT * FROM employees WHERE id = $user_id");
+// Admin can view any employee's calculation by passing emp_id (employee_id string)
+if (isAdmin() && isset($_GET['emp_id'])) {
+    $emp_id_str = mysqli_real_escape_string($conn, $_GET['emp_id']);
+    $emp_query = mysqli_query($conn, "SELECT * FROM employees WHERE employee_id = '$emp_id_str'");
+} else {
+    $emp_query = mysqli_query($conn, "SELECT * FROM employees WHERE id = $user_id");
+}
 $employee = mysqli_fetch_assoc($emp_query);
+if (!$employee) { header('Location: ../index.php'); exit(); }
+$view_user_id = $employee['id'];
 
 // Get month range
 $month_start = date('Y-m-01', strtotime($selected_month . '-01'));
@@ -17,9 +24,22 @@ $month_end = date('Y-m-t', strtotime($selected_month . '-01'));
 $month_name = date('F Y', strtotime($selected_month . '-01'));
 $working_days_in_month = date('t', strtotime($selected_month . '-01'));
 
+// Get all approved leave dates for this month to avoid double-counting absences
+$leave_dates = [];
+$all_leaves_q = mysqli_query($conn, "SELECT start_date, end_date FROM leaves
+    WHERE employee_id = $view_user_id AND status = 'approved'
+    AND start_date <= '$month_end' AND end_date >= '$month_start'");
+while ($lv = mysqli_fetch_assoc($all_leaves_q)) {
+    $lv_start = max(strtotime($lv['start_date']), strtotime($month_start));
+    $lv_end   = min(strtotime($lv['end_date']),   strtotime($month_end));
+    for ($d = $lv_start; $d <= $lv_end; $d += 86400) {
+        $leave_dates[date('Y-m-d', $d)] = true;
+    }
+}
+
 // Get attendance records
-$attendance_query = mysqli_query($conn, "SELECT * FROM attendance 
-    WHERE employee_id = $user_id 
+$attendance_query = mysqli_query($conn, "SELECT * FROM attendance
+    WHERE employee_id = $view_user_id
     AND date BETWEEN '$month_start' AND '$month_end'
     ORDER BY date ASC");
 
@@ -29,37 +49,31 @@ $absent_days = 0;
 $half_days = 0;
 $late_days = 0;
 $total_working_hours = 0;
-$total_overtime_hours = 0;
 
 while ($att = mysqli_fetch_assoc($attendance_query)) {
     $attendance_records[] = $att;
-    
+
     if ($att['clock_in']) {
         $present_days++;
         if ($att['status'] == 'late') $late_days++;
-        
+
         if ($att['clock_in'] && $att['clock_out']) {
             $start = new DateTime($att['clock_in']);
-            $end = new DateTime($att['clock_out']);
-            $diff = $start->diff($end);
-            $hours = $diff->h + ($diff->i / 60);
-            $total_working_hours += $hours;
-            
-            $office_end = new DateTime('18:00:00');
-            if ($end > $office_end) {
-                $overtime_diff = $office_end->diff($end);
-                $overtime_hours = $overtime_diff->h + ($overtime_diff->i / 60);
-                $total_overtime_hours += $overtime_hours;
-            }
+            $end   = new DateTime($att['clock_out']);
+            $diff  = $start->diff($end);
+            $total_working_hours += $diff->h + ($diff->i / 60);
         }
     } else {
-        $absent_days++;
+        // Only count as absent if not covered by an approved leave
+        if (!isset($leave_dates[$att['date']])) {
+            $absent_days++;
+        }
     }
 }
 
 // Get leaves
-$leaves_query = mysqli_query($conn, "SELECT * FROM leaves 
-    WHERE employee_id = $user_id 
+$leaves_query = mysqli_query($conn, "SELECT * FROM leaves
+    WHERE employee_id = $view_user_id
     AND status = 'approved'
     AND ((start_date BETWEEN '$month_start' AND '$month_end')
     OR (end_date BETWEEN '$month_start' AND '$month_end'))");
@@ -81,21 +95,31 @@ while ($leave = mysqli_fetch_assoc($leaves_query)) {
 
 // Calculations
 $total_unpaid_days = $unpaid_leave_days + $absent_days + ($half_days * 0.5);
-$basic_salary = $employee['basic_salary'];
+$basic_salary   = $employee['basic_salary'];
 $per_day_salary = $basic_salary / $working_days_in_month;
 $unpaid_deduction = $per_day_salary * $total_unpaid_days;
-$hourly_rate = $basic_salary / ($working_days_in_month * 8);
-$overtime_amount = $total_overtime_hours * $hourly_rate * 1.5;
 
-// Statutory deductions
+// Statutory deductions (interns are exempt)
 $is_malaysian = ($employee['nationality'] == 'Malaysian');
-$epf = calculateEPF($basic_salary, true, $is_malaysian);
-$socso = calculateSOCSO($basic_salary, true, $is_malaysian);
-$eis = calculateEIS($basic_salary, $is_malaysian);
-$pcb = calculatePCB($basic_salary, $is_malaysian);
+$is_intern = isset($employee['employee_type']) && $employee['employee_type'] == 'intern';
+
+if ($is_intern) {
+    $epf = 0; $socso = 0; $eis = 0; $pcb = 0;
+} else {
+    $epf = calculateEPF($basic_salary, true, $is_malaysian);
+    $socso = calculateSOCSO($basic_salary, true, $is_malaysian);
+    $eis = calculateEIS($basic_salary, $is_malaysian);
+    $pcb = calculatePCB($basic_salary, $is_malaysian);
+}
+
+// Approved claims for this month added to salary
+$claims_q = mysqli_query($conn, "SELECT COALESCE(SUM(amount),0) as ca FROM claims
+    WHERE employee_id = $view_user_id AND status = 'approved'
+    AND DATE_FORMAT(applied_at, '%Y-%m') = '$selected_month'");
+$approved_claims_amount = (float)mysqli_fetch_assoc($claims_q)['ca'];
 
 $total_deductions = $epf + $socso + $eis + $pcb;
-$net_salary = $basic_salary - $unpaid_deduction + $overtime_amount - $total_deductions;
+$net_salary = $basic_salary - $unpaid_deduction + $approved_claims_amount - $total_deductions;
 ?>
 <!DOCTYPE html>
 <html lang="en">
@@ -167,10 +191,6 @@ $net_salary = $basic_salary - $unpaid_deduction + $overtime_amount - $total_dedu
                     <p class="text-xl font-bold text-gray-800">RM <?php echo number_format($per_day_salary, 2); ?></p>
                 </div>
                 <div class="text-center">
-                    <p class="text-xs text-gray-500">Overtime Hours</p>
-                    <p class="text-xl font-bold text-orange-600"><?php echo number_format($total_overtime_hours, 1); ?>h</p>
-                </div>
-                <div class="text-center">
                     <p class="text-xs text-gray-500">Net Salary</p>
                     <p class="text-xl font-bold text-green-600">RM <?php echo number_format($net_salary, 2); ?></p>
                 </div>
@@ -223,25 +243,17 @@ $net_salary = $basic_salary - $unpaid_deduction + $overtime_amount - $total_dedu
                                 <th class="p-2 text-left">Clock In</th>
                                 <th class="p-2 text-left">Clock Out</th>
                                 <th class="p-2 text-left">Hours</th>
-                                <th class="p-2 text-left">Overtime</th>
                                 <th class="p-2 text-left">Status</th>
                             </tr>
                         </thead>
                         <tbody>
-                            <?php foreach ($attendance_records as $att): 
+                            <?php foreach ($attendance_records as $att):
                                 $hours_worked = 0;
-                                $overtime = 0;
                                 if ($att['clock_in'] && $att['clock_out']) {
                                     $start = new DateTime($att['clock_in']);
-                                    $end = new DateTime($att['clock_out']);
-                                    $diff = $start->diff($end);
+                                    $end   = new DateTime($att['clock_out']);
+                                    $diff  = $start->diff($end);
                                     $hours_worked = $diff->h + ($diff->i / 60);
-                                    
-                                    $office_end = new DateTime('18:00:00');
-                                    if ($end > $office_end) {
-                                        $overtime_diff = $office_end->diff($end);
-                                        $overtime = $overtime_diff->h + ($overtime_diff->i / 60);
-                                    }
                                 }
                                 $day_name = date('D', strtotime($att['date']));
                             ?>
@@ -251,7 +263,6 @@ $net_salary = $basic_salary - $unpaid_deduction + $overtime_amount - $total_dedu
                                 <td class="p-2"><?php echo $att['clock_in'] ? date('H:i', strtotime($att['clock_in'])) : '-'; ?></td>
                                 <td class="p-2"><?php echo $att['clock_out'] ? date('H:i', strtotime($att['clock_out'])) : '-'; ?></td>
                                 <td class="p-2"><?php echo $hours_worked > 0 ? number_format($hours_worked, 2) . 'h' : '-'; ?></td>
-                                <td class="p-2"><?php echo $overtime > 0 ? number_format($overtime, 2) . 'h' : '-'; ?></td>
                                 <td class="p-2">
                                     <?php if (!$att['clock_in']): ?>
                                         <span class="px-2 py-1 rounded-full text-xs bg-red-100 text-red-700">Absent</span>
@@ -277,13 +288,15 @@ $net_salary = $basic_salary - $unpaid_deduction + $overtime_amount - $total_dedu
                             <span>Basic Salary</span>
                             <span class="font-semibold">RM <?php echo number_format($basic_salary, 2); ?></span>
                         </div>
+                        <?php if($approved_claims_amount > 0): ?>
                         <div class="flex justify-between py-2 border-b">
-                            <span>Overtime (<?php echo number_format($total_overtime_hours, 1); ?> hrs @ 1.5x)</span>
-                            <span class="font-semibold">RM <?php echo number_format($overtime_amount, 2); ?></span>
+                            <span>Approved Claims</span>
+                            <span class="font-semibold text-green-600">RM <?php echo number_format($approved_claims_amount, 2); ?></span>
                         </div>
+                        <?php endif; ?>
                         <div class="flex justify-between py-2 font-bold text-green-600 border-t-2">
                             <span>Total Earnings</span>
-                            <span>RM <?php echo number_format($basic_salary + $overtime_amount, 2); ?></span>
+                            <span>RM <?php echo number_format($basic_salary + $approved_claims_amount, 2); ?></span>
                         </div>
                     </div>
                 </div>
@@ -295,7 +308,7 @@ $net_salary = $basic_salary - $unpaid_deduction + $overtime_amount - $total_dedu
                             <span>Unpaid Leave (<?php echo number_format($total_unpaid_days, 2); ?> days)</span>
                             <span class="text-red-600">- RM <?php echo number_format($unpaid_deduction, 2); ?></span>
                         </div>
-                        <?php if ($is_malaysian): ?>
+                        <?php if ($is_malaysian && !$is_intern): ?>
                         <div class="flex justify-between py-2 border-b">
                             <span>EPF (11%)</span>
                             <span class="text-red-600">- RM <?php echo number_format($epf, 2); ?></span>
@@ -311,6 +324,11 @@ $net_salary = $basic_salary - $unpaid_deduction + $overtime_amount - $total_dedu
                         <div class="flex justify-between py-2 border-b">
                             <span>PCB</span>
                             <span class="text-red-600">- RM <?php echo number_format($pcb, 2); ?></span>
+                        </div>
+                        <?php elseif($is_intern): ?>
+                        <div class="flex justify-between py-2 border-b">
+                            <span>Statutory Deductions</span>
+                            <span class="text-blue-500">Not applicable (Intern)</span>
                         </div>
                         <?php else: ?>
                         <div class="flex justify-between py-2 border-b">
@@ -334,10 +352,12 @@ $net_salary = $basic_salary - $unpaid_deduction + $overtime_amount - $total_dedu
                         <span>Base Salary</span>
                         <span>RM <?php echo number_format($basic_salary, 2); ?></span>
                     </div>
+                    <?php if($approved_claims_amount > 0): ?>
                     <div class="flex justify-between py-2">
-                        <span>Add: Overtime Amount</span>
-                        <span class="text-green-600">+ RM <?php echo number_format($overtime_amount, 2); ?></span>
+                        <span>Add: Approved Claims</span>
+                        <span class="text-green-600">+ RM <?php echo number_format($approved_claims_amount, 2); ?></span>
                     </div>
+                    <?php endif; ?>
                     <div class="flex justify-between py-2">
                         <span>Less: Unpaid Leave Deduction</span>
                         <span class="text-red-600">- RM <?php echo number_format($unpaid_deduction, 2); ?></span>
@@ -354,7 +374,8 @@ $net_salary = $basic_salary - $unpaid_deduction + $overtime_amount - $total_dedu
                 
                 <div class="mt-4 p-3 bg-blue-50 rounded-lg text-xs text-blue-700">
                     <p class="font-semibold">Calculation Formula:</p>
-                    <p>Net Salary = (Basic Salary + Overtime) - (Per Day Salary × Unpaid Days) - (EPF + SOCSO + EIS + PCB)</p>
+                    <p>Net Salary = (Basic Salary + Approved Claims) - (Per Day Salary × Unpaid Days) - (EPF + SOCSO + EIS + PCB)</p>
+                    <?php if($is_intern): ?><p class="mt-1 text-blue-600"><i class="fas fa-graduation-cap mr-1"></i> Intern: No statutory deductions applied.</p><?php endif; ?>
                 </div>
             </div>
 

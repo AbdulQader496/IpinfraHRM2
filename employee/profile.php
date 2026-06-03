@@ -13,10 +13,10 @@ $employee = mysqli_fetch_assoc($result);
 
 // Update Profile Info with Picture
 if (isset($_POST['update'])) {
-    $phone = $_POST['phone'];
-    $address = mysqli_real_escape_string($conn, $_POST['address']);
-    $bank_name = $_POST['bank_name'];
-    $bank_account = $_POST['bank_account'];
+    $phone        = mysqli_real_escape_string($conn, $_POST['phone']);
+    $address      = mysqli_real_escape_string($conn, $_POST['address']);
+    $bank_name    = mysqli_real_escape_string($conn, $_POST['bank_name']);
+    $bank_account = mysqli_real_escape_string($conn, $_POST['bank_account']);
     
     // Handle profile picture upload
     $profile_pic = $employee['profile_pic'];
@@ -47,11 +47,12 @@ if (isset($_POST['change_password'])) {
     
     if ($employee['password'] != $current_password) {
         $error = '<div class="bg-red-100 border border-red-200 text-red-700 px-4 py-3 rounded-xl text-sm">✗ Current password is incorrect!</div>';
-    } elseif (strlen($new_password) < 4) {
-        $error = '<div class="bg-red-100 border border-red-200 text-red-700 px-4 py-3 rounded-xl text-sm">✗ New password must be at least 4 characters!</div>';
+    } elseif (strlen($new_password) < 6) {
+        $error = '<div class="bg-red-100 border border-red-200 text-red-700 px-4 py-3 rounded-xl text-sm">✗ New password must be at least 6 characters!</div>';
     } elseif ($new_password != $confirm_password) {
         $error = '<div class="bg-red-100 border border-red-200 text-red-700 px-4 py-3 rounded-xl text-sm">✗ New password and confirm password do not match!</div>';
     } else {
+        $new_password    = mysqli_real_escape_string($conn, $new_password);
         $update_password = "UPDATE employees SET password='$new_password' WHERE id=$user_id";
         if (mysqli_query($conn, $update_password)) {
             $message = '<div class="bg-green-100 border border-green-200 text-green-700 px-4 py-3 rounded-xl text-sm">✓ Password changed successfully!</div>';

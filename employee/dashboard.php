@@ -2,6 +2,7 @@
 require_once '../includes/auth.php';
 redirectIfNotLoggedIn();
 require_once '../includes/db.php';
+require_once '../includes/toast_fn.php';
 $user_id = $_SESSION['user_id'];
 
 $today = date('Y-m-d');
@@ -28,15 +29,17 @@ $has_clocked_in = $attendance ? true : false;
 $clocked_out = $attendance && $attendance['clock_out'] ? true : false;
 $is_late = $attendance && $attendance['status'] == 'late';
 
-// Get leave balance
-$balance = mysqli_fetch_assoc(mysqli_query($conn, "SELECT 
-    annual_leave_entitlement, 
+// Get leave balance and employee type
+$balance = mysqli_fetch_assoc(mysqli_query($conn, "SELECT
+    annual_leave_entitlement,
     used_annual_leave,
     (annual_leave_entitlement - used_annual_leave) as annual_remaining,
     medical_leave_entitlement,
     used_medical_leave,
-    (medical_leave_entitlement - used_medical_leave) as medical_remaining 
+    (medical_leave_entitlement - used_medical_leave) as medical_remaining,
+    employee_type
     FROM employees WHERE id = $user_id"));
+$is_intern_dash = isset($balance['employee_type']) && $balance['employee_type'] == 'intern';
 
 // Get recent leaves
 $recent_leaves = mysqli_query($conn, "SELECT * FROM leaves WHERE employee_id = $user_id ORDER BY applied_at DESC LIMIT 3");
@@ -79,6 +82,9 @@ $announcements = mysqli_query($conn, "SELECT * FROM announcements WHERE is_activ
     </style>
 </head>
 <body class="bg-gradient-to-br from-gray-50 to-gray-100 min-h-screen">
+<?php require_once '../includes/global_ui.php'; ?>
+<?php require_once '../includes/toast.php'; ?>
+<?php require_once '../includes/confirm_modal.php'; ?>
 <!-- Premium Header -->
 <div class="bg-gradient-to-r from-slate-900 via-indigo-900 to-slate-900 text-white sticky top-0 z-40 shadow-2xl backdrop-blur-sm">
     <div class="flex items-center justify-between px-5 py-4">
@@ -245,6 +251,17 @@ $announcements = mysqli_query($conn, "SELECT * FROM announcements WHERE is_activ
 
         <!-- Stats Grid -->
         <div class="grid grid-cols-2 gap-4 mb-6">
+            <?php if($is_intern_dash): ?>
+            <div class="col-span-2 bg-gradient-to-br from-blue-50 to-indigo-50 border border-blue-100 rounded-xl p-4 flex items-center gap-3">
+                <div class="w-10 h-10 bg-blue-100 rounded-full flex items-center justify-center flex-shrink-0">
+                    <i class="fas fa-graduation-cap text-blue-500"></i>
+                </div>
+                <div>
+                    <p class="text-sm font-semibold text-blue-700">Intern — No Leave Entitlement</p>
+                    <p class="text-xs text-blue-500 mt-0.5">You may apply for <strong>Unpaid Leave</strong> only. It will be deducted from your salary.</p>
+                </div>
+            </div>
+            <?php else: ?>
             <div class="bg-gradient-to-br from-blue-50 to-blue-100 rounded-xl p-4">
                 <div class="flex items-center justify-between mb-2">
                     <i class="fas fa-umbrella-beach text-2xl text-blue-600"></i>
@@ -263,6 +280,7 @@ $announcements = mysqli_query($conn, "SELECT * FROM announcements WHERE is_activ
                 <p class="text-xs text-green-600 mt-1">Medical Leave</p>
                 <p class="text-xs text-gray-500">Used: <?php echo $balance['used_medical_leave']; ?>/<?php echo $balance['medical_leave_entitlement']; ?></p>
             </div>
+            <?php endif; ?>
         </div>
 
         <!-- ANNOUNCEMENTS SECTION (Replaces This Week's Attendance) -->

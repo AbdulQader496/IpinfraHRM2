@@ -3,9 +3,109 @@ require_once '../includes/auth.php';
 redirectIfNotLoggedIn();
 require_once '../includes/db.php';
 require_once '../includes/functions.php';
+require_once '../includes/toast_fn.php';
 
 $user_id = $_SESSION['user_id'];
 $message = '';
+$error = '';
+$edit_mode = false;
+$edit_leave_id = 0;
+
+// Interns are not eligible for leave
+$emp_info = mysqli_fetch_assoc(mysqli_query($conn, "SELECT employee_type FROM employees WHERE id = $user_id"));
+$is_intern = isset($emp_info['employee_type']) && $emp_info['employee_type'] == 'intern';
+
+// ========================================
+// HANDLE EDIT LEAVE (Load data for editing)
+// ========================================
+if (isset($_GET['edit'])) {
+    $edit_leave_id = (int)$_GET['edit'];
+    $edit_query = mysqli_query($conn, "SELECT * FROM leaves WHERE id = $edit_leave_id AND employee_id = $user_id AND status = 'pending'");
+    if (mysqli_num_rows($edit_query) > 0) {
+        $edit_mode = true;
+        $edit_leave = mysqli_fetch_assoc($edit_query);
+    }
+}
+
+// ========================================
+// HANDLE UPDATE LEAVE
+// ========================================
+if (isset($_POST['update_leave'])) {
+    $leave_id = (int)$_POST['leave_id'];
+    $leave_type = mysqli_real_escape_string($conn, $_POST['leave_type']);
+    $half_day = mysqli_real_escape_string($conn, $_POST['half_day']);
+    $start_date = mysqli_real_escape_string($conn, $_POST['start_date']);
+    $end_date = mysqli_real_escape_string($conn, $_POST['end_date']);
+    $reason = mysqli_real_escape_string($conn, $_POST['reason']);
+    
+    // Calculate total days
+    if ($half_day != 'none') {
+        $total_days = 0.5;
+        $end_date = $start_date;
+    } else {
+        $total_days = (strtotime($end_date) - strtotime($start_date)) / 86400 + 1;
+    }
+    
+    // Check if leave is still pending
+    $check_query = mysqli_query($conn, "SELECT id FROM leaves WHERE id = $leave_id AND employee_id = $user_id AND status = 'pending'");
+    if (mysqli_num_rows($check_query) > 0) {
+        $update_query = "UPDATE leaves SET 
+                            leave_type = '$leave_type', 
+                            half_day = '$half_day',
+                            start_date = '$start_date', 
+                            end_date = '$end_date', 
+                            total_days = $total_days,
+                            reason = '$reason'
+                         WHERE id = $leave_id";
+        
+        if (mysqli_query($conn, $update_query)) {
+            // Handle new attachment if uploaded
+            if (isset($_FILES['attachment']) && $_FILES['attachment']['error'] == 0) {
+                $target_dir = "../uploads/";
+                if (!is_dir($target_dir)) mkdir($target_dir, 0777, true);
+                
+                // Delete old attachment
+                $old_attach = mysqli_fetch_assoc(mysqli_query($conn, "SELECT attachment FROM leaves WHERE id = $leave_id"));
+                if (!empty($old_attach['attachment']) && file_exists($target_dir . $old_attach['attachment'])) {
+                    unlink($target_dir . $old_attach['attachment']);
+                }
+                
+                $attachment = time() . '_' . basename($_FILES['attachment']['name']);
+                move_uploaded_file($_FILES['attachment']['tmp_name'], $target_dir . $attachment);
+                mysqli_query($conn, "UPDATE leaves SET attachment = '$attachment' WHERE id = $leave_id");
+            }
+            
+            $message = '<div class="bg-green-100 border border-green-200 text-green-700 px-4 py-3 rounded-xl text-sm">✓ Leave application updated successfully!</div>';
+            $edit_mode = false;
+        } else {
+            $error = '<div class="bg-red-100 border border-red-200 text-red-700 px-4 py-3 rounded-xl text-sm">✗ Error updating leave application.</div>';
+        }
+    }
+}
+
+// ========================================
+// HANDLE DELETE LEAVE
+// ========================================
+if (isset($_GET['delete'])) {
+    $leave_id = (int)$_GET['delete'];
+    
+    // Check if leave is pending
+    $check_query = mysqli_query($conn, "SELECT attachment FROM leaves WHERE id = $leave_id AND employee_id = $user_id AND status = 'pending'");
+    if (mysqli_num_rows($check_query) > 0) {
+        $leave_data = mysqli_fetch_assoc($check_query);
+        // Delete attachment file if exists
+        if (!empty($leave_data['attachment'])) {
+            $file_path = "../uploads/" . $leave_data['attachment'];
+            if (file_exists($file_path)) {
+                unlink($file_path);
+            }
+        }
+        mysqli_query($conn, "DELETE FROM leaves WHERE id = $leave_id");
+        $message = '<div class="bg-green-100 border border-green-200 text-green-700 px-4 py-3 rounded-xl text-sm">✓ Leave application deleted successfully!</div>';
+    } else {
+        $error = '<div class="bg-red-100 border border-red-200 text-red-700 px-4 py-3 rounded-xl text-sm">✗ Cannot delete leave that is already processed.</div>';
+    }
+}
 
 // ========================================
 // PAGINATION FOR LEAVE HISTORY
@@ -14,62 +114,70 @@ $page = isset($_GET['page']) ? (int)$_GET['page'] : 1;
 $per_page = isset($_GET['per_page']) ? (int)$_GET['per_page'] : 10;
 $status_filter = isset($_GET['status']) ? $_GET['status'] : '';
 
-// Build WHERE clause for history filter
 $where = "WHERE employee_id = $user_id";
 if (!empty($status_filter)) {
     $where .= " AND status = '$status_filter'";
 }
 
-// Get total count for pagination
 $count_query = "SELECT COUNT(*) as total FROM leaves $where";
 $count_result = mysqli_query($conn, $count_query);
 $total_rows = mysqli_fetch_assoc($count_result)['total'];
 $total_pages = ceil($total_rows / $per_page);
 $offset = ($page - 1) * $per_page;
 
-// Get paginated leave history
 $history = mysqli_query($conn, "SELECT * FROM leaves $where ORDER BY applied_at DESC LIMIT $offset, $per_page");
 
-// Get available leave types from database
+// Get available leave types
 $leave_types = mysqli_query($conn, "SELECT * FROM leave_types WHERE status = 'active' ORDER BY leave_name");
 
-if (isset($_POST['apply_leave'])) {
+// Handle new leave submission
+if (isset($_POST['apply_leave']) && !$edit_mode) {
     $leave_type = mysqli_real_escape_string($conn, $_POST['leave_type']);
-    $half_day = mysqli_real_escape_string($conn, $_POST['half_day']);
-    $start_date = mysqli_real_escape_string($conn, $_POST['start_date']);
-    $end_date = mysqli_real_escape_string($conn, $_POST['end_date']);
-    $reason = mysqli_real_escape_string($conn, $_POST['reason']);
-    
-    // Calculate total days (including half day)
-    if ($half_day != 'none') {
-        $total_days = 0.5;
-        $end_date = $start_date;
+    if ($is_intern && $leave_type != 'unpaid') {
+        $error = '<div class="bg-red-100 border border-red-200 text-red-700 px-4 py-3 rounded-xl text-sm">✗ Interns can only apply for Unpaid Leave.</div>';
     } else {
-        $total_days = (strtotime($end_date) - strtotime($start_date)) / 86400 + 1;
-    }
-    
-    $attachment = '';
-    $type_query = mysqli_query($conn, "SELECT requires_attachment FROM leave_types WHERE leave_code = '$leave_type'");
-    $type_data = mysqli_fetch_assoc($type_query);
-    $requires_attachment = $type_data ? $type_data['requires_attachment'] : 0;
-    
-    if (isset($_FILES['attachment']) && $_FILES['attachment']['error'] == 0) {
-        $target_dir = "../uploads/";
-        if (!is_dir($target_dir)) mkdir($target_dir, 0777, true);
-        $attachment = time() . '_' . basename($_FILES['attachment']['name']);
-        move_uploaded_file($_FILES['attachment']['tmp_name'], $target_dir . $attachment);
-    } elseif ($requires_attachment) {
-        $message = '<div class="bg-red-100 border border-red-200 text-red-700 px-4 py-3 rounded-xl text-sm">✗ This leave type requires an attachment (e.g., Medical Certificate).</div>';
-    }
-    
-    if (empty($message)) {
-        $query = "INSERT INTO leaves (employee_id, leave_type, half_day, start_date, end_date, total_days, reason, attachment) 
-                  VALUES ($user_id, '$leave_type', '$half_day', '$start_date', '$end_date', $total_days, '$reason', '$attachment')";
-        
-        if (mysqli_query($conn, $query)) {
-            $message = '<div class="bg-green-100 border border-green-200 text-green-700 px-4 py-3 rounded-xl text-sm">✓ Leave application submitted successfully!</div>';
+        $half_day   = mysqli_real_escape_string($conn, $_POST['half_day']);
+        $start_date = mysqli_real_escape_string($conn, $_POST['start_date']);
+        $end_date   = mysqli_real_escape_string($conn, $_POST['end_date']);
+        $reason     = mysqli_real_escape_string($conn, $_POST['reason']);
+
+        if ($half_day != 'none') {
+            $total_days = 0.5;
+            $end_date   = $start_date;
         } else {
-            $message = '<div class="bg-red-100 border border-red-200 text-red-700 px-4 py-3 rounded-xl text-sm">✗ Error submitting leave application.</div>';
+            // Validate end_date >= start_date
+            if (strtotime($end_date) < strtotime($start_date)) {
+                $error = '<div class="bg-red-100 border border-red-200 text-red-700 px-4 py-3 rounded-xl text-sm">✗ End date cannot be before start date.</div>';
+                $total_days = 0;
+            } else {
+                $total_days = (strtotime($end_date) - strtotime($start_date)) / 86400 + 1;
+            }
+        }
+
+        if (empty($error)) {
+            $attachment = '';
+            $type_query = mysqli_query($conn, "SELECT requires_attachment FROM leave_types WHERE leave_code = '$leave_type'");
+            $type_data  = mysqli_fetch_assoc($type_query);
+            $requires_attachment = $type_data ? $type_data['requires_attachment'] : 0;
+
+            if (isset($_FILES['attachment']) && $_FILES['attachment']['error'] == 0) {
+                $target_dir = "../uploads/";
+                if (!is_dir($target_dir)) mkdir($target_dir, 0777, true);
+                $attachment = time() . '_' . basename($_FILES['attachment']['name']);
+                move_uploaded_file($_FILES['attachment']['tmp_name'], $target_dir . $attachment);
+            } elseif ($requires_attachment) {
+                $message = '<div class="bg-red-100 border border-red-200 text-red-700 px-4 py-3 rounded-xl text-sm">✗ This leave type requires an attachment (e.g., Medical Certificate).</div>';
+            }
+
+            if (empty($message)) {
+                $query = "INSERT INTO leaves (employee_id, leave_type, half_day, start_date, end_date, total_days, reason, attachment)
+                          VALUES ($user_id, '$leave_type', '$half_day', '$start_date', '$end_date', $total_days, '$reason', '$attachment')";
+                if (mysqli_query($conn, $query)) {
+                    $message = '<div class="bg-green-100 border border-green-200 text-green-700 px-4 py-3 rounded-xl text-sm">✓ Leave application submitted successfully!</div>';
+                } else {
+                    $message = '<div class="bg-red-100 border border-red-200 text-red-700 px-4 py-3 rounded-xl text-sm">✗ Error submitting leave application.</div>';
+                }
+            }
         }
     }
 }
@@ -114,10 +222,19 @@ $balance = getLeaveBalance($user_id);
 ::-webkit-scrollbar { width: 6px; }
 ::-webkit-scrollbar-track { background: #f1f1f1; border-radius: 10px; }
 ::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 10px; }
+
+@keyframes floatY {
+    0%, 100% { transform: translateY(0px); }
+    50% { transform: translateY(-10px); }
+}
+.empty-state-svg { animation: floatY 3.2s ease-in-out infinite; }
 </style>
 </head>
 
 <body class="bg-gradient-to-br from-gray-50 to-gray-100 min-h-screen pb-20">
+<?php require_once '../includes/global_ui.php'; ?>
+<?php require_once '../includes/toast.php'; ?>
+<?php require_once '../includes/confirm_modal.php'; ?>
 
 <!-- Premium Header -->
 <div class="bg-gradient-to-r from-slate-900 via-indigo-900 to-slate-900 text-white sticky top-0 z-40 shadow-2xl backdrop-blur-sm">
@@ -174,7 +291,7 @@ $balance = getLeaveBalance($user_id);
         <a href="clock.php" class="flex items-center gap-3 py-3 px-4 rounded-xl hover:bg-blue-800/30 transition mb-1">
             <i class="fas fa-clock w-5"></i> Clock In/Out
         </a>
-        <a href="leave.php" class="flex items-center gap-3 py-3 px-4 rounded-xl hover:bg-blue-800/30 transition mb-1">
+        <a href="leave.php" class="flex items-center gap-3 py-3 px-4 rounded-xl bg-blue-800/50 mb-1">
             <i class="fas fa-calendar-alt w-5"></i> Apply Leave
         </a>
         <a href="claim.php" class="flex items-center gap-3 py-3 px-4 rounded-xl hover:bg-blue-800/30 transition mb-1">
@@ -186,7 +303,7 @@ $balance = getLeaveBalance($user_id);
         <a href="assets.php" class="flex items-center gap-3 py-3 px-4 rounded-xl hover:bg-blue-800/30 transition mb-1">
             <i class="fas fa-boxes w-5"></i> Asset Tracker
         </a>
-        <a href="management.php" class="flex items-center gap-3 py-3 px-4 rounded-xl bg-blue-800/50 mb-1">
+        <a href="management.php" class="flex items-center gap-3 py-3 px-4 rounded-xl hover:bg-blue-800/30 transition mb-1">
             <i class="fas fa-briefcase w-5"></i> My Management
         </a>
         <a href="payslip.php" class="flex items-center gap-3 py-3 px-4 rounded-xl hover:bg-blue-800/30 transition mb-1">
@@ -215,7 +332,8 @@ $balance = getLeaveBalance($user_id);
         <p class="text-sm text-gray-500 mt-1">Request time off and track your leave balance</p>
     </div>
 
-    <!-- Balance Cards -->
+    <!-- Balance Cards (hidden for interns - they have no paid leave entitlement) -->
+    <?php if(!$is_intern): ?>
     <div class="grid grid-cols-2 gap-4 mb-6">
         <div class="balance-card bg-gradient-to-br from-green-500 to-emerald-600 text-white p-5 rounded-2xl shadow-lg">
             <div class="flex items-center justify-between">
@@ -265,40 +383,58 @@ $balance = getLeaveBalance($user_id);
             </div>
         </div>
     </div>
+    <?php endif; ?><!-- end balance cards for non-interns -->
 
-    <!-- Application Form -->
+    <!-- Application / Edit Form -->
+    <?php if($is_intern): ?>
+    <div class="bg-blue-50 border border-blue-200 rounded-2xl px-5 py-3 mb-4 flex items-center gap-3 animate-fadeIn">
+        <i class="fas fa-graduation-cap text-blue-500 text-lg"></i>
+        <p class="text-sm text-blue-700 font-medium">Intern — only <strong>Unpaid Leave</strong> is applicable. It will be deducted from your salary.</p>
+    </div>
+    <?php endif; ?>
     <div class="bg-white rounded-2xl shadow-xl p-6 mb-6 animate-fadeInUp">
         <div class="flex items-center gap-3 mb-5">
             <div class="w-10 h-10 bg-gradient-to-br from-blue-500 to-indigo-600 rounded-xl flex items-center justify-center shadow-md">
-                <i class="fas fa-pen-alt text-white"></i>
+                <i class="fas <?php echo $edit_mode ? 'fa-edit' : 'fa-pen-alt'; ?> text-white"></i>
             </div>
             <div>
-                <h2 class="text-lg font-bold text-gray-800">New Leave Request</h2>
-                <p class="text-xs text-gray-500">Fill in the details below</p>
+                <h2 class="text-lg font-bold text-gray-800"><?php echo $edit_mode ? 'Edit Leave Request' : 'New Leave Request'; ?></h2>
+                <p class="text-xs text-gray-500"><?php echo $edit_mode ? 'Update your leave details' : 'Fill in the details below'; ?></p>
             </div>
         </div>
         
         <?php echo $message; ?>
+        <?php echo $error; ?>
 
         <form method="POST" enctype="multipart/form-data" class="space-y-4">
+            <?php if ($edit_mode): ?>
+                <input type="hidden" name="leave_id" value="<?php echo $edit_leave['id']; ?>">
+            <?php endif; ?>
+            
             <div>
                 <label class="block text-gray-700 text-sm font-semibold mb-2">Leave Type</label>
                 <select name="leave_type" id="leave_type" required class="w-full px-4 py-2.5 border-2 border-gray-200 rounded-xl focus:border-blue-500 transition" onchange="toggleHalfDayOption()">
+                    <?php if($is_intern): ?>
+                        <option value="unpaid" selected>Unpaid Leave (salary deducted)</option>
+                    <?php else: ?>
                     <option value="">Select Leave Type</option>
-                    <?php while($type = mysqli_fetch_assoc($leave_types)): ?>
-                        <option value="<?php echo $type['leave_code']; ?>" data-requires-attachment="<?php echo $type['requires_attachment']; ?>">
+                    <?php while($type = mysqli_fetch_assoc($leave_types)):
+                        $selected = ($edit_mode && $edit_leave['leave_type'] == $type['leave_code']) ? 'selected' : '';
+                    ?>
+                        <option value="<?php echo $type['leave_code']; ?>" data-requires-attachment="<?php echo $type['requires_attachment']; ?>" <?php echo $selected; ?>>
                             <?php echo $type['leave_name']; ?> (<?php echo $type['days_per_year']; ?> days/year)
                         </option>
                     <?php endwhile; ?>
+                    <?php endif; ?>
                 </select>
             </div>
             
-            <div id="halfDayContainer" style="display: none;">
+            <div id="halfDayContainer" style="<?php echo ($edit_mode && $edit_leave['half_day'] != 'none') ? 'display: block;' : 'display: none;'; ?>">
                 <label class="block text-gray-700 text-sm font-semibold mb-2">Leave Duration</label>
                 <select name="half_day" id="half_day" class="w-full px-4 py-2.5 border-2 border-gray-200 rounded-xl focus:border-blue-500 transition">
-                    <option value="none">Full Day</option>
-                    <option value="first_half">Half Day (Morning Session)</option>
-                    <option value="second_half">Half Day (Afternoon Session)</option>
+                    <option value="none" <?php echo ($edit_mode && $edit_leave['half_day'] == 'none') ? 'selected' : ''; ?>>Full Day</option>
+                    <option value="first_half" <?php echo ($edit_mode && $edit_leave['half_day'] == 'first_half') ? 'selected' : ''; ?>>Half Day (Morning Session)</option>
+                    <option value="second_half" <?php echo ($edit_mode && $edit_leave['half_day'] == 'second_half') ? 'selected' : ''; ?>>Half Day (Afternoon Session)</option>
                 </select>
                 <p class="text-xs text-gray-500 mt-1">Half day leave consumes 0.5 day from your balance</p>
             </div>
@@ -306,38 +442,69 @@ $balance = getLeaveBalance($user_id);
             <div class="grid grid-cols-2 gap-3">
                 <div>
                     <label class="block text-gray-700 text-sm font-semibold mb-2">Start Date</label>
-                    <input type="date" name="start_date" id="start_date" required class="w-full px-4 py-2.5 border-2 border-gray-200 rounded-xl focus:border-blue-500 transition" onchange="updateEndDate()">
+                    <input type="date" name="start_date" id="start_date" required value="<?php echo $edit_mode ? $edit_leave['start_date'] : ''; ?>" class="w-full px-4 py-2.5 border-2 border-gray-200 rounded-xl focus:border-blue-500 transition" onchange="updateEndDate()">
                 </div>
-                <div id="endDateContainer">
+                <div id="endDateContainer" style="<?php echo ($edit_mode && $edit_leave['half_day'] == 'none') ? 'display: block;' : 'display: none;'; ?>">
                     <label class="block text-gray-700 text-sm font-semibold mb-2">End Date</label>
-                    <input type="date" name="end_date" id="end_date" class="w-full px-4 py-2.5 border-2 border-gray-200 rounded-xl focus:border-blue-500 transition">
+                    <input type="date" name="end_date" id="end_date" value="<?php echo $edit_mode ? $edit_leave['end_date'] : ''; ?>" class="w-full px-4 py-2.5 border-2 border-gray-200 rounded-xl focus:border-blue-500 transition">
                 </div>
             </div>
             
             <div>
                 <label class="block text-gray-700 text-sm font-semibold mb-2">Reason <span class="text-gray-400 font-normal">(Optional)</span></label>
-                <textarea name="reason" rows="3" placeholder="Please provide reason for leave..." class="w-full px-4 py-2.5 border-2 border-gray-200 rounded-xl focus:border-blue-500 transition"></textarea>
+                <textarea name="reason" rows="3" placeholder="Please provide reason for leave..." class="w-full px-4 py-2.5 border-2 border-gray-200 rounded-xl focus:border-blue-500 transition"><?php echo $edit_mode ? htmlspecialchars($edit_leave['reason']) : ''; ?></textarea>
             </div>
             
             <div id="attachmentContainer">
-                <label class="block text-gray-700 text-sm font-semibold mb-2">Attachment <span class="text-gray-400 font-normal" id="attachmentRequired">(Optional)</span></label>
+                <label class="block text-gray-700 text-sm font-semibold mb-2">
+                    Attachment 
+                    <span class="text-gray-400 font-normal" id="attachmentRequired">
+                        <?php 
+                        if ($edit_mode) {
+                            $type_query = mysqli_query($conn, "SELECT requires_attachment FROM leave_types WHERE leave_code = '{$edit_leave['leave_type']}'");
+                            $type_data = mysqli_fetch_assoc($type_query);
+                            echo ($type_data && $type_data['requires_attachment']) ? '(Required)' : '(Optional)';
+                        } else {
+                            echo '(Optional)';
+                        }
+                        ?>
+                    </span>
+                </label>
+                
+                <?php if ($edit_mode && !empty($edit_leave['attachment'])): ?>
+                    <div class="mb-2 p-2 bg-gray-100 rounded-lg flex items-center justify-between">
+                        <div class="flex items-center gap-2">
+                            <i class="fas fa-paperclip text-gray-500"></i>
+                            <span class="text-sm text-gray-600">Current: <?php echo $edit_leave['attachment']; ?></span>
+                        </div>
+                        <a href="../uploads/<?php echo $edit_leave['attachment']; ?>" target="_blank" class="text-blue-500 text-sm">View</a>
+                    </div>
+                <?php endif; ?>
+                
                 <div class="relative">
                     <input type="file" name="attachment" id="fileInput" class="hidden">
                     <button type="button" onclick="document.getElementById('fileInput').click()" class="w-full border-2 border-dashed border-gray-300 rounded-xl p-3 text-center hover:border-blue-500 transition group">
                         <i class="fas fa-cloud-upload-alt text-gray-400 text-2xl group-hover:text-blue-500 transition"></i>
-                        <p class="text-sm text-gray-500 mt-1 group-hover:text-blue-500 transition">Click to upload document</p>
+                        <p class="text-sm text-gray-500 mt-1 group-hover:text-blue-500 transition">Click to upload document (replaces existing if any)</p>
                         <p class="text-xs text-gray-400 mt-1" id="fileName">No file chosen</p>
                     </button>
                 </div>
             </div>
             
-            <button type="submit" name="apply_leave" class="w-full bg-gradient-to-r from-blue-600 to-indigo-600 hover:shadow-xl transition-all transform hover:scale-105 text-white py-3 rounded-xl font-semibold flex items-center justify-center gap-2">
-                <i class="fas fa-paper-plane"></i> Submit Leave Application
+            <button type="submit" name="<?php echo $edit_mode ? 'update_leave' : 'apply_leave'; ?>" class="w-full bg-gradient-to-r from-blue-600 to-indigo-600 hover:shadow-xl transition-all transform hover:scale-105 text-white py-3 rounded-xl font-semibold flex items-center justify-center gap-2">
+                <i class="fas <?php echo $edit_mode ? 'fa-save' : 'fa-paper-plane'; ?>"></i>
+                <?php echo $edit_mode ? ' Update Leave Application' : ' Submit Leave Application'; ?>
             </button>
+            
+            <?php if ($edit_mode): ?>
+            <div class="text-center">
+                <a href="leave.php" class="text-sm text-gray-500 hover:text-blue-600 transition">Cancel Edit</a>
+            </div>
+            <?php endif; ?>
         </form>
     </div>
 
-    <!-- Leave History with Pagination & Filter -->
+    <!-- Leave History with Pagination & Edit/Delete Options -->
     <?php if($total_rows > 0): ?>
     <div class="bg-white rounded-2xl shadow-xl overflow-hidden">
         <div class="bg-gradient-to-r from-gray-50 to-white px-5 py-4 border-b">
@@ -348,7 +515,6 @@ $balance = getLeaveBalance($user_id);
                     <span class="text-xs text-gray-400">(<?php echo $total_rows; ?> total)</span>
                 </div>
                 
-                <!-- Status Filter Dropdown -->
                 <form method="GET" class="flex gap-2">
                     <select name="status" class="text-sm border border-gray-200 rounded-lg px-3 py-1.5">
                         <option value="">All Status</option>
@@ -374,7 +540,7 @@ $balance = getLeaveBalance($user_id);
             ?>
             <div class="p-4 hover:bg-gray-50 transition">
                 <div class="flex justify-between items-start">
-                    <div>
+                    <div class="flex-1">
                         <div class="flex items-center gap-2 mb-1">
                             <i class="fas fa-<?php echo $leave['leave_type'] == 'annual' ? 'umbrella-beach' : ($leave['leave_type'] == 'medical' ? 'hospital-user' : 'exclamation-triangle'); ?> text-<?php echo $status_color; ?>-500"></i>
                             <span class="font-medium text-gray-800"><?php echo ucfirst($leave['leave_type']); ?> Leave<?php echo $half_day_text; ?></span>
@@ -387,10 +553,23 @@ $balance = getLeaveBalance($user_id);
                             <p class="text-xs text-gray-400 mt-1"><?php echo substr($leave['reason'], 0, 60); ?></p>
                         <?php endif; ?>
                     </div>
-                    <span class="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-semibold bg-<?php echo $status_color; ?>-100 text-<?php echo $status_color; ?>-700">
-                        <i class="fas fa-<?php echo $status_icon; ?>"></i>
-                        <?php echo ucfirst($leave['status']); ?>
-                    </span>
+                    <div class="text-right">
+                        <span class="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-semibold bg-<?php echo $status_color; ?>-100 text-<?php echo $status_color; ?>-700">
+                            <i class="fas fa-<?php echo $status_icon; ?>"></i>
+                            <?php echo ucfirst($leave['status']); ?>
+                        </span>
+                        
+                        <?php if ($leave['status'] == 'pending'): ?>
+                            <div class="flex gap-2 mt-2">
+                                <a href="?edit=<?php echo $leave['id']; ?>" class="text-blue-600 hover:text-blue-800 text-sm" title="Edit">
+                                    <i class="fas fa-edit"></i> Edit
+                                </a>
+                                <a href="?delete=<?php echo $leave['id']; ?>" data-confirm="Delete this leave application? This action cannot be undone." data-confirm-title="Delete Leave" class="text-red-500 hover:text-red-700 text-sm" title="Delete">
+                                    <i class="fas fa-trash"></i> Delete
+                                </a>
+                            </div>
+                        <?php endif; ?>
+                    </div>
                 </div>
             </div>
             <?php endwhile; ?>
@@ -427,11 +606,49 @@ $balance = getLeaveBalance($user_id);
         <?php endif; ?>
     </div>
     <?php else: ?>
-    <div class="bg-white rounded-2xl shadow-xl p-8 text-center">
-        <i class="fas fa-calendar-alt text-4xl text-gray-300 mb-3 block"></i>
-        <p class="text-gray-500">No leave history found</p>
+    <div class="bg-white rounded-2xl shadow-xl py-14 px-6 text-center">
+        <div class="flex justify-center mb-6">
+            <svg class="empty-state-svg" width="140" height="140" viewBox="0 0 120 120" fill="none" xmlns="http://www.w3.org/2000/svg" style="filter: drop-shadow(0 8px 24px rgba(59,130,246,0.15));">
+                <!-- Calendar base -->
+                <rect x="14" y="26" width="92" height="80" rx="10" fill="#eff6ff"/>
+                <rect x="14" y="26" width="92" height="80" rx="10" stroke="#3b82f6" stroke-width="2.5" fill="none"/>
+                <!-- Calendar top bar -->
+                <rect x="14" y="26" width="92" height="26" rx="10" fill="#3b82f6"/>
+                <rect x="14" y="40" width="92" height="12" fill="#3b82f6"/>
+                <!-- Ring pegs -->
+                <rect x="36" y="18" width="6" height="18" rx="3" fill="#1d4ed8"/>
+                <rect x="78" y="18" width="6" height="18" rx="3" fill="#1d4ed8"/>
+                <!-- Month dots / grid -->
+                <circle cx="34" cy="66" r="4" fill="#3b82f6" opacity="0.6"/>
+                <circle cx="50" cy="66" r="4" fill="#3b82f6" opacity="0.6"/>
+                <circle cx="66" cy="66" r="4" fill="#3b82f6" opacity="0.6"/>
+                <circle cx="82" cy="66" r="4" fill="#3b82f6" opacity="0.3"/>
+                <circle cx="34" cy="82" r="4" fill="#3b82f6" opacity="0.3"/>
+                <circle cx="50" cy="82" r="4" fill="#3b82f6" opacity="0.3"/>
+                <circle cx="66" cy="82" r="4" fill="#3b82f6" opacity="0.3"/>
+                <circle cx="82" cy="82" r="4" fill="#3b82f6" opacity="0.3"/>
+                <!-- Palm tree / beach icon in top-right (annual leave hint) -->
+                <circle cx="94" cy="20" r="4" fill="#93c5fd" opacity="0.8"/>
+                <circle cx="105" cy="30" r="2.5" fill="#3b82f6" opacity="0.4"/>
+                <circle cx="86" cy="12" r="2" fill="#1d4ed8" opacity="0.5"/>
+                <!-- Highlighted day -->
+                <circle cx="50" cy="66" r="7" fill="none" stroke="#3b82f6" stroke-width="2"/>
+            </svg>
+        </div>
+        <h3 class="text-lg font-bold text-gray-700 mb-1">No Leave Records</h3>
+        <p class="text-sm text-gray-400 mb-4 max-w-xs mx-auto">
+            <?php if($status_filter): ?>
+                No <strong class="text-blue-600"><?php echo $status_filter; ?></strong> leave applications found.
+            <?php else: ?>
+                Your leave history will appear here once you submit your first application.
+            <?php endif; ?>
+        </p>
         <?php if($status_filter): ?>
-            <a href="leave.php" class="text-blue-600 text-sm mt-2 inline-block">Clear filter</a>
+            <a href="leave.php" class="inline-flex items-center gap-2 text-sm font-semibold text-blue-600 hover:text-blue-800 border border-blue-200 hover:border-blue-400 px-4 py-2 rounded-xl transition">
+                <i class="fas fa-times-circle text-xs"></i> Clear Filter
+            </a>
+        <?php else: ?>
+            <p class="text-xs text-gray-400 italic">Tip: Use the form above to apply for annual, medical or unpaid leave.</p>
         <?php endif; ?>
     </div>
     <?php endif; ?>
@@ -466,6 +683,7 @@ function toggleHalfDayOption() {
     } else {
         halfDayContainer.style.display = 'none';
         document.getElementById('half_day').value = 'none';
+        endDateContainer.style.display = 'block';
     }
     
     if (requiresAttachment == '1') {
@@ -493,6 +711,14 @@ function updateEndDate() {
 }
 
 document.getElementById('half_day')?.addEventListener('change', updateEndDate);
+
+// Initialize on page load for edit mode
+document.addEventListener('DOMContentLoaded', function() {
+    <?php if ($edit_mode): ?>
+        toggleHalfDayOption();
+        updateEndDate();
+    <?php endif; ?>
+});
 </script>
 
 </body>

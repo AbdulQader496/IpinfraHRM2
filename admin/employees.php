@@ -2,6 +2,7 @@
 require_once '../includes/auth.php';
 redirectIfNotAdmin();
 require_once '../includes/db.php';
+require_once '../includes/toast_fn.php';
 
 // Handle Add Employee
 if (isset($_POST['add_employee'])) {
@@ -22,7 +23,8 @@ if (isset($_POST['add_employee'])) {
     $address = mysqli_real_escape_string($conn, $_POST['address']);
     $bank_name = mysqli_real_escape_string($conn, $_POST['bank_name']);
     $bank_account = mysqli_real_escape_string($conn, $_POST['bank_account']);
-    
+    $employee_type = mysqli_real_escape_string($conn, $_POST['employee_type'] ?? 'regular');
+
     // Handle profile picture upload
     $profile_pic = '';
     if (isset($_FILES['profile_pic']) && $_FILES['profile_pic']['error'] == 0) {
@@ -38,8 +40,8 @@ if (isset($_POST['add_employee'])) {
     $is_subject = ($nationality == 'Malaysian') ? 1 : 0;
     
     // UPDATED INSERT QUERY with new fields
-    $query = "INSERT INTO employees (employee_id, name, ic_number, passport_no, nationality, email, password, department, position, basic_salary, join_date, profile_pic, is_subject_to_statutory, phone, address, bank_name, bank_account) 
-              VALUES ('$employee_id', '$name', '$ic_number', '$passport_no', '$nationality', '$email', '$password', '$department', '$position', '$basic_salary', '$join_date', '$profile_pic', '$is_subject', '$phone', '$address', '$bank_name', '$bank_account')";
+    $query = "INSERT INTO employees (employee_id, name, ic_number, passport_no, nationality, email, password, department, position, basic_salary, join_date, profile_pic, is_subject_to_statutory, phone, address, bank_name, bank_account, employee_type)
+              VALUES ('$employee_id', '$name', '$ic_number', '$passport_no', '$nationality', '$email', '$password', '$department', '$position', '$basic_salary', '$join_date', '$profile_pic', '$is_subject', '$phone', '$address', '$bank_name', '$bank_account', '$employee_type')";
     mysqli_query($conn, $query);
     header('Location: employees.php');
     exit();
@@ -63,9 +65,10 @@ if (isset($_POST['update_employee'])) {
     $medical_leave = intval($_POST['medical_leave_entitlement']);
     $status = mysqli_real_escape_string($conn, $_POST['status']);
     $join_date = mysqli_real_escape_string($conn, $_POST['join_date']);
+    $employee_type = mysqli_real_escape_string($conn, $_POST['employee_type'] ?? 'regular');
     
     // Handle profile picture upload
-    $profile_pic = $_POST['existing_profile_pic'];
+    $profile_pic = mysqli_real_escape_string($conn, $_POST['existing_profile_pic']);
     if (isset($_FILES['profile_pic']) && $_FILES['profile_pic']['error'] == 0) {
         $target_dir = "../uploads/profiles/";
         if (!is_dir($target_dir)) {
@@ -95,7 +98,8 @@ if (isset($_POST['update_employee'])) {
                 status='$status',
                 join_date='$join_date',
                 profile_pic='$profile_pic',
-                is_subject_to_statutory='$is_subject'
+                is_subject_to_statutory='$is_subject',
+                employee_type='$employee_type'
               WHERE id=$id";
     mysqli_query($conn, $query);
     header('Location: employees.php');
@@ -160,6 +164,49 @@ $employees = mysqli_query($conn, "SELECT * FROM employees WHERE role='employee' 
             object-fit: cover;
             background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
         }
+        /* Search-as-you-type transitions */
+        .employee-card, .employee-row {
+            transition: opacity 0.2s ease, transform 0.2s ease, max-height 0.25s ease;
+        }
+        .employee-card.hidden-by-filter {
+            display: none !important;
+        }
+        .employee-row.hidden-by-filter {
+            display: none !important;
+        }
+        mark.search-highlight {
+            background: #fef08a;
+            color: inherit;
+            border-radius: 2px;
+            padding: 0 1px;
+        }
+        #noResultsMsg {
+            display: none;
+        }
+        .search-input-wrapper {
+            position: relative;
+        }
+        #searchClearBtn {
+            position: absolute;
+            right: 100px;
+            top: 50%;
+            transform: translateY(-50%);
+            background: rgba(255,255,255,0.25);
+            border: none;
+            color: #fff;
+            width: 22px;
+            height: 22px;
+            border-radius: 50%;
+            cursor: pointer;
+            font-size: 12px;
+            display: none;
+            align-items: center;
+            justify-content: center;
+            transition: background 0.15s;
+        }
+        #searchClearBtn:hover {
+            background: rgba(255,255,255,0.45);
+        }
         /* View Profile Modal Styles */
         .view-profile-modal {
             max-height: 90vh;
@@ -181,6 +228,9 @@ $employees = mysqli_query($conn, "SELECT * FROM employees WHERE role='employee' 
     </style>
 </head>
 <body class="bg-gradient-to-br from-slate-50 via-blue-50 to-indigo-50 min-h-screen">
+<?php require_once '../includes/global_ui.php'; ?>
+<?php require_once '../includes/toast.php'; ?>
+<?php require_once '../includes/confirm_modal.php'; ?>
 
 <!-- Mobile Header -->
 <div class="bg-gradient-to-r from-slate-900 via-indigo-900 to-slate-900 text-white sticky top-0 z-40 shadow-2xl">
@@ -208,11 +258,16 @@ $employees = mysqli_query($conn, "SELECT * FROM employees WHERE role='employee' 
     
     <!-- Search Bar -->
     <div id="searchBar" class="hidden px-4 pb-4">
-        <form method="GET" class="relative">
-            <i class="fas fa-search absolute left-4 top-1/2 transform -translate-y-1/2 text-gray-400"></i>
-            <input type="text" name="search" value="<?php echo htmlspecialchars($search); ?>" 
-                   placeholder="Search by name, ID, or email..." 
-                   class="w-full pl-12 pr-4 py-3 rounded-xl bg-white/10 border border-white/20 text-white placeholder-white/50 focus:outline-none focus:ring-2 focus:ring-blue-400">
+        <form method="GET" class="search-input-wrapper relative">
+            <i class="fas fa-search absolute left-4 top-1/2 transform -translate-y-1/2 text-gray-400 z-10"></i>
+            <input type="text" id="liveSearchInput" name="search" value="<?php echo htmlspecialchars($search); ?>"
+                   placeholder="Search by name, ID, department, position..."
+                   oninput="debouncedFilter()"
+                   autocomplete="off"
+                   class="w-full pl-12 pr-28 py-3 rounded-xl bg-white/10 border border-white/20 text-white placeholder-white/50 focus:outline-none focus:ring-2 focus:ring-blue-400">
+            <button type="button" id="searchClearBtn" onclick="clearSearch()" title="Clear search">
+                &times;
+            </button>
             <button type="submit" class="absolute right-2 top-1/2 transform -translate-y-1/2 bg-blue-600 text-white px-4 py-1.5 rounded-lg text-sm hover:bg-blue-700 transition">
                 Search
             </button>
@@ -376,7 +431,8 @@ $employees = mysqli_query($conn, "SELECT * FROM employees WHERE role='employee' 
                 $profile_pic_path = "../uploads/profiles/" . $row['profile_pic'];
                 $has_profile = !empty($row['profile_pic']) && file_exists($profile_pic_path);
             ?>
-            <div class="bg-white rounded-2xl shadow-lg overflow-hidden hover:shadow-2xl transition-all duration-300 transform hover:-translate-y-1">
+            <div class="employee-card bg-white rounded-2xl shadow-lg overflow-hidden hover:shadow-2xl transition-all duration-300 transform hover:-translate-y-1"
+                 data-searchable="<?php echo strtolower(htmlspecialchars($row['name'] . ' ' . $row['employee_id'] . ' ' . $row['department'] . ' ' . $row['position'])); ?>">
                 <div class="bg-gradient-to-r from-gray-800 to-gray-900 p-4 text-white">
                     <div class="flex justify-between items-start">
                         <div class="flex items-center gap-3">
@@ -388,7 +444,7 @@ $employees = mysqli_query($conn, "SELECT * FROM employees WHERE role='employee' 
                                 </div>
                             <?php endif; ?>
                             <div>
-                                <h3 class="font-bold"><?php echo htmlspecialchars($row['name']); ?></h3>
+                                <h3 class="font-bold employee-name-text"><?php echo htmlspecialchars($row['name']); ?></h3>
                                 <p class="text-xs text-gray-300"><?php echo htmlspecialchars($row['employee_id']); ?></p>
                             </div>
                         </div>
@@ -427,7 +483,7 @@ $employees = mysqli_query($conn, "SELECT * FROM employees WHERE role='employee' 
                                 class="flex-1 bg-blue-50 text-blue-600 py-2 rounded-lg hover:bg-blue-100 transition text-sm font-medium">
                             <i class="fas fa-edit mr-1"></i> Edit
                         </button>
-                        <a href="?delete=<?php echo $row['id']; ?>" onclick="return confirm('Delete employee?')" 
+                        <a href="?delete=<?php echo $row['id']; ?>" data-confirm="This will permanently delete the employee and all related records." data-confirm-title="Delete Employee" 
                            class="flex-1 bg-red-50 text-red-600 py-2 rounded-lg hover:bg-red-100 transition text-sm font-medium text-center">
                             <i class="fas fa-trash mr-1"></i> Del
                         </a>
@@ -459,7 +515,8 @@ $employees = mysqli_query($conn, "SELECT * FROM employees WHERE role='employee' 
                             $profile_pic_path = "../uploads/profiles/" . $row['profile_pic'];
                             $has_profile = !empty($row['profile_pic']) && file_exists($profile_pic_path);
                         ?>
-                        <tr class="hover:bg-gray-50 transition">
+                        <tr class="employee-row hover:bg-gray-50 transition"
+                            data-searchable="<?php echo strtolower(htmlspecialchars($row['name'] . ' ' . $row['employee_id'] . ' ' . $row['department'] . ' ' . $row['position'])); ?>">
                             <td class="px-4 py-3">
                                 <div class="flex items-center gap-3">
                                     <?php if($has_profile): ?>
@@ -470,7 +527,7 @@ $employees = mysqli_query($conn, "SELECT * FROM employees WHERE role='employee' 
                                         </div>
                                     <?php endif; ?>
                                     <div>
-                                        <p class="font-semibold text-gray-800"><?php echo htmlspecialchars($row['name']); ?></p>
+                                        <p class="font-semibold text-gray-800 employee-name-text"><?php echo htmlspecialchars($row['name']); ?></p>
                                         <div class="flex items-center gap-1 mt-1">
                                             <?php if($row['nationality'] != 'Malaysian'): ?>
                                                 <span class="text-xs bg-orange-100 text-orange-700 px-2 py-0.5 rounded-full">Expat</span>
@@ -497,7 +554,7 @@ $employees = mysqli_query($conn, "SELECT * FROM employees WHERE role='employee' 
                                     <button onclick='openEditModal(<?php echo json_encode($row); ?>)' class="text-blue-600 hover:text-blue-800 transition" title="Edit">
                                         <i class="fas fa-edit"></i>
                                     </button>
-                                    <a href="?delete=<?php echo $row['id']; ?>" onclick="return confirm('Delete employee?')" class="text-red-500 hover:text-red-700 transition" title="Delete">
+                                    <a href="?delete=<?php echo $row['id']; ?>" data-confirm="This will permanently delete the employee and all related records." data-confirm-title="Delete Employee" class="text-red-500 hover:text-red-700 transition" title="Delete">
                                         <i class="fas fa-trash"></i>
                                     </a>
                                 </div>
@@ -509,6 +566,14 @@ $employees = mysqli_query($conn, "SELECT * FROM employees WHERE role='employee' 
             </div>
         </div>
         
+        <!-- No Results Message (client-side filter) -->
+        <div id="noResultsMsg" class="text-center py-16">
+            <i class="fas fa-search text-gray-300 text-5xl mb-4"></i>
+            <p class="text-gray-500 text-lg font-medium">No employees match your search.</p>
+            <p class="text-gray-400 text-sm mt-1">Try a different name, ID, department, or position.</p>
+            <button onclick="clearSearch()" class="mt-4 text-blue-600 hover:underline text-sm">Clear search</button>
+        </div>
+
         <!-- Pagination -->
         <?php if($total_pages > 1): ?>
         <div class="flex justify-center gap-2 mt-8">
@@ -732,6 +797,13 @@ $employees = mysqli_query($conn, "SELECT * FROM employees WHERE role='employee' 
             <!-- Salary & Joining -->
             <div class="border-t border-gray-100 pt-4">
                 <h3 class="font-semibold text-gray-700 mb-3">Salary & Employment</h3>
+                <div class="mb-3">
+                    <label class="block text-sm font-medium text-gray-700 mb-2">Employee Type</label>
+                    <select name="employee_type" required class="w-full px-4 py-3 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500">
+                        <option value="regular">Regular Employee</option>
+                        <option value="intern">Intern (No EPF/SOCSO/EIS/PCB, No Leave)</option>
+                    </select>
+                </div>
                 <div class="grid grid-cols-2 gap-3">
                     <input type="number" step="0.01" name="basic_salary" placeholder="Basic Salary (RM)" required class="w-full px-4 py-3 border border-gray-200 rounded-xl">
                     <input type="date" name="join_date" required class="w-full px-4 py-3 border border-gray-200 rounded-xl">
@@ -848,7 +920,14 @@ $employees = mysqli_query($conn, "SELECT * FROM employees WHERE role='employee' 
                 </div>
                 
                 <div class="border-t border-gray-100 pt-4">
-                    <h3 class="font-semibold text-gray-700 mb-3">Status</h3>
+                    <h3 class="font-semibold text-gray-700 mb-3">Employment Type & Status</h3>
+                    <div class="mb-3">
+                        <label class="block text-sm font-medium text-gray-700 mb-1">Employee Type</label>
+                        <select name="employee_type" id="edit_employee_type" class="w-full px-4 py-3 border border-gray-200 rounded-xl">
+                            <option value="regular">Regular Employee</option>
+                            <option value="intern">Intern (No EPF/SOCSO/EIS/PCB, No Leave)</option>
+                        </select>
+                    </div>
                     <select name="status" id="edit_status" class="w-full px-4 py-3 border border-gray-200 rounded-xl">
                         <option value="active">Active</option>
                         <option value="inactive">Inactive</option>
@@ -1042,6 +1121,7 @@ $employees = mysqli_query($conn, "SELECT * FROM employees WHERE role='employee' 
             document.getElementById('edit_annual_leave').value = employee.annual_leave_entitlement || 14;
             document.getElementById('edit_medical_leave').value = employee.medical_leave_entitlement || 14;
             document.getElementById('edit_status').value = employee.status || 'active';
+            document.getElementById('edit_employee_type').value = employee.employee_type || 'regular';
             document.getElementById('edit_join_date').value = employee.join_date || '';
             document.getElementById('edit_existing_profile_pic').value = employee.profile_pic || '';
             
@@ -1066,6 +1146,111 @@ $employees = mysqli_query($conn, "SELECT * FROM employees WHERE role='employee' 
             window.location.href = 'export_employees.php';
         }
         
+        // ── Search-as-you-type ──────────────────────────────────────────────
+        let _filterTimer = null;
+
+        function debouncedFilter() {
+            clearTimeout(_filterTimer);
+            _filterTimer = setTimeout(filterEmployees, 200);
+        }
+
+        function filterEmployees() {
+            const input = document.getElementById('liveSearchInput');
+            if (!input) return;
+            const query = input.value.trim().toLowerCase();
+            const clearBtn = document.getElementById('searchClearBtn');
+
+            // Show/hide clear button
+            if (clearBtn) {
+                clearBtn.style.display = query.length ? 'flex' : 'none';
+            }
+
+            const cards = document.querySelectorAll('.employee-card');
+            const rows  = document.querySelectorAll('.employee-row');
+            let visibleCount = 0;
+
+            // Helper: escape special regex chars in query
+            function escapeRegex(str) {
+                return str.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+            }
+
+            // Helper: highlight matching text in an element
+            function highlightText(el, query) {
+                // Restore original text first (stored in dataset)
+                if (el.dataset.originalText === undefined) {
+                    el.dataset.originalText = el.textContent;
+                }
+                const original = el.dataset.originalText;
+                if (!query) {
+                    el.textContent = original;
+                    return;
+                }
+                const regex = new RegExp('(' + escapeRegex(query) + ')', 'gi');
+                el.innerHTML = original.replace(regex, '<mark class="search-highlight">$1</mark>');
+            }
+
+            // Filter grid cards
+            cards.forEach(function(card) {
+                const searchable = card.getAttribute('data-searchable') || '';
+                const nameEl = card.querySelector('.employee-name-text');
+                const matches = !query || searchable.includes(query);
+                if (matches) {
+                    card.classList.remove('hidden-by-filter');
+                    if (nameEl) highlightText(nameEl, query);
+                    visibleCount++;
+                } else {
+                    card.classList.add('hidden-by-filter');
+                    if (nameEl) highlightText(nameEl, '');
+                }
+            });
+
+            // Filter list rows
+            rows.forEach(function(row) {
+                const searchable = row.getAttribute('data-searchable') || '';
+                const nameEl = row.querySelector('.employee-name-text');
+                const matches = !query || searchable.includes(query);
+                if (matches) {
+                    row.classList.remove('hidden-by-filter');
+                    if (nameEl) highlightText(nameEl, query);
+                    visibleCount++;
+                } else {
+                    row.classList.add('hidden-by-filter');
+                    if (nameEl) highlightText(nameEl, '');
+                }
+            });
+
+            // Show/hide no-results message
+            const noMsg = document.getElementById('noResultsMsg');
+            if (noMsg) {
+                // Count visible in the *active* view (cards or rows have double entries)
+                const activeCards = document.querySelectorAll('.employee-card:not(.hidden-by-filter)').length;
+                const activeRows  = document.querySelectorAll('.employee-row:not(.hidden-by-filter)').length;
+                const anyVisible  = (activeCards > 0 || activeRows > 0);
+                noMsg.style.display = (query && !anyVisible) ? 'block' : 'none';
+            }
+        }
+
+        function clearSearch() {
+            const input = document.getElementById('liveSearchInput');
+            if (input) {
+                input.value = '';
+                input.focus();
+            }
+            filterEmployees();
+        }
+
+        // Initialise: run filter on page load so clear button state is correct
+        // and re-apply if the page loaded with a pre-filled search value
+        document.addEventListener('DOMContentLoaded', function() {
+            filterEmployees();
+            // Open the search bar automatically if a server-side search is active
+            <?php if ($search): ?>
+            document.getElementById('searchBar').classList.remove('hidden');
+            <?php endif; ?>
+        });
+
+        // ── End search-as-you-type ──────────────────────────────────────────
+
         // Initialize view on page load
         document.addEventListener('DOMContentLoaded', function() {
             setView(currentView);

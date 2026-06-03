@@ -186,7 +186,7 @@ $gallery = mysqli_query($conn, "SELECT g.*, e.name, e.employee_id
                             <?php echo $photo['status'] == 'active' ? 'Hide' : 'Show'; ?>
                         </a>
                         <a href="?delete=<?php echo $photo['id']; ?>" 
-                           onclick="return confirm('Delete this photo permanently?')" 
+                           data-confirm="Delete this photo permanently?" data-confirm-title="Delete Photo" 
                            class="flex-1 text-center bg-red-500 hover:bg-red-600 text-white px-3 py-1 rounded-lg text-xs">
                             Delete
                         </a>

@@ -472,7 +472,7 @@ $categories = mysqli_query($conn, "SELECT * FROM asset_categories ORDER BY categ
                                     <button onclick="openQuantityModal(<?php echo $asset['id']; ?>, <?php echo $asset['quantity']; ?>)" class="text-blue-600 hover:text-blue-800 text-sm mr-2">
                                         <i class="fas fa-edit"></i> Qty
                                     </button>
-                                    <a href="?delete=<?php echo $asset['id']; ?>" onclick="return confirm('Delete this asset?')" class="text-red-600 hover:text-red-800 text-sm">
+                                    <a href="?delete=<?php echo $asset['id']; ?>" data-confirm="Delete this asset record permanently?" data-confirm-title="Delete Asset" class="text-red-600 hover:text-red-800 text-sm">
                                         <i class="fas fa-trash"></i>
                                     </a>
                                  </td>

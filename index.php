@@ -233,9 +233,9 @@ if (isset($_POST['login'])) {
             </div>
         </div>
         
-        <!-- Demo Hint -->
+        <!-- Contact hint -->
         <div class="text-center mt-6 text-white/50 text-xs">
-            <p>Demo: admin@ipinfra.com / password123 | employee@ipinfra.com / password123</p>
+            <p>Contact your administrator if you have trouble logging in.</p>
         </div>
     </div>
 

@@ -2,9 +2,15 @@
 require_once '../includes/auth.php';
 redirectIfNotLoggedIn();
 require_once '../includes/db.php';
+require_once '../includes/toast_fn.php';
 
 $user_id = $_SESSION['user_id'];
 $payrolls = mysqli_query($conn, "SELECT * FROM payroll WHERE employee_id = $user_id ORDER BY month_year DESC");
+
+$emp_data = mysqli_fetch_assoc(mysqli_query($conn, "SELECT nationality, employee_type FROM employees WHERE id = $user_id"));
+$is_malaysian_emp = isset($emp_data['nationality']) && $emp_data['nationality'] == 'Malaysian';
+$is_intern_emp    = isset($emp_data['employee_type']) && $emp_data['employee_type'] == 'intern';
+$show_statutory   = $is_malaysian_emp && !$is_intern_emp;
 ?>
 
 <!DOCTYPE html>
@@ -41,6 +47,9 @@ $payrolls = mysqli_query($conn, "SELECT * FROM payroll WHERE employee_id = $user
 </head>
 
 <body class="bg-gradient-to-br from-slate-50 via-blue-50 to-indigo-100 min-h-screen pb-24">
+<?php require_once '../includes/global_ui.php'; ?>
+<?php require_once '../includes/toast.php'; ?>
+<?php require_once '../includes/confirm_modal.php'; ?>
 
 <!-- Premium Header -->
 <div class="bg-gradient-to-r from-slate-900 via-indigo-900 to-slate-900 text-white sticky top-0 z-40 shadow-2xl backdrop-blur-sm">
@@ -164,12 +173,16 @@ $payrolls = mysqli_query($conn, "SELECT * FROM payroll WHERE employee_id = $user
                     </p>
                 </div>
                 
-                <div class="flex gap-2">
-                    <button onclick="printPayslip(<?php echo $row['id']; ?>)" 
+                <div class="flex gap-2 flex-wrap">
+                    <button onclick="printPayslip(<?php echo $row['id']; ?>)"
                         class="bg-gradient-to-r from-blue-600 to-indigo-600 text-white px-4 py-2 rounded-xl text-sm font-semibold shadow-md hover:shadow-xl transition-all transform hover:scale-105 flex items-center gap-1">
                         <i class="fas fa-eye"></i> View
                     </button>
-                    <button onclick="viewCalculation('<?php echo $row['month_year']; ?>')" 
+                    <button onclick="downloadPayslip(<?php echo $row['id']; ?>)"
+                        class="bg-gradient-to-r from-emerald-500 to-green-600 text-white px-4 py-2 rounded-xl text-sm font-semibold shadow-md hover:shadow-xl transition-all transform hover:scale-105 flex items-center gap-1">
+                        <i class="fas fa-download"></i> Download
+                    </button>
+                    <button onclick="viewCalculation('<?php echo $row['month_year']; ?>')"
                         class="bg-gradient-to-r from-purple-600 to-pink-600 text-white px-4 py-2 rounded-xl text-sm font-semibold shadow-md hover:shadow-xl transition-all transform hover:scale-105 flex items-center gap-1">
                         <i class="fas fa-calculator"></i> Details
                     </button>
@@ -184,32 +197,54 @@ $payrolls = mysqli_query($conn, "SELECT * FROM payroll WHERE employee_id = $user
                         <p class="text-xs text-gray-500">Basic Salary</p>
                         <p class="text-base font-bold text-gray-800">RM <?php echo number_format($row['basic_salary'], 2); ?></p>
                     </div>
+                    <?php if(isset($row['approved_claims']) && $row['approved_claims'] > 0): ?>
+                    <div class="bg-gradient-to-r from-green-50 to-emerald-50 p-3 rounded-xl">
+                        <p class="text-xs text-gray-500">Approved Claims</p>
+                        <p class="text-base font-semibold text-green-600">+RM <?php echo number_format($row['approved_claims'], 2); ?></p>
+                    </div>
+                    <?php endif; ?>
+                    <?php if(isset($row['unpaid_deduction']) && $row['unpaid_deduction'] > 0): ?>
+                    <div class="bg-gradient-to-r from-red-50 to-rose-50 p-3 rounded-xl">
+                        <p class="text-xs text-gray-500">Unpaid Leave Deduction</p>
+                        <p class="text-base font-semibold text-red-600">-RM <?php echo number_format($row['unpaid_deduction'], 2); ?></p>
+                    </div>
+                    <?php endif; ?>
+                    <?php if($show_statutory): ?>
                     <div class="bg-gradient-to-r from-gray-50 to-white p-3 rounded-xl">
-                        <p class="text-xs text-gray-500">EPF (Employee)</p>
+                        <p class="text-xs text-gray-500">EPF (Employee 11%)</p>
                         <p class="text-base font-semibold text-blue-600">RM <?php echo number_format($row['epf_employee'], 2); ?></p>
                     </div>
                     <div class="bg-gradient-to-r from-gray-50 to-white p-3 rounded-xl">
-                        <p class="text-xs text-gray-500">SOCSO</p>
+                        <p class="text-xs text-gray-500">SOCSO (0.5%)</p>
                         <p class="text-base font-semibold text-orange-600">RM <?php echo number_format($row['socso_employee'], 2); ?></p>
                     </div>
                     <div class="bg-gradient-to-r from-gray-50 to-white p-3 rounded-xl">
-                        <p class="text-xs text-gray-500">EIS</p>
+                        <p class="text-xs text-gray-500">EIS (0.2%)</p>
                         <p class="text-base font-semibold text-purple-600">RM <?php echo number_format($row['eis_employee'], 2); ?></p>
                     </div>
                     <div class="bg-gradient-to-r from-gray-50 to-white p-3 rounded-xl">
                         <p class="text-xs text-gray-500">PCB</p>
                         <p class="text-base font-semibold text-red-600">RM <?php echo number_format($row['pcb'], 2); ?></p>
                     </div>
-                    <div class="bg-gradient-to-r from-green-50 to-emerald-50 p-3 rounded-xl border border-green-200">
-                        <p class="text-xs text-green-600 font-semibold">Total Deductions</p>
-                        <p class="text-base font-bold text-green-700">
+                    <div class="bg-gradient-to-r from-orange-50 to-amber-50 p-3 rounded-xl border border-orange-200">
+                        <p class="text-xs text-orange-600 font-semibold">Total Statutory Deductions</p>
+                        <p class="text-base font-bold text-orange-700">
                             RM <?php echo number_format($row['epf_employee'] + $row['socso_employee'] + $row['eis_employee'] + $row['pcb'], 2); ?>
                         </p>
                     </div>
+                    <?php else: ?>
+                    <div class="bg-gradient-to-r from-gray-50 to-white p-3 rounded-xl col-span-2 text-center">
+                        <p class="text-xs text-gray-400">
+                            <?php echo $is_intern_emp ? '<i class="fas fa-graduation-cap mr-1"></i> Intern' : '<i class="fas fa-globe mr-1"></i> Non-Malaysian'; ?>
+                            — No statutory deductions (EPF/SOCSO/EIS/PCB)
+                        </p>
+                    </div>
+                    <?php endif; ?>
                 </div>
             </div>
 
-            <!-- Employer Contributions -->
+            <!-- Employer Contributions (only for Malaysian regular employees) -->
+            <?php if($show_statutory): ?>
             <div class="mt-4 pt-3 border-t border-gray-100">
                 <p class="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-2">Employer Contributions</p>
                 <div class="grid grid-cols-3 gap-2 text-center text-xs">
@@ -227,6 +262,7 @@ $payrolls = mysqli_query($conn, "SELECT * FROM payroll WHERE employee_id = $user
                     </div>
                 </div>
             </div>
+            <?php endif; ?>
         </div>
         <?php endwhile; ?>
     <?php else: ?>
@@ -274,7 +310,11 @@ function toggleSidebar() {
 }
 
 function printPayslip(id) {
-    window.open('print_payslip.php?id=' + id, '_blank', 'width=500,height=700');
+    window.open('print_payslip.php?id=' + id + '&action=print', '_blank', 'width=850,height=900');
+}
+
+function downloadPayslip(id) {
+    window.open('print_payslip.php?id=' + id + '&action=download', '_blank', 'width=850,height=900');
 }
 
 function viewCalculation(monthYear) {

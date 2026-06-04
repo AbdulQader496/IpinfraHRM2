@@ -1,4 +1,4 @@
-<?php
+﻿<?php
 require_once '../includes/auth.php';
 redirectIfNotAdmin();
 require_once '../includes/db.php';
@@ -112,6 +112,23 @@ if (isset($_GET['delete'])) {
     mysqli_query($conn, "DELETE FROM employees WHERE id = $id");
     header('Location: employees.php');
     exit();
+}
+
+// Handle Add Department
+if (isset($_POST['add_department'])) {
+    $dept_name = trim(mysqli_real_escape_string($conn, $_POST['dept_name']));
+    if ($dept_name !== '') {
+        mysqli_query($conn, "INSERT IGNORE INTO departments (name) VALUES ('$dept_name')");
+    }
+    header('Location: employees.php');
+    exit();
+}
+
+// Fetch managed department list
+$dept_result = mysqli_query($conn, "SELECT name FROM departments ORDER BY name ASC");
+$departments = [];
+while ($row = mysqli_fetch_assoc($dept_result)) {
+    $departments[] = $row['name'];
 }
 
 // Get employees with pagination
@@ -320,6 +337,9 @@ $employees = mysqli_query($conn, "SELECT * FROM employees WHERE role='employee' 
         </a>
         <a href="holidays.php" class="flex items-center gap-3 py-3 px-4 rounded-xl hover:bg-gray-800/30 transition mb-1">
             <i class="fas fa-calendar-alt w-5"></i> Holidays
+        </a>
+        <a href="audit_log.php" class="flex items-center gap-3 py-3 px-4 rounded-xl hover:bg-gray-800/30 transition mb-1">
+            <i class="fas fa-shield-alt w-5"></i> Audit Log
         </a>
         <div class="border-t border-gray-800 my-4"></div>
         <a href="../logout.php" class="flex items-center gap-3 py-3 px-4 rounded-xl bg-red-600/20 text-red-300 hover:bg-red-600/30 transition">
@@ -789,7 +809,24 @@ $employees = mysqli_query($conn, "SELECT * FROM employees WHERE role='employee' 
             <div class="border-t border-gray-100 pt-4">
                 <h3 class="font-semibold text-gray-700 mb-3">Job Information</h3>
                 <div class="grid grid-cols-2 gap-3">
-                    <input type="text" name="department" placeholder="Department" required class="w-full px-4 py-3 border border-gray-200 rounded-xl">
+                    <div>
+                        <div class="flex items-center gap-2 mb-1">
+                            <label class="text-sm font-medium text-gray-700">Department</label>
+                            <button type="button" onclick="toggleNewDept('add')" class="text-xs text-blue-600 hover:text-blue-800 font-medium underline underline-offset-2">+ New Dept</button>
+                        </div>
+                        <select name="department" id="add_department" required class="w-full px-4 py-3 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500">
+                            <option value="">-- Select --</option>
+                            <?php foreach ($departments as $dept): ?>
+                            <option value="<?= htmlspecialchars($dept) ?>"><?= htmlspecialchars($dept) ?></option>
+                            <?php endforeach; ?>
+                        </select>
+                        <div id="add_new_dept_box" class="hidden mt-2">
+                            <form method="POST" class="flex gap-2">
+                                <input type="text" name="dept_name" placeholder="New department name" class="flex-1 px-3 py-2 border border-blue-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
+                                <button type="submit" name="add_department" class="bg-blue-600 text-white px-3 py-2 rounded-lg text-sm hover:bg-blue-700 transition">Add</button>
+                            </form>
+                        </div>
+                    </div>
                     <input type="text" name="position" placeholder="Position" required class="w-full px-4 py-3 border border-gray-200 rounded-xl">
                 </div>
             </div>
@@ -895,7 +932,24 @@ $employees = mysqli_query($conn, "SELECT * FROM employees WHERE role='employee' 
                 <input type="email" name="email" id="edit_email" placeholder="Email" required class="w-full px-4 py-3 border border-gray-200 rounded-xl">
                 
                 <div class="grid grid-cols-2 gap-3">
-                    <input type="text" name="department" id="edit_department" placeholder="Department" required class="w-full px-4 py-3 border border-gray-200 rounded-xl">
+                    <div>
+                        <div class="flex items-center gap-2 mb-1">
+                            <label class="text-sm font-medium text-gray-700">Department</label>
+                            <button type="button" onclick="toggleNewDept('edit')" class="text-xs text-blue-600 hover:text-blue-800 font-medium underline underline-offset-2">+ New Dept</button>
+                        </div>
+                        <select name="department" id="edit_department" required class="w-full px-4 py-3 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500">
+                            <option value="">-- Select --</option>
+                            <?php foreach ($departments as $dept): ?>
+                            <option value="<?= htmlspecialchars($dept) ?>"><?= htmlspecialchars($dept) ?></option>
+                            <?php endforeach; ?>
+                        </select>
+                        <div id="edit_new_dept_box" class="hidden mt-2">
+                            <form method="POST" class="flex gap-2">
+                                <input type="text" name="dept_name" placeholder="New department name" class="flex-1 px-3 py-2 border border-blue-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
+                                <button type="submit" name="add_department" class="bg-blue-600 text-white px-3 py-2 rounded-lg text-sm hover:bg-blue-700 transition">Add</button>
+                            </form>
+                        </div>
+                    </div>
                     <input type="text" name="position" id="edit_position" placeholder="Position" required class="w-full px-4 py-3 border border-gray-200 rounded-xl">
                 </div>
                 
@@ -1112,7 +1166,11 @@ $employees = mysqli_query($conn, "SELECT * FROM employees WHERE role='employee' 
             document.getElementById('edit_ic').value = employee.ic_number || '';
             document.getElementById('edit_passport').value = employee.passport_no || '';
             document.getElementById('edit_email').value = employee.email || '';
-            document.getElementById('edit_department').value = employee.department || '';
+            // Set department select; if value not in list, fall back to first option
+            const deptSelect = document.getElementById('edit_department');
+            const deptVal = employee.department || '';
+            const deptOption = Array.from(deptSelect.options).find(o => o.value === deptVal);
+            deptSelect.value = deptOption ? deptVal : '';
             document.getElementById('edit_position').value = employee.position || '';
             document.getElementById('edit_salary').value = employee.basic_salary || '';
             document.getElementById('edit_phone').value = employee.phone || '';
@@ -1144,6 +1202,17 @@ $employees = mysqli_query($conn, "SELECT * FROM employees WHERE role='employee' 
         
         function exportEmployees() {
             window.location.href = 'export_employees.php';
+        }
+
+        function toggleNewDept(prefix) {
+            const box = document.getElementById(prefix + '_new_dept_box');
+            if (box) {
+                box.classList.toggle('hidden');
+                if (!box.classList.contains('hidden')) {
+                    const input = box.querySelector('input[name="dept_name"]');
+                    if (input) input.focus();
+                }
+            }
         }
         
         // ── Search-as-you-type ──────────────────────────────────────────────

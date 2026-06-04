@@ -55,8 +55,195 @@ if (isset($_GET['regenerate'])) {
     header('Location: payroll.php'); exit();
 }
 
+// Handle CSV Export
+if (isset($_GET['export']) && $_GET['export'] === 'csv') {
+    $export_query = mysqli_query($conn, "SELECT e.employee_id, e.name, e.department, e.nationality, e.employee_type, p.month_year, p.basic_salary, p.epf_employee, p.socso_employee, p.eis_employee, p.pcb, p.unpaid_deduction, p.approved_claims, p.net_salary FROM payroll p JOIN employees e ON p.employee_id = e.id ORDER BY p.month_year DESC, e.name ASC");
+    $filename = 'payroll_export_' . date('Y-m-d') . '.csv';
+    header('Content-Type: text/csv');
+    header('Content-Disposition: attachment; filename="' . $filename . '"');
+    $out = fopen('php://output', 'w');
+    fputcsv($out, ['Employee ID', 'Name', 'Department', 'Month', 'Basic Salary', 'EPF Employee', 'SOCSO Employee', 'EIS Employee', 'PCB', 'Unpaid Deduction', 'Approved Claims', 'Net Salary']);
+    while ($row = mysqli_fetch_assoc($export_query)) {
+        fputcsv($out, [
+            $row['employee_id'],
+            $row['name'],
+            $row['department'],
+            $row['month_year'],
+            $row['basic_salary'],
+            $row['epf_employee'],
+            $row['socso_employee'],
+            $row['eis_employee'],
+            $row['pcb'],
+            $row['unpaid_deduction'],
+            $row['approved_claims'],
+            $row['net_salary'],
+        ]);
+    }
+    fclose($out);
+    exit();
+}
+
+// Handle Email Payslip
+if (isset($_GET['email'])) {
+    $email_id = (int)$_GET['email'];
+    $email_row = mysqli_fetch_assoc(mysqli_query($conn, "SELECT p.*, e.name, e.employee_id, e.department, e.nationality, e.employee_type, e.email
+        FROM payroll p JOIN employees e ON p.employee_id = e.id WHERE p.id = $email_id"));
+
+    if ($email_row && !empty($email_row['email'])) {
+        $emp_email   = $email_row['email'];
+        $emp_name    = $email_row['name'];
+        $emp_id_str  = $email_row['employee_id'];
+        $dept        = $email_row['department'];
+        $month_year  = $email_row['month_year'];
+        $month_label = date('F Y', strtotime($month_year . '-01'));
+
+        $is_intern_mail    = (isset($email_row['employee_type']) && $email_row['employee_type'] == 'intern');
+        $is_malaysian_mail = ($email_row['nationality'] == 'Malaysian');
+        $show_stat_mail    = $is_malaysian_mail && !$is_intern_mail;
+
+        $basic       = (float)$email_row['basic_salary'];
+        $epf_emp     = (float)$email_row['epf_employee'];
+        $epf_er      = (float)$email_row['epf_employer'];
+        $socso_emp   = (float)$email_row['socso_employee'];
+        $socso_er    = (float)$email_row['socso_employer'];
+        $eis_emp     = (float)$email_row['eis_employee'];
+        $eis_er      = (float)$email_row['eis_employer'];
+        $pcb         = (float)$email_row['pcb'];
+        $unpaid_ded  = (float)$email_row['unpaid_deduction'];
+        $claims      = (float)$email_row['approved_claims'];
+        $net         = (float)$email_row['net_salary'];
+
+        $total_ded_mail = ($show_stat_mail ? $epf_emp + $socso_emp + $eis_emp + $pcb : 0) + $unpaid_ded;
+
+        $deductions_rows = '';
+        if ($show_stat_mail) {
+            $deductions_rows .= '<tr><td style="padding:8px 16px;color:#4b5563;font-size:14px;">EPF (Employee 11%)</td><td style="padding:8px 16px;text-align:right;color:#ef4444;font-size:14px;">- RM ' . number_format($epf_emp, 2) . '</td></tr>';
+            $deductions_rows .= '<tr style="background:#f9fafb;"><td style="padding:8px 16px;color:#4b5563;font-size:14px;">SOCSO (Employee)</td><td style="padding:8px 16px;text-align:right;color:#ef4444;font-size:14px;">- RM ' . number_format($socso_emp, 2) . '</td></tr>';
+            $deductions_rows .= '<tr><td style="padding:8px 16px;color:#4b5563;font-size:14px;">EIS (Employee 0.2%)</td><td style="padding:8px 16px;text-align:right;color:#ef4444;font-size:14px;">- RM ' . number_format($eis_emp, 2) . '</td></tr>';
+            $deductions_rows .= '<tr style="background:#f9fafb;"><td style="padding:8px 16px;color:#4b5563;font-size:14px;">PCB / Income Tax</td><td style="padding:8px 16px;text-align:right;color:#ef4444;font-size:14px;">- RM ' . number_format($pcb, 2) . '</td></tr>';
+        }
+        if ($unpaid_ded > 0) {
+            $deductions_rows .= '<tr><td style="padding:8px 16px;color:#4b5563;font-size:14px;">Unpaid Leave Deduction</td><td style="padding:8px 16px;text-align:right;color:#ef4444;font-size:14px;">- RM ' . number_format($unpaid_ded, 2) . '</td></tr>';
+        }
+        if (!$deductions_rows) {
+            $deductions_rows = '<tr><td colspan="2" style="padding:8px 16px;color:#9ca3af;font-size:13px;font-style:italic;">No deductions applicable</td></tr>';
+        }
+
+        $claims_row = '';
+        if ($claims > 0) {
+            $claims_row = '<tr style="background:#f9fafb;"><td style="padding:8px 16px;color:#4b5563;font-size:14px;">Approved Claims</td><td style="padding:8px 16px;text-align:right;color:#16a34a;font-size:14px;">+ RM ' . number_format($claims, 2) . '</td></tr>';
+        }
+
+        $epf_er_note = $show_stat_mail
+            ? '<p style="margin:0 0 4px 0;font-size:12px;color:#6b7280;">EPF Employer (13%): RM ' . number_format($epf_er, 2) . ' &nbsp;|&nbsp; SOCSO Employer: RM ' . number_format($socso_er, 2) . ' &nbsp;|&nbsp; EIS Employer: RM ' . number_format($eis_er, 2) . '</p>'
+            : '';
+
+        $html_body = '<!DOCTYPE html>
+<html>
+<head><meta charset="UTF-8"></head>
+<body style="margin:0;padding:0;background:#f3f4f6;font-family:Inter,Arial,sans-serif;">
+<table width="100%" cellpadding="0" cellspacing="0" style="background:#f3f4f6;padding:32px 0;">
+  <tr><td align="center">
+    <table width="600" cellpadding="0" cellspacing="0" style="max-width:600px;width:100%;background:#ffffff;border-radius:16px;overflow:hidden;box-shadow:0 4px 24px rgba(0,0,0,0.08);">
+
+      <!-- Header -->
+      <tr>
+        <td style="background:linear-gradient(135deg,#1e1b4b 0%,#3730a3 50%,#1e1b4b 100%);padding:32px 32px 24px 32px;">
+          <p style="margin:0 0 4px 0;font-size:12px;color:#a5b4fc;font-weight:600;letter-spacing:2px;text-transform:uppercase;">IPINFRA Networks Sdn Bhd</p>
+          <h1 style="margin:0 0 8px 0;font-size:26px;font-weight:800;color:#ffffff;">Payslip</h1>
+          <p style="margin:0;font-size:15px;color:#c7d2fe;">' . $month_label . '</p>
+          <table width="100%" style="margin-top:20px;background:rgba(255,255,255,0.12);border-radius:10px;padding:0;" cellpadding="0" cellspacing="0">
+            <tr>
+              <td style="padding:16px 20px;border-right:1px solid rgba(255,255,255,0.15);">
+                <p style="margin:0 0 2px 0;font-size:11px;color:#a5b4fc;text-transform:uppercase;letter-spacing:1px;">Employee</p>
+                <p style="margin:0;font-size:16px;font-weight:700;color:#ffffff;">' . htmlspecialchars($emp_name) . '</p>
+              </td>
+              <td style="padding:16px 20px;border-right:1px solid rgba(255,255,255,0.15);">
+                <p style="margin:0 0 2px 0;font-size:11px;color:#a5b4fc;text-transform:uppercase;letter-spacing:1px;">Employee ID</p>
+                <p style="margin:0;font-size:16px;font-weight:700;color:#ffffff;">' . htmlspecialchars($emp_id_str) . '</p>
+              </td>
+              <td style="padding:16px 20px;">
+                <p style="margin:0 0 2px 0;font-size:11px;color:#a5b4fc;text-transform:uppercase;letter-spacing:1px;">Department</p>
+                <p style="margin:0;font-size:16px;font-weight:700;color:#ffffff;">' . htmlspecialchars($dept) . '</p>
+              </td>
+            </tr>
+          </table>
+        </td>
+      </tr>
+
+      <!-- Net Salary Banner -->
+      <tr>
+        <td style="background:#f0fdf4;padding:20px 32px;border-bottom:1px solid #dcfce7;text-align:center;">
+          <p style="margin:0 0 4px 0;font-size:12px;color:#6b7280;text-transform:uppercase;letter-spacing:1px;font-weight:600;">Net Salary</p>
+          <p style="margin:0;font-size:36px;font-weight:800;color:#16a34a;">RM ' . number_format($net, 2) . '</p>
+        </td>
+      </tr>
+
+      <!-- Earnings -->
+      <tr>
+        <td style="padding:24px 32px 0 32px;">
+          <p style="margin:0 0 12px 0;font-size:11px;font-weight:700;color:#6b7280;text-transform:uppercase;letter-spacing:1.5px;">Earnings</p>
+          <table width="100%" cellpadding="0" cellspacing="0" style="border:1px solid #e5e7eb;border-radius:10px;overflow:hidden;">
+            <tr style="background:#f9fafb;">
+              <td style="padding:8px 16px;color:#4b5563;font-size:14px;">Basic Salary</td>
+              <td style="padding:8px 16px;text-align:right;color:#16a34a;font-size:14px;font-weight:600;">RM ' . number_format($basic, 2) . '</td>
+            </tr>
+            ' . $claims_row . '
+          </table>
+        </td>
+      </tr>
+
+      <!-- Deductions -->
+      <tr>
+        <td style="padding:20px 32px 0 32px;">
+          <p style="margin:0 0 12px 0;font-size:11px;font-weight:700;color:#6b7280;text-transform:uppercase;letter-spacing:1.5px;">Deductions</p>
+          <table width="100%" cellpadding="0" cellspacing="0" style="border:1px solid #e5e7eb;border-radius:10px;overflow:hidden;">
+            ' . $deductions_rows . '
+            <tr style="background:#fef2f2;border-top:2px solid #fecaca;">
+              <td style="padding:10px 16px;color:#dc2626;font-size:14px;font-weight:700;">Total Deductions</td>
+              <td style="padding:10px 16px;text-align:right;color:#dc2626;font-size:14px;font-weight:700;">- RM ' . number_format($total_ded_mail, 2) . '</td>
+            </tr>
+          </table>
+        </td>
+      </tr>
+
+      <!-- Employer Contributions Note -->
+      ' . ($show_stat_mail ? '<tr><td style="padding:16px 32px 0 32px;">' . $epf_er_note . '</td></tr>' : '') . '
+
+      <!-- Footer -->
+      <tr>
+        <td style="padding:28px 32px;border-top:1px solid #e5e7eb;margin-top:24px;text-align:center;background:#f9fafb;">
+          <p style="margin:0 0 6px 0;font-size:13px;font-weight:600;color:#374151;">IPINFRA Networks Sdn Bhd</p>
+          <p style="margin:0 0 4px 0;font-size:12px;color:#9ca3af;">This is a system-generated payslip. Please do not reply to this email.</p>
+          <p style="margin:0;font-size:11px;color:#d1d5db;">Generated on ' . date('d M Y, h:i A') . ' &nbsp;&bull;&nbsp; Payroll Period: ' . $month_label . '</p>
+        </td>
+      </tr>
+
+    </table>
+  </td></tr>
+</table>
+</body>
+</html>';
+
+        $subject  = 'Payslip - ' . $month_label . ' - IPINFRA Networks Sdn Bhd';
+        $headers  = "From: IPINFRA HRM <sales@ipinfra.com.my>\r\n";
+        $headers .= "Reply-To: sales@ipinfra.com.my\r\n";
+        $headers .= "MIME-Version: 1.0\r\n";
+        $headers .= "Content-Type: text/html; charset=UTF-8\r\n";
+
+        if (mail($emp_email, $subject, $html_body, $headers)) {
+            showToast('Payslip emailed to ' . $emp_email . ' successfully.', 'success');
+        } else {
+            showToast('Failed to send email to ' . $emp_email . '. Please check server mail configuration.', 'error');
+        }
+    } else {
+        showToast('Could not send payslip: payroll record not found or employee email is missing.', 'error');
+    }
+    header('Location: payroll.php'); exit();
+}
+
 // Get statistics
-$stats_query = mysqli_query($conn, "SELECT 
+$stats_query = mysqli_query($conn, "SELECT
     COUNT(DISTINCT month_year) as total_months,
     SUM(net_salary) as total_paid,
     COUNT(*) as total_records,
@@ -127,7 +314,7 @@ if (isset($_POST['generate_payroll'])) {
                 </div>';
 }
 
-$payrolls = mysqli_query($conn, "SELECT p.*, e.name, e.employee_id, e.nationality, e.department, e.employee_type
+$payrolls = mysqli_query($conn, "SELECT p.*, e.name, e.employee_id, e.nationality, e.department, e.employee_type, e.email
     FROM payroll p
     JOIN employees e ON p.employee_id = e.id
     ORDER BY p.month_year DESC, e.name");
@@ -242,6 +429,9 @@ $payrolls = mysqli_query($conn, "SELECT p.*, e.name, e.employee_id, e.nationalit
         <a href="holidays.php" class="flex items-center gap-3 py-3 px-4 rounded-xl hover:bg-gray-800/30 transition mb-1">
             <i class="fas fa-calendar-alt w-5"></i> Holidays
         </a>
+        <a href="audit_log.php" class="flex items-center gap-3 py-3 px-4 rounded-xl hover:bg-gray-800/30 transition mb-1">
+            <i class="fas fa-shield-alt w-5"></i> Audit Log
+        </a>
         <div class="border-t border-gray-800 my-4"></div>
         <a href="../logout.php" class="flex items-center gap-3 py-3 px-4 rounded-xl bg-red-600/20 text-red-300 hover:bg-red-600/30 transition">
             <i class="fas fa-sign-out-alt w-5"></i> Logout
@@ -349,6 +539,9 @@ $payrolls = mysqli_query($conn, "SELECT p.*, e.name, e.employee_id, e.nationalit
                     <p class="font-semibold text-gray-800">Payroll Records</p>
                 </div>
                 <span class="text-xs text-gray-400">Latest first</span>
+                <a href="?export=csv" class="inline-flex items-center gap-1 text-xs bg-green-100 text-green-700 px-3 py-1.5 rounded-lg hover:bg-green-200 transition font-semibold">
+                  <i class="fas fa-download"></i> Export CSV
+                </a>
             </div>
 
             <?php if(mysqli_num_rows($payrolls) > 0): ?>
@@ -451,6 +644,12 @@ $payrolls = mysqli_query($conn, "SELECT p.*, e.name, e.employee_id, e.nationalit
                                     <span class="hidden sm:inline">View Breakdown</span>
                                     <span class="sm:hidden">View</span>
                                 </button>
+                                <a href="?email=<?php echo $row['id']; ?>"
+                                   data-confirm="Send payslip to <?php echo htmlspecialchars($row['email'] ?? 'employee', ENT_QUOTES); ?> for <?php echo htmlspecialchars(date('F Y', strtotime($row['month_year'] . '-01')), ENT_QUOTES); ?>?" data-confirm-title="Email Payslip"
+                                   class="flex items-center gap-1 bg-indigo-100 hover:bg-indigo-200 text-indigo-600 px-3 py-2.5 rounded-xl text-sm font-semibold transition"
+                                   title="Email Payslip">
+                                    <i class="fas fa-envelope"></i>
+                                </a>
                                 <a href="?regenerate=<?php echo $row['id']; ?>"
                                    data-confirm="Regenerate payroll for <?php echo htmlspecialchars($row['name'], ENT_QUOTES); ?> (<?php echo $row['month_year']; ?>)? The current record will be recalculated." data-confirm-title="Regenerate Payroll"
                                    class="flex items-center gap-1 bg-blue-100 hover:bg-blue-200 text-blue-600 px-3 py-2.5 rounded-xl text-sm font-semibold transition"

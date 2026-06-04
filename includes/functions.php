@@ -102,4 +102,16 @@ function getUnreadNotificationsCount($employee_id) {
     $row = mysqli_fetch_assoc(mysqli_query($conn, "SELECT COUNT(*) as count FROM notifications WHERE employee_id = $id AND is_read = 0"));
     return $row ? $row['count'] : 0;
 }
+
+function logAction($action, $description, $target_id = null, $target_type = null) {
+    global $conn;
+    $user_id     = isset($_SESSION['user_id']) ? intval($_SESSION['user_id']) : 0;
+    $action      = mysqli_real_escape_string($conn, $action);
+    $description = mysqli_real_escape_string($conn, $description);
+    $target_type = mysqli_real_escape_string($conn, $target_type ?? '');
+    $target_id   = intval($target_id ?? 0);
+    $ip          = mysqli_real_escape_string($conn, $_SERVER['REMOTE_ADDR'] ?? '');
+    mysqli_query($conn, "INSERT INTO audit_log (user_id, action, description, target_type, target_id, ip_address)
+        VALUES ($user_id, '$action', '$description', '$target_type', $target_id, '$ip')");
+}
 ?>

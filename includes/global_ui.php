@@ -263,6 +263,12 @@ img[loading="lazy"].img-loaded {
     0 12px 28px -6px rgba(0, 0, 0, 0.12),
     0  4px 10px -3px rgba(0, 0, 0, 0.08);
 }
+
+/* ── 11. Form loading / submitting state ──────────────────────────── */
+.form-submitting {
+  opacity: 0.8;
+  pointer-events: none;
+}
 </style>
 
 <!-- ═══════════════════════════════════════════════════════════════════
@@ -636,7 +642,44 @@ img[loading="lazy"].img-loaded {
   }
 
   /* ================================================================
-     7. LAZY IMAGE FADE-IN
+     7. FORM LOADING STATES
+     On submit, disables the submit button and shows a spinner to
+     prevent double-submission. Skip forms with data-no-loading.
+     ================================================================ */
+
+  function setupFormLoadingStates() {
+    var forms = document.querySelectorAll('form[method="POST"], form[method="post"]');
+    forms.forEach(function (form) {
+      if (form.hasAttribute('data-no-loading')) return;
+
+      form.addEventListener('submit', function () {
+        /* Find the primary submit button */
+        var btn = form.querySelector('button[type="submit"], input[type="submit"], button[name]');
+        if (!btn) {
+          /* Fallback: any button without an explicit type (defaults to submit) */
+          btn = form.querySelector('button');
+        }
+
+        if (btn) {
+          /* Preserve original label so it can be restored on back-nav */
+          if (!btn.getAttribute('data-original-text')) {
+            btn.setAttribute('data-original-text', btn.innerHTML);
+          }
+          btn.innerHTML =
+            '<svg class="inline-block animate-spin -ml-1 mr-2 h-4 w-4 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">' +
+            '<circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>' +
+            '<path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"></path>' +
+            '</svg>Processing...';
+          btn.disabled = true;
+        }
+
+        form.classList.add('form-submitting');
+      });
+    });
+  }
+
+  /* ================================================================
+     8. LAZY IMAGE FADE-IN (section renumbered — see 9. BOOTSTRAP)
      ================================================================ */
 
   function setupLazyImages() {
@@ -653,7 +696,7 @@ img[loading="lazy"].img-loaded {
   }
 
   /* ================================================================
-     8. BOOTSTRAP — run everything on DOMContentLoaded
+     9. BOOTSTRAP — run everything on DOMContentLoaded
      ================================================================ */
 
   function init() {
@@ -662,6 +705,7 @@ img[loading="lazy"].img-loaded {
     highlightActiveNav();
     setupPageTransitions();
     setupLazyImages();
+    setupFormLoadingStates();
   }
 
   if (document.readyState === 'loading') {

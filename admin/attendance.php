@@ -1,4 +1,4 @@
-<?php
+﻿<?php
 require_once '../includes/auth.php';
 redirectIfNotAdmin();
 require_once '../includes/db.php';
@@ -73,6 +73,76 @@ if (isset($_POST['edit_attendance'])) {
     $safe_date = preg_replace('/[^0-9\-]/', '', $_GET['date'] ?? date('Y-m-d'));
     mysqli_query($conn, $update_query);
     header("Location: attendance.php?date=" . $safe_date);
+    exit();
+}
+
+// ========================================
+// CSV EXPORT
+// ========================================
+if (isset($_GET['export']) && $_GET['export'] === 'csv') {
+    $export_month = isset($_GET['month']) ? preg_replace('/[^0-9\-]/', '', $_GET['month']) : null;
+
+    if ($export_month && preg_match('/^\d{4}-\d{2}$/', $export_month)) {
+        // Month export: all employees, all days in the month
+        $month_start = $export_month . '-01';
+        $month_end   = date('Y-m-t', strtotime($month_start));
+        $filename    = 'attendance_' . $export_month . '.csv';
+
+        $export_query = "SELECT e.employee_id, e.name, e.department,
+                                a.date, a.clock_in, a.clock_out, a.status
+                         FROM employees e
+                         LEFT JOIN attendance a ON a.employee_id = e.id
+                             AND a.date BETWEEN '$month_start' AND '$month_end'
+                         WHERE e.role = 'employee'
+                         ORDER BY e.name, a.date";
+    } else {
+        // Single-date export (current date or ?date=)
+        $export_date = isset($_GET['date']) ? preg_replace('/[^0-9\-]/', '', $_GET['date']) : date('Y-m-d');
+        $filename    = 'attendance_' . $export_date . '.csv';
+
+        $export_query = "SELECT e.employee_id, e.name, e.department,
+                                a.date, a.clock_in, a.clock_out, a.status
+                         FROM employees e
+                         LEFT JOIN attendance a ON a.employee_id = e.id
+                             AND a.date = '$export_date'
+                         WHERE e.role = 'employee'
+                         ORDER BY e.name";
+    }
+
+    $export_result = mysqli_query($conn, $export_query);
+
+    header('Content-Type: text/csv; charset=utf-8');
+    header('Content-Disposition: attachment; filename="' . $filename . '"');
+    header('Pragma: no-cache');
+    header('Expires: 0');
+
+    $out = fopen('php://output', 'w');
+    fputcsv($out, ['Employee ID', 'Name', 'Department', 'Date', 'Clock In', 'Clock Out', 'Hours Worked', 'Status']);
+
+    while ($row = mysqli_fetch_assoc($export_result)) {
+        $hours_worked = '';
+        if (!empty($row['clock_in']) && !empty($row['clock_out'])) {
+            $diff = strtotime($row['clock_out']) - strtotime($row['clock_in']);
+            if ($diff > 0) {
+                $h = floor($diff / 3600);
+                $m = floor(($diff % 3600) / 60);
+                $hours_worked = sprintf('%d:%02d', $h, $m);
+            }
+        }
+
+        fputcsv($out, [
+            $row['employee_id'],
+            $row['name'],
+            $row['department'] ?? '',
+            $row['date'] ?? '',
+            $row['clock_in'] ?? '',
+            $row['clock_out'] ?? '',
+            $hours_worked,
+            $row['status'] ?? 'absent',
+        ]);
+    }
+
+    fclose($out);
     exit();
 }
 
@@ -261,6 +331,9 @@ $all_employees = mysqli_query($conn, "SELECT id, name, employee_id FROM employee
         <a href="holidays.php" class="flex items-center gap-3 py-3 px-4 rounded-xl hover:bg-gray-800/30 transition mb-1">
             <i class="fas fa-calendar-alt w-5"></i> Holidays
         </a>
+        <a href="audit_log.php" class="flex items-center gap-3 py-3 px-4 rounded-xl hover:bg-gray-800/30 transition mb-1">
+            <i class="fas fa-shield-alt w-5"></i> Audit Log
+        </a>
         <div class="border-t border-gray-800 my-4"></div>
         <a href="../logout.php" class="flex items-center gap-3 py-3 px-4 rounded-xl bg-red-600/20 text-red-300 hover:bg-red-600/30 transition">
             <i class="fas fa-sign-out-alt w-5"></i> Logout
@@ -307,13 +380,25 @@ $all_employees = mysqli_query($conn, "SELECT id, name, employee_id FROM employee
                     <i class="fas fa-chevron-right text-slate-600"></i>
                 </button>
             </div>
-            <div class="flex gap-3">
+            <div class="flex flex-wrap gap-3 items-center">
                 <button onclick="goToday()" class="px-5 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-sm font-medium shadow-md transition">
                     <i class="fas fa-calendar-day mr-2"></i> Today
                 </button>
                 <div class="relative">
                     <i class="fas fa-calendar-alt absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 text-sm"></i>
                     <input type="date" id="datePicker" value="<?php echo $date; ?>" class="pl-9 pr-3 py-2 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" onchange="goToDate()">
+                </div>
+                <!-- CSV Export Controls -->
+                <div class="flex items-center gap-2">
+                    <a href="?export=csv&date=<?php echo urlencode($date); ?>" class="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-sm font-medium shadow-md transition flex items-center gap-2">
+                        <i class="fas fa-file-csv"></i> Export Day
+                    </a>
+                    <div class="flex items-center gap-1">
+                        <input type="month" id="exportMonth" value="<?php echo date('Y-m', strtotime($date)); ?>" class="px-3 py-2 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500">
+                        <button onclick="exportMonthCSV()" class="px-4 py-2 bg-teal-600 hover:bg-teal-700 text-white rounded-xl text-sm font-medium shadow-md transition flex items-center gap-2">
+                            <i class="fas fa-file-export"></i> Export Month
+                        </button>
+                    </div>
                 </div>
             </div>
         </div>
@@ -716,6 +801,12 @@ $all_employees = mysqli_query($conn, "SELECT id, name, employee_id FROM employee
     function goToDate() {
         let date = document.getElementById('datePicker').value;
         window.location.href = `?date=${date}&search=${encodeURIComponent(currentSearch)}`;
+    }
+
+    function exportMonthCSV() {
+        let month = document.getElementById('exportMonth').value;
+        if (!month) { alert('Please select a month first.'); return; }
+        window.location.href = `?export=csv&month=${encodeURIComponent(month)}`;
     }
     
     function loadMore() {

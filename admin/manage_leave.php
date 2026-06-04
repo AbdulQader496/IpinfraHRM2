@@ -1,4 +1,4 @@
-<?php
+﻿<?php
 require_once '../includes/auth.php';
 redirectIfNotAdmin();
 require_once '../includes/db.php';
@@ -32,6 +32,49 @@ if (!empty($date_from)) {
 }
 if (!empty($date_to)) {
     $where .= " AND l.end_date <= '$date_to'";
+}
+
+// ========================================
+// CSV EXPORT
+// ========================================
+if (isset($_GET['export']) && $_GET['export'] === 'csv') {
+    $filename = 'leave_export_' . date('Y-m-d') . '.csv';
+    header('Content-Type: text/csv; charset=utf-8');
+    header('Content-Disposition: attachment; filename="' . $filename . '"');
+    header('Pragma: no-cache');
+    header('Expires: 0');
+
+    $out = fopen('php://output', 'w');
+    // BOM for Excel UTF-8 compatibility
+    fputs($out, "\xEF\xBB\xBF");
+    fputcsv($out, ['Employee ID', 'Name', 'Department', 'Leave Type', 'Start Date', 'End Date', 'Total Days', 'Status', 'Applied Date']);
+
+    $export_result = mysqli_query($conn,
+        "SELECT e.employee_id, e.name, e.department, l.leave_type, l.start_date, l.end_date,
+                CASE WHEN l.half_day IS NOT NULL AND l.half_day != 'none' THEN 0.5
+                     ELSE (DATEDIFF(l.end_date, l.start_date) + 1) END AS total_days,
+                l.status, l.applied_at
+         FROM leaves l
+         JOIN employees e ON l.employee_id = e.id
+         $where
+         ORDER BY l.applied_at DESC"
+    );
+
+    while ($row = mysqli_fetch_assoc($export_result)) {
+        fputcsv($out, [
+            $row['employee_id'],
+            $row['name'],
+            $row['department'],
+            ucfirst($row['leave_type']),
+            $row['start_date'],
+            $row['end_date'],
+            $row['total_days'],
+            ucfirst($row['status']),
+            $row['applied_at'],
+        ]);
+    }
+    fclose($out);
+    exit();
 }
 
 // Get total count for pagination
@@ -90,6 +133,48 @@ if (isset($_POST['update_leave_type'])) {
 if (isset($_GET['delete_type'])) {
     $id = intval($_GET['delete_type']);
     mysqli_query($conn, "DELETE FROM leave_types WHERE id=$id");
+    header('Location: manage_leave.php');
+    exit();
+}
+
+// ========================================
+// BULK APPROVE / REJECT LEAVES
+// ========================================
+if (isset($_POST['bulk_leave_action']) && !empty($_POST['ids'])) {
+    $bulk_action = $_POST['bulk_leave_action'];
+    $bulk_status = ($bulk_action === 'approve') ? 'approved' : 'rejected';
+    $ids = array_map('intval', $_POST['ids']);
+    $ids_safe = implode(',', $ids);
+
+    $bulk_rows = mysqli_query($conn, "SELECT * FROM leaves WHERE id IN ($ids_safe) AND status='pending'");
+    $affected = 0;
+    while ($br = mysqli_fetch_assoc($bulk_rows)) {
+        $days = (isset($br['half_day']) && $br['half_day'] != 'none') ? 0.5
+              : (strtotime($br['end_date']) - strtotime($br['start_date'])) / 86400 + 1;
+
+        mysqli_query($conn, "UPDATE leaves SET status='$bulk_status' WHERE id={$br['id']}");
+
+        if ($bulk_status === 'approved') {
+            if ($br['leave_type'] == 'annual') {
+                mysqli_query($conn, "UPDATE employees SET used_annual_leave = used_annual_leave + $days WHERE id = {$br['employee_id']}");
+            } elseif ($br['leave_type'] == 'medical') {
+                mysqli_query($conn, "UPDATE employees SET used_medical_leave = used_medical_leave + $days WHERE id = {$br['employee_id']}");
+            }
+            addNotification($br['employee_id'], 'Leave Approved', 'Your ' . $br['leave_type'] . ' leave has been approved.');
+        } else {
+            addNotification($br['employee_id'], 'Leave Rejected', 'Your ' . $br['leave_type'] . ' leave has been rejected.');
+        }
+        $affected++;
+    }
+
+    if ($affected > 0) {
+        if ($bulk_status === 'approved') {
+            showToast("$affected leave application(s) approved.", 'success');
+        } else {
+            showToast("$affected leave application(s) rejected.", 'warning');
+        }
+    }
+
     header('Location: manage_leave.php');
     exit();
 }
@@ -186,6 +271,22 @@ $leave_type_options = mysqli_query($conn, "SELECT DISTINCT leave_type FROM leave
         .tab-active { background-color: #2563eb; color: white; }
         .tab-inactive { background-color: #e5e7eb; color: #4b5563; }
         .filter-active { background-color: #2563eb; color: white; border-color: #2563eb; }
+
+        /* Bulk action bar */
+        #leaveBulkBar {
+            transition: transform 0.3s ease, opacity 0.3s ease;
+        }
+        #leaveBulkBar.hidden-bar {
+            transform: translateY(100%);
+            opacity: 0;
+            pointer-events: none;
+        }
+        .bulk-check {
+            width: 18px; height: 18px;
+            accent-color: #2563eb;
+            cursor: pointer;
+            flex-shrink: 0;
+        }
     </style>
 </head>
 <body class="bg-gradient-to-br from-gray-50 to-gray-100 min-h-screen pb-20">
@@ -257,6 +358,9 @@ $leave_type_options = mysqli_query($conn, "SELECT DISTINCT leave_type FROM leave
         </a>
         <a href="holidays.php" class="flex items-center gap-3 py-3 px-4 rounded-xl hover:bg-gray-800/30 transition mb-1">
             <i class="fas fa-calendar-alt w-5"></i> Holidays
+        </a>
+        <a href="audit_log.php" class="flex items-center gap-3 py-3 px-4 rounded-xl hover:bg-gray-800/30 transition mb-1">
+            <i class="fas fa-shield-alt w-5"></i> Audit Log
         </a>
         <div class="border-t border-gray-800 my-4"></div>
         <a href="../logout.php" class="flex items-center gap-3 py-3 px-4 rounded-xl bg-red-600/20 text-red-300 hover:bg-red-600/30 transition">
@@ -337,6 +441,13 @@ $leave_type_options = mysqli_query($conn, "SELECT DISTINCT leave_type FROM leave
                 <a href="manage_leave.php" class="flex-1 bg-gray-200 text-gray-700 px-3 py-2 rounded-lg text-sm text-center hover:bg-gray-300">Reset</a>
             </div>
         </form>
+        <!-- Export CSV — preserves active filters -->
+        <div class="mt-3 flex justify-end">
+            <a href="?export=csv&search=<?php echo urlencode($search); ?>&status=<?php echo urlencode($status_filter); ?>&type=<?php echo urlencode($type_filter); ?>&date_from=<?php echo urlencode($date_from); ?>&date_to=<?php echo urlencode($date_to); ?>"
+               class="inline-flex items-center gap-2 bg-green-600 text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-green-700 transition">
+                <i class="fas fa-file-csv"></i> Export CSV
+            </a>
+        </div>
     </div>
 
     <!-- Tabs -->
@@ -359,13 +470,20 @@ $leave_type_options = mysqli_query($conn, "SELECT DISTINCT leave_type FROM leave
     <!-- LEAVE REQUESTS TAB (PAGINATED) -->
     <!-- ======================================== -->
     <div id="requestsTab">
+        <!-- Bulk form -->
+        <form id="leaveBulkForm" method="POST">
+            <input type="hidden" name="bulk_leave_action" id="leaveBulkActionInput" value="">
+
         <div class="bg-white rounded-xl shadow-xl overflow-hidden">
-            <div class="bg-gray-50 px-4 py-3 border-b flex justify-between items-center">
-                <p class="font-semibold text-gray-800">
-                    <i class="fas fa-clock mr-2 text-blue-600"></i> 
-                    Leave Applications 
-                    <span class="text-sm font-normal text-gray-500">(<?php echo $total_rows; ?> total)</span>
-                </p>
+            <div class="bg-gray-50 px-4 py-3 border-b flex justify-between items-center flex-wrap gap-2">
+                <div class="flex items-center gap-3">
+                    <p class="font-semibold text-gray-800">
+                        <i class="fas fa-clock mr-2 text-blue-600"></i>
+                        Leave Applications
+                        <span class="text-sm font-normal text-gray-500">(<?php echo $total_rows; ?> total)</span>
+                    </p>
+                    <span id="leaveSelectedCount" class="text-xs text-blue-600 font-medium hidden">0 selected</span>
+                </div>
                 <div class="flex items-center gap-2">
                     <span class="text-xs text-gray-500">Show:</span>
                     <select name="per_page" onchange="window.location.href=this.value" class="text-sm border rounded px-2 py-1">
@@ -376,14 +494,22 @@ $leave_type_options = mysqli_query($conn, "SELECT DISTINCT leave_type FROM leave
                     </select>
                 </div>
             </div>
-            
+
             <?php if(mysqli_num_rows($leaves) > 0): ?>
+                <!-- Select All row -->
+                <div class="bg-blue-50 px-4 py-2 border-b flex items-center gap-2">
+                    <input type="checkbox" id="leaveSelectAll" class="bulk-check" onchange="leaveToggleSelectAll(this)">
+                    <label for="leaveSelectAll" class="text-sm font-medium text-blue-700 cursor-pointer select-none">Select All Pending</label>
+                </div>
                 <div class="divide-y">
                     <?php while ($row = mysqli_fetch_assoc($leaves)): ?>
                     <div class="p-4 hover:bg-gray-50 transition">
                         <div class="flex justify-between items-start flex-wrap gap-3">
                             <div class="flex-1">
                                 <div class="flex items-center gap-2 flex-wrap mb-2">
+                                    <?php if ($row['status'] === 'pending'): ?>
+                                    <input type="checkbox" name="ids[]" value="<?php echo $row['id']; ?>" class="bulk-check" onchange="leaveUpdateBulkBar()">
+                                    <?php endif; ?>
                                     <p class="font-semibold text-gray-800"><?php echo htmlspecialchars($row['name']); ?></p>
                                     <p class="text-xs text-gray-500"><?php echo $row['employee_id']; ?></p>
                                     <span class="text-xs px-2 py-0.5 rounded-full bg-gray-100 text-gray-600"><?php echo $row['department']; ?></span>
@@ -420,9 +546,28 @@ $leave_type_options = mysqli_query($conn, "SELECT DISTINCT leave_type FROM leave
                                     <?php echo ucfirst($row['status']); ?>
                                 </span>
                                 <?php if ($row['status'] == 'pending'): ?>
+                                    <?php
+                                    $modal_days = (isset($row['half_day']) && $row['half_day'] != 'none') ? 0.5
+                                        : (strtotime($row['end_date']) - strtotime($row['start_date'])) / 86400 + 1;
+                                    $leave_modal_data = [
+                                        'id'          => $row['id'],
+                                        'name'        => $row['name'],
+                                        'employee_id' => $row['employee_id'],
+                                        'department'  => $row['department'],
+                                        'leave_type'  => $row['leave_type'],
+                                        'start_date'  => $row['start_date'],
+                                        'end_date'    => $row['end_date'],
+                                        'total_days'  => $modal_days,
+                                        'reason'      => $row['reason'] ?? '',
+                                        'attachment'  => $row['attachment'] ?? '',
+                                    ];
+                                    ?>
                                     <div class="flex gap-2 mt-2">
-                                        <a href="?action=approve&id=<?php echo $row['id']; ?>" class="bg-green-600 text-white px-3 py-1 rounded-lg text-xs hover:bg-green-700">Approve</a>
-                                        <a href="?action=reject&id=<?php echo $row['id']; ?>" class="bg-red-600 text-white px-3 py-1 rounded-lg text-xs hover:bg-red-700">Reject</a>
+                                        <button type="button"
+                                            onclick="openLeaveDetails(<?php echo htmlspecialchars(json_encode($leave_modal_data), ENT_QUOTES); ?>)"
+                                            class="bg-blue-600 text-white px-3 py-1 rounded-lg text-xs hover:bg-blue-700 flex items-center gap-1">
+                                            <i class="fas fa-eye"></i> Review
+                                        </button>
                                     </div>
                                 <?php endif; ?>
                             </div>
@@ -430,7 +575,7 @@ $leave_type_options = mysqli_query($conn, "SELECT DISTINCT leave_type FROM leave
                     </div>
                     <?php endwhile; ?>
                 </div>
-                
+
                 <!-- Pagination -->
                 <?php if($total_pages > 1): ?>
                 <div class="bg-gray-50 px-4 py-3 border-t flex justify-between items-center">
@@ -459,7 +604,8 @@ $leave_type_options = mysqli_query($conn, "SELECT DISTINCT leave_type FROM leave
                     <p class="text-sm">No leave applications found</p>
                 </div>
             <?php endif; ?>
-        </div>
+        </div><!-- end white card -->
+        </form><!-- end leaveBulkForm -->
     </div>
 
     <!-- Leave Balances Tab -->
@@ -740,12 +886,85 @@ $leave_type_options = mysqli_query($conn, "SELECT DISTINCT leave_type FROM leave
     </div>
 </div>
 
+<!-- Leave Bulk Action Bar (sticky at bottom) -->
+<div id="leaveBulkBar" class="fixed bottom-0 left-0 right-0 z-30 hidden-bar">
+    <div class="bg-gradient-to-r from-blue-700 to-indigo-700 text-white px-4 py-3 shadow-2xl flex items-center justify-between flex-wrap gap-2">
+        <span class="text-sm font-semibold" id="leaveBulkCountLabel">0 selected</span>
+        <div class="flex items-center gap-2">
+            <button type="button" onclick="leaveSubmitBulk('approve')"
+                class="bg-green-500 hover:bg-green-400 text-white px-4 py-1.5 rounded-xl text-sm font-semibold flex items-center gap-1 transition">
+                <i class="fas fa-check"></i> Approve All
+            </button>
+            <button type="button" onclick="leaveSubmitBulk('reject')"
+                class="bg-red-500 hover:bg-red-400 text-white px-4 py-1.5 rounded-xl text-sm font-semibold flex items-center gap-1 transition">
+                <i class="fas fa-times"></i> Reject All
+            </button>
+            <button type="button" onclick="leaveClearSelection()"
+                class="text-white/70 hover:text-white text-xs underline ml-2 transition">
+                Clear
+            </button>
+        </div>
+    </div>
+</div>
+
 <script>
     function toggleSidebar() {
         document.getElementById('sidebar').classList.toggle('-translate-x-full');
         document.getElementById('overlay').classList.toggle('hidden');
     }
-    
+
+    // ---- Leave Bulk selection ----
+    function leaveGetCheckedBoxes() {
+        return Array.from(document.querySelectorAll('#leaveBulkForm .bulk-check[name="ids[]"]:checked'));
+    }
+
+    function leaveUpdateBulkBar() {
+        const checked = leaveGetCheckedBoxes();
+        const count = checked.length;
+        const bar = document.getElementById('leaveBulkBar');
+        const countLabel = document.getElementById('leaveBulkCountLabel');
+        const headerCount = document.getElementById('leaveSelectedCount');
+
+        countLabel.textContent = count + ' selected';
+        if (headerCount) {
+            headerCount.textContent = count + ' selected';
+            headerCount.classList.toggle('hidden', count === 0);
+        }
+
+        if (count > 0) {
+            bar.classList.remove('hidden-bar');
+        } else {
+            bar.classList.add('hidden-bar');
+        }
+
+        const allBoxes = document.querySelectorAll('#leaveBulkForm .bulk-check[name="ids[]"]');
+        const selectAll = document.getElementById('leaveSelectAll');
+        if (selectAll) {
+            selectAll.checked = allBoxes.length > 0 && count === allBoxes.length;
+            selectAll.indeterminate = count > 0 && count < allBoxes.length;
+        }
+    }
+
+    function leaveToggleSelectAll(cb) {
+        const boxes = document.querySelectorAll('#leaveBulkForm .bulk-check[name="ids[]"]');
+        boxes.forEach(b => b.checked = cb.checked);
+        leaveUpdateBulkBar();
+    }
+
+    function leaveSubmitBulk(action) {
+        const checked = leaveGetCheckedBoxes();
+        if (checked.length === 0) return;
+        const label = action === 'approve' ? 'approve' : 'reject';
+        if (!confirm('Are you sure you want to ' + label + ' ' + checked.length + ' leave application(s)?')) return;
+        document.getElementById('leaveBulkActionInput').value = action;
+        document.getElementById('leaveBulkForm').submit();
+    }
+
+    function leaveClearSelection() {
+        document.querySelectorAll('#leaveBulkForm .bulk-check').forEach(b => b.checked = false);
+        leaveUpdateBulkBar();
+    }
+
     function showTab(tab) {
         const requestsTab = document.getElementById('requestsTab');
         const balancesTab = document.getElementById('balancesTab');
@@ -802,6 +1021,153 @@ $leave_type_options = mysqli_query($conn, "SELECT DISTINCT leave_type FROM leave
         document.getElementById('edit_status').value = type.status;
         document.getElementById('editTypeModal').classList.remove('hidden');
     }
+
+    // ---- Leave Details Modal ----
+    function openLeaveDetails(data) {
+        // Avatar initial
+        var initial = (data.name || '?').charAt(0).toUpperCase();
+        document.getElementById('ld_avatar').textContent = initial;
+
+        // Header
+        document.getElementById('ld_name').textContent = data.name;
+        document.getElementById('ld_meta').textContent = data.employee_id + ' · ' + data.department;
+
+        // Leave type badge
+        var typeColors = {
+            annual:    'bg-blue-100 text-blue-700',
+            medical:   'bg-green-100 text-green-700',
+            emergency: 'bg-orange-100 text-orange-700',
+            unpaid:    'bg-gray-100 text-gray-700'
+        };
+        var badgeEl = document.getElementById('ld_type_badge');
+        badgeEl.textContent = data.leave_type.charAt(0).toUpperCase() + data.leave_type.slice(1) + ' Leave';
+        badgeEl.className = 'inline-block px-3 py-1 rounded-full text-xs font-semibold ' + (typeColors[data.leave_type] || 'bg-gray-100 text-gray-700');
+
+        // Dates & days
+        var fmt = function(d) {
+            if (!d) return '';
+            var parts = d.split('-');
+            var months = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+            return parts[2] + ' ' + months[parseInt(parts[1], 10) - 1] + ' ' + parts[0];
+        };
+        document.getElementById('ld_dates').textContent = fmt(data.start_date) + ' — ' + fmt(data.end_date);
+        document.getElementById('ld_days').textContent = data.total_days + (data.total_days == 1 ? ' day' : ' days');
+
+        // Reason
+        document.getElementById('ld_reason').textContent = data.reason || 'No reason provided.';
+
+        // Attachment
+        var attRow = document.getElementById('ld_attachment_row');
+        var attLink = document.getElementById('ld_attachment_link');
+        if (data.attachment) {
+            attLink.href = '../uploads/' + data.attachment;
+            attRow.classList.remove('hidden');
+        } else {
+            attRow.classList.add('hidden');
+        }
+
+        // Action buttons
+        document.getElementById('ld_approve_btn').href = '?action=approve&id=' + data.id;
+        document.getElementById('ld_reject_btn').href  = '?action=reject&id='  + data.id;
+
+        // Show modal with animation
+        var modal = document.getElementById('leaveDetailsModal');
+        var panel = document.getElementById('leaveDetailsPanel');
+        modal.classList.remove('hidden');
+        // Trigger scale-in animation
+        requestAnimationFrame(function() {
+            panel.classList.remove('scale-95', 'opacity-0');
+            panel.classList.add('scale-100', 'opacity-100');
+        });
+    }
+
+    function closeLeaveDetails() {
+        var modal = document.getElementById('leaveDetailsModal');
+        var panel = document.getElementById('leaveDetailsPanel');
+        panel.classList.remove('scale-100', 'opacity-100');
+        panel.classList.add('scale-95', 'opacity-0');
+        setTimeout(function() { modal.classList.add('hidden'); }, 200);
+    }
 </script>
+
+<!-- ========================================= -->
+<!-- LEAVE DETAILS MODAL                        -->
+<!-- ========================================= -->
+<div id="leaveDetailsModal" class="hidden fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-end sm:items-center justify-center p-0 sm:p-4">
+    <div id="leaveDetailsPanel"
+         class="bg-white w-full sm:max-w-md sm:rounded-2xl rounded-t-2xl shadow-2xl transform transition-all duration-200 scale-95 opacity-0 overflow-hidden">
+
+        <!-- Modal Header -->
+        <div class="bg-gradient-to-r from-indigo-600 to-blue-600 px-5 py-4">
+            <div class="flex items-center justify-between mb-3">
+                <p class="text-xs text-blue-200 font-semibold uppercase tracking-widest">Leave Request Review</p>
+                <button onclick="closeLeaveDetails()" class="text-white/70 hover:text-white transition">
+                    <i class="fas fa-times text-lg"></i>
+                </button>
+            </div>
+            <div class="flex items-center gap-3">
+                <div id="ld_avatar"
+                     class="w-12 h-12 rounded-xl bg-white/20 text-white font-bold text-xl flex items-center justify-center flex-shrink-0 shadow-inner">
+                    ?
+                </div>
+                <div>
+                    <p id="ld_name" class="text-white font-bold text-base leading-tight"></p>
+                    <p id="ld_meta" class="text-blue-200 text-xs mt-0.5"></p>
+                </div>
+            </div>
+        </div>
+
+        <!-- Modal Body -->
+        <div class="px-5 py-4 space-y-4">
+
+            <!-- Leave type badge -->
+            <div>
+                <span id="ld_type_badge" class="inline-block px-3 py-1 rounded-full text-xs font-semibold bg-blue-100 text-blue-700"></span>
+            </div>
+
+            <!-- Date range & total days -->
+            <div class="grid grid-cols-2 gap-3">
+                <div class="bg-gray-50 rounded-xl p-3">
+                    <p class="text-xs text-gray-400 mb-1 font-medium">Date Range</p>
+                    <p id="ld_dates" class="text-sm font-semibold text-gray-800 leading-snug"></p>
+                </div>
+                <div class="bg-indigo-50 rounded-xl p-3 text-center">
+                    <p class="text-xs text-indigo-400 mb-1 font-medium">Duration</p>
+                    <p id="ld_days" class="text-xl font-bold text-indigo-700"></p>
+                </div>
+            </div>
+
+            <!-- Reason -->
+            <div>
+                <p class="text-xs text-gray-400 font-medium mb-1">Reason</p>
+                <div class="bg-gray-50 border border-gray-100 rounded-xl px-4 py-3 text-sm text-gray-700 leading-relaxed min-h-[60px]">
+                    <p id="ld_reason"></p>
+                </div>
+            </div>
+
+            <!-- Attachment -->
+            <div id="ld_attachment_row" class="hidden">
+                <p class="text-xs text-gray-400 font-medium mb-1">Attachment</p>
+                <a id="ld_attachment_link" href="#" target="_blank"
+                   class="inline-flex items-center gap-2 text-sm text-blue-600 hover:text-blue-800 bg-blue-50 px-3 py-2 rounded-lg transition">
+                    <i class="fas fa-paperclip"></i> View Attachment
+                </a>
+            </div>
+        </div>
+
+        <!-- Action Buttons -->
+        <div class="px-5 pb-5 flex gap-3">
+            <a id="ld_approve_btn" href="#"
+               class="flex-1 bg-gradient-to-r from-green-500 to-emerald-600 text-white text-center py-3 rounded-xl font-semibold text-sm shadow hover:shadow-lg hover:from-green-600 hover:to-emerald-700 transition flex items-center justify-center gap-2">
+                <i class="fas fa-check-circle"></i> Approve
+            </a>
+            <a id="ld_reject_btn" href="#"
+               class="flex-1 bg-gradient-to-r from-red-500 to-rose-600 text-white text-center py-3 rounded-xl font-semibold text-sm shadow hover:shadow-lg hover:from-red-600 hover:to-rose-700 transition flex items-center justify-center gap-2">
+                <i class="fas fa-times-circle"></i> Reject
+            </a>
+        </div>
+    </div>
+</div>
+
 </body>
 </html>

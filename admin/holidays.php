@@ -100,6 +100,9 @@ $holidays = mysqli_query($conn, "SELECT * FROM holidays ORDER BY holiday_date DE
         <a href="holidays.php" class="flex items-center gap-3 py-3 px-4 rounded-xl hover:bg-gray-800/30 transition mb-1">
             <i class="fas fa-calendar-alt w-5"></i> Holidays
         </a>
+        <a href="audit_log.php" class="flex items-center gap-3 py-3 px-4 rounded-xl hover:bg-gray-800/30 transition mb-1">
+            <i class="fas fa-shield-alt w-5"></i> Audit Log
+        </a>
         <div class="border-t border-gray-800 my-4"></div>
         <a href="../logout.php" class="flex items-center gap-3 py-3 px-4 rounded-xl bg-red-600/20 text-red-300 hover:bg-red-600/30 transition">
             <i class="fas fa-sign-out-alt w-5"></i> Logout

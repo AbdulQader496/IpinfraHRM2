@@ -431,7 +431,7 @@ $announcements = mysqli_query($conn, "SELECT * FROM announcements WHERE is_activ
     </div>
 
     <!-- Mobile Bottom Navigation -->
-    <div class="fixed bottom-0 left-0 right-0 bg-white border-t border-gray-200 md:hidden shadow-lg z-20">
+    <div class="bottom-nav fixed bottom-0 left-0 right-0 bg-white border-t border-gray-200 md:hidden shadow-lg z-20">
         <div class="flex justify-around py-2">
             <a href="dashboard.php" class="flex flex-col items-center py-1 px-3 text-blue-600">
                 <i class="fas fa-home text-xl"></i>

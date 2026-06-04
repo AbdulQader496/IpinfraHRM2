@@ -1,4 +1,4 @@
-<?php
+﻿<?php
 require_once '../includes/auth.php';
 redirectIfNotAdmin();
 require_once '../includes/db.php';
@@ -62,6 +62,35 @@ $stats = mysqli_fetch_assoc($stats_query);
 // Get unique claim types for filter dropdown
 $claim_types = mysqli_query($conn, "SELECT DISTINCT claim_type FROM claims");
 
+// ========================================
+// BULK APPROVE / REJECT
+// ========================================
+if (isset($_POST['bulk_action']) && !empty($_POST['ids'])) {
+    $bulk_action = $_POST['bulk_action'];
+    $bulk_status = ($bulk_action === 'approve') ? 'approved' : 'rejected';
+    $ids = array_map('intval', $_POST['ids']);
+    $ids_safe = implode(',', $ids);
+
+    $bulk_rows = mysqli_query($conn, "SELECT id, employee_id FROM claims WHERE id IN ($ids_safe) AND status='pending'");
+    $affected = 0;
+    while ($br = mysqli_fetch_assoc($bulk_rows)) {
+        mysqli_query($conn, "UPDATE claims SET status='$bulk_status', reviewed_at=NOW() WHERE id={$br['id']}");
+        addNotification($br['employee_id'], 'Claim ' . ucfirst($bulk_status), 'Your claim has been ' . $bulk_status . '.');
+        $affected++;
+    }
+
+    if ($affected > 0) {
+        if ($bulk_status === 'approved') {
+            showToast("$affected claim(s) approved successfully.", 'success');
+        } else {
+            showToast("$affected claim(s) rejected.", 'warning');
+        }
+    }
+
+    header("Location: manage_claim.php?page=$page&per_page=$per_page&search=" . urlencode($search) . "&status=$status_filter&type=$type_filter&date_from=$date_from&date_to=$date_to");
+    exit();
+}
+
 // Handle Approve/Reject (uses 'act' param to avoid conflict with 'type' filter)
 if (isset($_GET['action']) && isset($_GET['act'])) {
     $id = (int)$_GET['action'];
@@ -71,7 +100,9 @@ if (isset($_GET['action']) && isset($_GET['act'])) {
     mysqli_query($conn, "UPDATE claims SET status='$status', reviewed_at=NOW() WHERE id=$id");
 
     $claim = mysqli_fetch_assoc(mysqli_query($conn, "SELECT employee_id FROM claims WHERE id=$id"));
-    addNotification($claim['employee_id'], 'Claim ' . ucfirst($status), 'Your claim has been ' . $status);
+    if ($claim) {
+        addNotification($claim['employee_id'], 'Claim ' . ucfirst($status), 'Your claim has been ' . $status);
+    }
 
     if ($status === 'approved') {
         showToast('Claim approved and will be added to next payroll.', 'success');
@@ -115,6 +146,22 @@ if (isset($_GET['action']) && isset($_GET['act'])) {
             50% { transform: translateY(-12px); }
         }
         .empty-state-svg { animation: floatY 3.4s ease-in-out infinite; }
+
+        /* Bulk action bar */
+        #bulkBar {
+            transition: transform 0.3s ease, opacity 0.3s ease;
+        }
+        #bulkBar.hidden-bar {
+            transform: translateY(100%);
+            opacity: 0;
+            pointer-events: none;
+        }
+        .bulk-check {
+            width: 18px; height: 18px;
+            accent-color: #7c3aed;
+            cursor: pointer;
+            flex-shrink: 0;
+        }
     </style>
 </head>
 <body class="bg-gradient-to-br from-gray-50 to-gray-100 min-h-screen pb-20">
@@ -186,6 +233,9 @@ if (isset($_GET['action']) && isset($_GET['act'])) {
         </a>
         <a href="holidays.php" class="flex items-center gap-3 py-3 px-4 rounded-xl hover:bg-gray-800/30 transition mb-1">
             <i class="fas fa-calendar-alt w-5"></i> Holidays
+        </a>
+        <a href="audit_log.php" class="flex items-center gap-3 py-3 px-4 rounded-xl hover:bg-gray-800/30 transition mb-1">
+            <i class="fas fa-shield-alt w-5"></i> Audit Log
         </a>
         <div class="border-t border-gray-800 my-4"></div>
         <a href="../logout.php" class="flex items-center gap-3 py-3 px-4 rounded-xl bg-red-600/20 text-red-300 hover:bg-red-600/30 transition">
@@ -320,6 +370,19 @@ if (isset($_GET['action']) && isset($_GET['act'])) {
 
     <!-- Claim List -->
     <?php if (mysqli_num_rows($claims) > 0): ?>
+        <!-- Bulk form wrapping the entire list -->
+        <form id="bulkForm" method="POST">
+            <input type="hidden" name="bulk_action" id="bulkActionInput" value="">
+
+            <!-- Select All header -->
+            <div class="flex items-center gap-3 mb-3 px-1">
+                <label class="flex items-center gap-2 cursor-pointer select-none text-sm font-medium text-gray-600">
+                    <input type="checkbox" id="selectAllCheck" class="bulk-check" onchange="toggleSelectAll(this)">
+                    Select All Pending
+                </label>
+                <span id="selectedCount" class="text-xs text-gray-400 hidden">0 selected</span>
+            </div>
+
         <div class="space-y-4">
             <?php while ($row = mysqli_fetch_assoc($claims)): ?>
             <div class="claim-card bg-white rounded-2xl shadow-md overflow-hidden">
@@ -328,6 +391,9 @@ if (isset($_GET['action']) && isset($_GET['act'])) {
                         <div class="flex-1">
                             <!-- Employee Info -->
                             <div class="flex items-center gap-3 mb-4">
+                                <?php if ($row['status'] === 'pending'): ?>
+                                <input type="checkbox" name="ids[]" value="<?php echo $row['id']; ?>" class="bulk-check" onchange="updateBulkBar()">
+                                <?php endif; ?>
                                 <div class="w-12 h-12 rounded-full bg-gradient-to-br from-purple-500 to-purple-600 flex items-center justify-center text-white font-bold shadow-sm">
                                     <?php echo strtoupper(substr($row['name'], 0, 1)); ?>
                                 </div>
@@ -434,8 +500,9 @@ if (isset($_GET['action']) && isset($_GET['act'])) {
                 </div>
             </div>
             <?php endwhile; ?>
-        </div>
-        
+        </div><!-- end space-y-4 -->
+        </form><!-- end bulkForm -->
+
         <!-- Pagination -->
         <?php if($total_pages > 1): ?>
         <div class="flex justify-between items-center mt-6 bg-white rounded-xl shadow-md px-4 py-3">
@@ -501,6 +568,27 @@ if (isset($_GET['action']) && isset($_GET['act'])) {
     <?php endif; ?>
 </div>
 
+<!-- Bulk Action Bar (sticky at bottom, above mobile nav) -->
+<div id="bulkBar" class="fixed bottom-0 left-0 right-0 z-30 hidden-bar" style="bottom: 0;">
+    <div class="bg-gradient-to-r from-indigo-700 to-purple-700 text-white px-4 py-3 shadow-2xl flex items-center justify-between flex-wrap gap-2">
+        <span class="text-sm font-semibold" id="bulkCountLabel">0 selected</span>
+        <div class="flex items-center gap-2">
+            <button type="button" onclick="submitBulk('approve')"
+                class="bg-green-500 hover:bg-green-400 text-white px-4 py-1.5 rounded-xl text-sm font-semibold flex items-center gap-1 transition">
+                <i class="fas fa-check"></i> Approve All
+            </button>
+            <button type="button" onclick="submitBulk('reject')"
+                class="bg-red-500 hover:bg-red-400 text-white px-4 py-1.5 rounded-xl text-sm font-semibold flex items-center gap-1 transition">
+                <i class="fas fa-times"></i> Reject All
+            </button>
+            <button type="button" onclick="clearSelection()"
+                class="text-white/70 hover:text-white text-xs underline ml-2 transition">
+                Clear
+            </button>
+        </div>
+    </div>
+</div>
+
 <!-- Mobile Bottom Navigation -->
 <div class="fixed bottom-0 left-0 right-0 bg-white border-t border-gray-200 md:hidden shadow-lg z-20">
     <div class="flex justify-around py-2">
@@ -527,6 +615,59 @@ if (isset($_GET['action']) && isset($_GET['act'])) {
     function toggleSidebar() {
         document.getElementById('sidebar').classList.toggle('-translate-x-full');
         document.getElementById('overlay').classList.toggle('hidden');
+    }
+
+    // ---- Bulk selection ----
+    function getCheckedBoxes() {
+        return Array.from(document.querySelectorAll('.bulk-check[name="ids[]"]:checked'));
+    }
+
+    function updateBulkBar() {
+        const checked = getCheckedBoxes();
+        const count = checked.length;
+        const bar = document.getElementById('bulkBar');
+        const countLabel = document.getElementById('bulkCountLabel');
+        const headerCount = document.getElementById('selectedCount');
+
+        countLabel.textContent = count + ' selected';
+        if (headerCount) {
+            headerCount.textContent = count + ' selected';
+            headerCount.classList.toggle('hidden', count === 0);
+        }
+
+        if (count > 0) {
+            bar.classList.remove('hidden-bar');
+        } else {
+            bar.classList.add('hidden-bar');
+        }
+
+        // Sync select-all checkbox state
+        const allBoxes = document.querySelectorAll('.bulk-check[name="ids[]"]');
+        const selectAll = document.getElementById('selectAllCheck');
+        if (selectAll) {
+            selectAll.checked = allBoxes.length > 0 && count === allBoxes.length;
+            selectAll.indeterminate = count > 0 && count < allBoxes.length;
+        }
+    }
+
+    function toggleSelectAll(cb) {
+        const boxes = document.querySelectorAll('.bulk-check[name="ids[]"]');
+        boxes.forEach(b => b.checked = cb.checked);
+        updateBulkBar();
+    }
+
+    function submitBulk(action) {
+        const checked = getCheckedBoxes();
+        if (checked.length === 0) return;
+        const label = action === 'approve' ? 'approve' : 'reject';
+        if (!confirm('Are you sure you want to ' + label + ' ' + checked.length + ' claim(s)?')) return;
+        document.getElementById('bulkActionInput').value = action;
+        document.getElementById('bulkForm').submit();
+    }
+
+    function clearSelection() {
+        document.querySelectorAll('.bulk-check').forEach(b => b.checked = false);
+        updateBulkBar();
     }
 </script>
 </body>

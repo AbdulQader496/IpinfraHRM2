@@ -114,21 +114,32 @@ if (isset($_GET['delete'])) {
     exit();
 }
 
-// Handle Add Department
+// Handle Add Department (only runs if departments table exists)
 if (isset($_POST['add_department'])) {
     $dept_name = trim(mysqli_real_escape_string($conn, $_POST['dept_name']));
     if ($dept_name !== '') {
-        mysqli_query($conn, "INSERT IGNORE INTO departments (name) VALUES ('$dept_name')");
+        mysqli_query($conn, "CREATE TABLE IF NOT EXISTS departments (id INT PRIMARY KEY AUTO_INCREMENT, name VARCHAR(100) NOT NULL UNIQUE, created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP)");
+        try {
+            mysqli_query($conn, "INSERT IGNORE INTO departments (name) VALUES ('$dept_name')");
+        } catch (Exception $e) { /* ignore */ }
     }
     header('Location: employees.php');
     exit();
 }
 
-// Fetch managed department list
-$dept_result = mysqli_query($conn, "SELECT name FROM departments ORDER BY name ASC");
+// Fetch managed department list (falls back to distinct values from employees if table missing)
 $departments = [];
-while ($row = mysqli_fetch_assoc($dept_result)) {
-    $departments[] = $row['name'];
+try {
+    $dept_result = mysqli_query($conn, "SELECT name FROM departments ORDER BY name ASC");
+    while ($row = mysqli_fetch_assoc($dept_result)) {
+        $departments[] = $row['name'];
+    }
+} catch (Exception $e) {
+    // departments table not yet created — seed from existing employee data
+    $fallback = mysqli_query($conn, "SELECT DISTINCT department FROM employees WHERE department IS NOT NULL AND department != '' ORDER BY department");
+    while ($row = mysqli_fetch_assoc($fallback)) {
+        $departments[] = $row['department'];
+    }
 }
 
 // Get employees with pagination

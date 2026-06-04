@@ -15,6 +15,21 @@ if ($filter_action !== '') $where .= " AND al.action = '$filter_action'";
 if ($filter_from   !== '') $where .= " AND DATE(al.created_at) >= '$filter_from'";
 if ($filter_to     !== '') $where .= " AND DATE(al.created_at) <= '$filter_to'";
 
+// ── Auto-create audit_log table if not yet run migration ─────────────────────
+mysqli_query($conn, "CREATE TABLE IF NOT EXISTS audit_log (
+    id INT PRIMARY KEY AUTO_INCREMENT,
+    user_id INT DEFAULT 0,
+    action VARCHAR(50),
+    description TEXT,
+    target_type VARCHAR(50),
+    target_id INT DEFAULT 0,
+    ip_address VARCHAR(45),
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    INDEX idx_user (user_id),
+    INDEX idx_action (action),
+    INDEX idx_created (created_at)
+)");
+
 // ── Pagination ────────────────────────────────────────────────────────────────
 $per_page    = 20;
 $page        = max(1, intval($_GET['page'] ?? 1));

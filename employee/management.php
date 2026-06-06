@@ -92,7 +92,6 @@ $documents = mysqli_query($conn, "SELECT d.*
     FROM employee_documents d 
     WHERE d.employee_id = $user_id 
     AND d.uploaded_by != $user_id
-    AND d.status = 'active'
     ORDER BY d.created_at DESC");
 ?>
 <!DOCTYPE html>

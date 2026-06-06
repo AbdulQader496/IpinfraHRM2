@@ -1,13 +1,32 @@
 <?php
 // ── Notification data for logged-in user ──────────────────────────────
-$_gb_notif_count = 0;
-$_gb_notifs      = [];
+$_gb_notif_count  = 0;
+$_gb_notifs       = [];
+$_gb_admin_items  = [];
 if (isset($_SESSION['user_id']) && isset($conn) && $conn) {
     $uid = (int)$_SESSION['user_id'];
     $r = @mysqli_query($conn, "SELECT COUNT(*) as c FROM notifications WHERE employee_id=$uid AND is_read=0");
     if ($r) $_gb_notif_count = (int)(mysqli_fetch_assoc($r)['c'] ?? 0);
     $r2 = @mysqli_query($conn, "SELECT * FROM notifications WHERE employee_id=$uid ORDER BY created_at DESC LIMIT 15");
     if ($r2) while ($n = mysqli_fetch_assoc($r2)) $_gb_notifs[] = $n;
+
+    // For admins: also surface pending leaves + claims as action items
+    if (isset($_SESSION['role']) && $_SESSION['role'] === 'admin') {
+        $pl = @mysqli_query($conn, "SELECT COUNT(*) as c FROM leaves WHERE status='pending'");
+        $pc = @mysqli_query($conn, "SELECT COUNT(*) as c FROM claims WHERE status='pending'");
+        $pl_c = $pl ? (int)(mysqli_fetch_assoc($pl)['c'] ?? 0) : 0;
+        $pc_c = $pc ? (int)(mysqli_fetch_assoc($pc)['c'] ?? 0) : 0;
+        if ($pl_c > 0) {
+            $_gb_admin_items[] = ['icon'=>'fa-calendar-check','color'=>'#d97706','bg'=>'#fef3c7',
+                'title'=>$pl_c.' Leave Request'.($pl_c>1?'s':'').' Pending','link'=>'manage_leave.php'];
+            $_gb_notif_count += $pl_c;
+        }
+        if ($pc_c > 0) {
+            $_gb_admin_items[] = ['icon'=>'fa-receipt','color'=>'#059669','bg'=>'#d1fae5',
+                'title'=>$pc_c.' Claim'.($pc_c>1?'s':'').' Pending','link'=>'manage_claim.php'];
+            $_gb_notif_count += $pc_c;
+        }
+    }
 }
 ?>
 <?php
@@ -782,8 +801,9 @@ img[loading="lazy"].img-loaded {
      9. NOTIFICATION BELL — inject on pages without their own bell
      ================================================================ */
 
-  var GB_NOTIF_COUNT = <?php echo (int)$_gb_notif_count; ?>;
-  var GB_NOTIF_ITEMS = <?php echo json_encode($_gb_notifs); ?>;
+  var GB_NOTIF_COUNT  = <?php echo (int)$_gb_notif_count; ?>;
+  var GB_NOTIF_ITEMS  = <?php echo json_encode($_gb_notifs); ?>;
+  var GB_ADMIN_ITEMS  = <?php echo json_encode($_gb_admin_items); ?>;
 
   function gbEsc(s) {
     if (!s) return '';
@@ -799,12 +819,25 @@ img[loading="lazy"].img-loaded {
   }
 
   function gbBuildItems(items) {
-    if (!items.length) {
+    var html = '';
+    // Admin pending actions at the top
+    if (GB_ADMIN_ITEMS && GB_ADMIN_ITEMS.length) {
+      html += GB_ADMIN_ITEMS.map(function(a) {
+        return '<a href="' + gbEsc(a.link) + '" style="display:flex;align-items:center;gap:10px;padding:12px 14px;text-decoration:none;border-bottom:1px solid #f3f4f6;background:#fffbeb;">' +
+          '<div class="gb-ni-icon" style="background:' + a.bg + '">' +
+          '<i class="fas ' + a.icon + '" style="font-size:13px;color:' + a.color + '"></i></div>' +
+          '<div style="flex:1;min-width:0">' +
+          '<p style="margin:0;font-size:13px;font-weight:700;color:#92400e">' + gbEsc(a.title) + '</p>' +
+          '<p style="margin:2px 0 0;font-size:11px;color:#b45309">Tap to review</p></div>' +
+          '<i class="fas fa-chevron-right" style="color:#d97706;font-size:10px"></i></a>';
+      }).join('');
+    }
+    if (!items.length && !html) {
       return '<div style="padding:40px 16px;text-align:center">' +
         '<i class="fas fa-bell-slash" style="font-size:30px;color:#d1d5db"></i>' +
         '<p style="margin:10px 0 0;color:#9ca3af;font-size:13px">No notifications yet</p></div>';
     }
-    return items.map(function(n) {
+    html += items.map(function(n) {
       var unread = n.is_read == 0;
       return '<div class="gb-ni' + (unread ? ' unread' : '') + '" onclick="gbMarkRead(' + n.id + ',this)">' +
         '<div class="gb-ni-icon" style="background:' + (unread ? '#dbeafe' : '#f3f4f6') + '">' +
@@ -815,6 +848,7 @@ img[loading="lazy"].img-loaded {
         '<p style="margin:4px 0 0;font-size:10px;color:#9ca3af">' + gbAgo(n.created_at) + '</p></div>' +
         (unread ? '<div class="gb-ni-dot"></div>' : '') + '</div>';
     }).join('');
+    return html;
   }
 
   function gbBuildPanel(count, items) {

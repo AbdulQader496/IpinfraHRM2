@@ -42,8 +42,10 @@ if ($doc_res) while ($d = mysqli_fetch_assoc($doc_res)) $emp_docs[] = $d;
 
 // Employee warnings
 $emp_warnings = [];
-$warn_res = @mysqli_query($conn, "SELECT w.*, a.name as issued_by_name FROM employee_warnings w LEFT JOIN employees a ON w.issued_by=a.id WHERE w.employee_id=$id ORDER BY w.issued_date DESC");
-if ($warn_res) while ($w = mysqli_fetch_assoc($warn_res)) $emp_warnings[] = $w;
+try {
+    $warn_res = mysqli_query($conn, "SELECT w.*, a.name as issued_by_name FROM employee_warnings w LEFT JOIN employees a ON w.issued_by=a.id WHERE w.employee_id=$id ORDER BY w.issued_date DESC");
+    if ($warn_res) while ($w = mysqli_fetch_assoc($warn_res)) $emp_warnings[] = $w;
+} catch (Exception $e) { /* table not yet created */ }
 
 $profile_pic_path = "../uploads/profiles/" . $emp['profile_pic'];
 $has_profile = !empty($emp['profile_pic']) && file_exists($profile_pic_path);

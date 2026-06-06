@@ -195,15 +195,29 @@ $employees = mysqli_query($conn, "SELECT id, name, employee_id FROM employees WH
 
 $pending_count = mysqli_fetch_assoc(mysqli_query($conn, "SELECT COUNT(*) as count FROM employee_resignations WHERE status='pending'"))['count'];
 
-// Warnings — check table exists first
-$warnings_result = @mysqli_query($conn,
-    "SELECT w.*, e.name, e.employee_id as emp_code, a.name as issued_by_name
-     FROM employee_warnings w
-     JOIN employees e ON w.employee_id = e.id
-     LEFT JOIN employees a ON w.issued_by = a.id
-     ORDER BY w.issued_date DESC");
+// Warnings — create table if missing, then query
+@mysqli_query($conn, "CREATE TABLE IF NOT EXISTS employee_warnings (
+    id INT PRIMARY KEY AUTO_INCREMENT,
+    employee_id INT NOT NULL,
+    warning_type ENUM('verbal','written','final','suspension','counselling') NOT NULL DEFAULT 'verbal',
+    subject VARCHAR(255) NOT NULL,
+    description TEXT,
+    issued_by INT NULL,
+    issued_date DATE NOT NULL,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (employee_id) REFERENCES employees(id) ON DELETE CASCADE,
+    FOREIGN KEY (issued_by) REFERENCES employees(id) ON DELETE SET NULL
+)");
 $all_warnings = [];
-if ($warnings_result) while ($wr = mysqli_fetch_assoc($warnings_result)) $all_warnings[] = $wr;
+try {
+    $warnings_result = mysqli_query($conn,
+        "SELECT w.*, e.name, e.employee_id as emp_code, a.name as issued_by_name
+         FROM employee_warnings w
+         JOIN employees e ON w.employee_id = e.id
+         LEFT JOIN employees a ON w.issued_by = a.id
+         ORDER BY w.issued_date DESC");
+    if ($warnings_result) while ($wr = mysqli_fetch_assoc($warnings_result)) $all_warnings[] = $wr;
+} catch (Exception $e) { /* table still missing */ }
 $warnings_count = count($all_warnings);
 ?>
 <!DOCTYPE html>

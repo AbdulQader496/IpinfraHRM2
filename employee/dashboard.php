@@ -50,6 +50,17 @@ $recent_leaves = mysqli_query($conn, "SELECT * FROM leaves WHERE employee_id = $
 // Get recent claims
 $recent_claims = mysqli_query($conn, "SELECT * FROM claims WHERE employee_id = $user_id ORDER BY applied_at DESC LIMIT 3");
 
+// Employee of the Month (read-only)
+$eom_emp = null;
+try {
+    $eom_emp = mysqli_fetch_assoc(mysqli_query($conn,
+        "SELECT m.note, e.name, e.department, e.profile_pic
+         FROM employee_of_month m
+         JOIN employees e ON m.employee_id = e.id
+         WHERE m.month_year = DATE_FORMAT(CURDATE(),'%Y-%m')
+         LIMIT 1"));
+} catch (Exception $ex) { }
+
 // Get announcements for employees
 $announcements = mysqli_query($conn, "SELECT * FROM announcements WHERE is_active = 1 AND (target_role = 'all' OR target_role = 'employee') AND (end_date IS NULL OR end_date >= CURDATE()) ORDER BY 
     CASE announcement_type 
@@ -359,6 +370,36 @@ $announcements = mysqli_query($conn, "SELECT * FROM announcements WHERE is_activ
                 <?php endif; ?>
             </div>
         </div>
+
+        <!-- Employee of the Month -->
+        <?php if($eom_emp): ?>
+        <div class="bg-gradient-to-r from-indigo-600 via-purple-600 to-pink-600 rounded-2xl shadow-xl p-5 mb-6 text-white relative overflow-hidden">
+            <div class="absolute top-0 right-0 w-32 h-32 bg-white/10 rounded-full -translate-y-1/2 translate-x-1/2 pointer-events-none"></div>
+            <div class="flex items-center gap-3 mb-3">
+                <i class="fas fa-trophy text-yellow-300 text-lg"></i>
+                <div>
+                    <p class="font-bold text-sm uppercase tracking-widest">Employee of the Month</p>
+                    <p class="text-white/60 text-xs"><?php echo date('F Y'); ?></p>
+                </div>
+            </div>
+            <div class="flex items-center gap-4">
+                <div class="w-14 h-14 rounded-xl bg-white/20 flex items-center justify-center overflow-hidden border-2 border-white/40 flex-shrink-0">
+                    <?php if(!empty($eom_emp['profile_pic']) && file_exists('../uploads/profiles/'.$eom_emp['profile_pic'])): ?>
+                        <img src="../uploads/profiles/<?php echo htmlspecialchars($eom_emp['profile_pic']); ?>" class="w-full h-full object-cover">
+                    <?php else: ?>
+                        <span class="text-2xl font-bold"><?php echo strtoupper(substr($eom_emp['name'],0,1)); ?></span>
+                    <?php endif; ?>
+                </div>
+                <div>
+                    <p class="text-lg font-bold"><?php echo htmlspecialchars($eom_emp['name']); ?></p>
+                    <p class="text-white/80 text-sm"><?php echo htmlspecialchars($eom_emp['department'] ?: ''); ?></p>
+                    <?php if(!empty($eom_emp['note'])): ?>
+                        <p class="text-white/70 text-xs mt-1 italic">"<?php echo htmlspecialchars($eom_emp['note']); ?>"</p>
+                    <?php endif; ?>
+                </div>
+            </div>
+        </div>
+        <?php endif; ?>
 
         <!-- Quick Actions -->
         <div class="mb-6">

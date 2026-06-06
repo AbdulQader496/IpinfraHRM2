@@ -489,16 +489,23 @@ $pending_total = mysqli_fetch_assoc(mysqli_query($conn, "SELECT SUM(amount) as t
                     <span class="text-xs text-gray-400">(<?php echo $total_rows; ?> total)</span>
                 </div>
                 
-                <form method="GET" class="flex gap-2">
+                <form method="GET" class="flex gap-2 flex-wrap">
                     <select name="status" class="text-sm border border-gray-200 rounded-lg px-3 py-1.5">
                         <option value="">All Status</option>
                         <option value="pending" <?php echo $status_filter == 'pending' ? 'selected' : ''; ?>>Pending</option>
                         <option value="approved" <?php echo $status_filter == 'approved' ? 'selected' : ''; ?>>Approved</option>
                         <option value="rejected" <?php echo $status_filter == 'rejected' ? 'selected' : ''; ?>>Rejected</option>
                     </select>
+                    <select name="per_page" class="text-sm border border-gray-200 rounded-lg px-3 py-1.5">
+                        <option value="5"  <?php echo $per_page == 5  ? 'selected' : ''; ?>>5 / page</option>
+                        <option value="10" <?php echo $per_page == 10 ? 'selected' : ''; ?>>10 / page</option>
+                        <option value="25" <?php echo $per_page == 25 ? 'selected' : ''; ?>>25 / page</option>
+                        <option value="50" <?php echo $per_page == 50 ? 'selected' : ''; ?>>50 / page</option>
+                        <option value="100" <?php echo $per_page == 100 ? 'selected' : ''; ?>>All</option>
+                    </select>
                     <input type="hidden" name="page" value="1">
-                    <button type="submit" class="bg-purple-600 text-white px-3 py-1.5 rounded-lg text-sm">Filter</button>
-                    <?php if($status_filter): ?>
+                    <button type="submit" class="bg-purple-600 text-white px-3 py-1.5 rounded-lg text-sm">Apply</button>
+                    <?php if($status_filter || $per_page != 10): ?>
                         <a href="claim.php" class="bg-gray-200 text-gray-700 px-3 py-1.5 rounded-lg text-sm">Clear</a>
                     <?php endif; ?>
                 </form>
@@ -570,14 +577,6 @@ $pending_total = mysqli_fetch_assoc(mysqli_query($conn, "SELECT SUM(amount) as t
                         <a href="?page=<?php echo $page+1; ?>&per_page=<?php echo $per_page; ?>&status=<?php echo $status_filter; ?>" class="px-3 py-1 bg-white border rounded-lg text-sm hover:bg-gray-100">Next →</a>
                         <a href="?page=<?php echo $total_pages; ?>&per_page=<?php echo $per_page; ?>&status=<?php echo $status_filter; ?>" class="px-3 py-1 bg-white border rounded-lg text-sm hover:bg-gray-100">Last</a>
                     <?php endif; ?>
-                </div>
-                <div class="flex items-center gap-2">
-                    <span class="text-xs text-gray-500">Show:</span>
-                    <select onchange="window.location.href=this.value" class="text-sm border rounded px-2 py-1">
-                        <option value="?per_page=10&page=1&status=<?php echo $status_filter; ?>" <?php echo $per_page == 10 ? 'selected' : ''; ?>>10</option>
-                        <option value="?per_page=25&page=1&status=<?php echo $status_filter; ?>" <?php echo $per_page == 25 ? 'selected' : ''; ?>>25</option>
-                        <option value="?per_page=50&page=1&status=<?php echo $status_filter; ?>" <?php echo $per_page == 50 ? 'selected' : ''; ?>>50</option>
-                    </select>
                 </div>
             </div>
             <?php endif; ?>

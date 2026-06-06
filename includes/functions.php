@@ -61,12 +61,12 @@ function updateLeaveBalance($employee_id, $leave_type, $days) {
     global $conn;
     $id   = intval($employee_id);
     $days = floatval($days);
-    if ($leave_type == 'annual') {
+    if ($leave_type == 'AL' || $leave_type == 'annual') {
         mysqli_query($conn, "UPDATE employees SET used_annual_leave = used_annual_leave + $days WHERE id = $id");
-    } elseif ($leave_type == 'medical') {
+    } elseif ($leave_type == 'ML' || $leave_type == 'medical') {
         mysqli_query($conn, "UPDATE employees SET used_medical_leave = used_medical_leave + $days WHERE id = $id");
     }
-    // unpaid / emergency: no balance to track
+    // UL/EML/HD/emergency: no balance to track
 }
 
 function getEmployeeName($employee_id) {

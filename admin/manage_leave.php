@@ -437,10 +437,11 @@ $leave_type_options = mysqli_query($conn, "SELECT DISTINCT leave_type FROM leave
             <div>
                 <select name="type" class="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm">
                     <option value="">All Types</option>
-                    <option value="annual" <?php echo $type_filter == 'annual' ? 'selected' : ''; ?>>Annual Leave</option>
-                    <option value="medical" <?php echo $type_filter == 'medical' ? 'selected' : ''; ?>>Medical Leave</option>
-                    <option value="emergency" <?php echo $type_filter == 'emergency' ? 'selected' : ''; ?>>Emergency Leave</option>
-                    <option value="unpaid" <?php echo $type_filter == 'unpaid' ? 'selected' : ''; ?>>Unpaid Leave</option>
+                    <option value="AL"  <?php echo $type_filter == 'AL'  ? 'selected' : ''; ?>>Annual Leave</option>
+                    <option value="ML"  <?php echo $type_filter == 'ML'  ? 'selected' : ''; ?>>Medical Leave</option>
+                    <option value="EML" <?php echo $type_filter == 'EML' ? 'selected' : ''; ?>>Emergency Leave</option>
+                    <option value="UL"  <?php echo $type_filter == 'UL'  ? 'selected' : ''; ?>>Unpaid Leave</option>
+                    <option value="HD"  <?php echo $type_filter == 'HD'  ? 'selected' : ''; ?>>Half Day</option>
                 </select>
             </div>
             <div>
@@ -797,8 +798,8 @@ $leave_type_options = mysqli_query($conn, "SELECT DISTINCT leave_type FROM leave
             <div>
                 <label class="block text-gray-700 text-sm font-semibold mb-2">Leave Type</label>
                 <select name="adjust_type" id="adj_type" required class="w-full px-4 py-2.5 border-2 border-gray-200 rounded-xl focus:border-blue-500">
-                    <option value="annual">Annual Leave</option>
-                    <option value="medical">Medical Leave</option>
+                    <option value="AL">Annual Leave</option>
+                    <option value="ML">Medical Leave</option>
                 </select>
             </div>
             

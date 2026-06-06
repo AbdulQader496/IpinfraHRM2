@@ -5,27 +5,31 @@ $_gb_notifs       = [];
 $_gb_admin_items  = [];
 if (isset($_SESSION['user_id']) && isset($conn) && $conn) {
     $uid = (int)$_SESSION['user_id'];
-    $r = @mysqli_query($conn, "SELECT COUNT(*) as c FROM notifications WHERE employee_id=$uid AND is_read=0");
-    if ($r) $_gb_notif_count = (int)(mysqli_fetch_assoc($r)['c'] ?? 0);
-    $r2 = @mysqli_query($conn, "SELECT * FROM notifications WHERE employee_id=$uid ORDER BY created_at DESC LIMIT 15");
-    if ($r2) while ($n = mysqli_fetch_assoc($r2)) $_gb_notifs[] = $n;
+    try {
+        $r = mysqli_query($conn, "SELECT COUNT(*) as c FROM notifications WHERE employee_id=$uid AND is_read=0");
+        if ($r) $_gb_notif_count = (int)(mysqli_fetch_assoc($r)['c'] ?? 0);
+        $r2 = mysqli_query($conn, "SELECT * FROM notifications WHERE employee_id=$uid ORDER BY created_at DESC LIMIT 15");
+        if ($r2) while ($n = mysqli_fetch_assoc($r2)) $_gb_notifs[] = $n;
+    } catch (Exception $e) { }
 
     // For admins: also surface pending leaves + claims as action items
     if (isset($_SESSION['role']) && $_SESSION['role'] === 'admin') {
-        $pl = @mysqli_query($conn, "SELECT COUNT(*) as c FROM leaves WHERE status='pending'");
-        $pc = @mysqli_query($conn, "SELECT COUNT(*) as c FROM claims WHERE status='pending'");
-        $pl_c = $pl ? (int)(mysqli_fetch_assoc($pl)['c'] ?? 0) : 0;
-        $pc_c = $pc ? (int)(mysqli_fetch_assoc($pc)['c'] ?? 0) : 0;
-        if ($pl_c > 0) {
-            $_gb_admin_items[] = ['icon'=>'fa-calendar-check','color'=>'#d97706','bg'=>'#fef3c7',
-                'title'=>$pl_c.' Leave Request'.($pl_c>1?'s':'').' Pending','link'=>'manage_leave.php'];
-            $_gb_notif_count += $pl_c;
-        }
-        if ($pc_c > 0) {
-            $_gb_admin_items[] = ['icon'=>'fa-receipt','color'=>'#059669','bg'=>'#d1fae5',
-                'title'=>$pc_c.' Claim'.($pc_c>1?'s':'').' Pending','link'=>'manage_claim.php'];
-            $_gb_notif_count += $pc_c;
-        }
+        try {
+            $pl = mysqli_query($conn, "SELECT COUNT(*) as c FROM leaves WHERE status='pending'");
+            $pc = mysqli_query($conn, "SELECT COUNT(*) as c FROM claims WHERE status='pending'");
+            $pl_c = $pl ? (int)(mysqli_fetch_assoc($pl)['c'] ?? 0) : 0;
+            $pc_c = $pc ? (int)(mysqli_fetch_assoc($pc)['c'] ?? 0) : 0;
+            if ($pl_c > 0) {
+                $_gb_admin_items[] = ['icon'=>'fa-calendar-check','color'=>'#d97706','bg'=>'#fef3c7',
+                    'title'=>$pl_c.' Leave Request'.($pl_c>1?'s':'').' Pending','link'=>'manage_leave.php'];
+                $_gb_notif_count += $pl_c;
+            }
+            if ($pc_c > 0) {
+                $_gb_admin_items[] = ['icon'=>'fa-receipt','color'=>'#059669','bg'=>'#d1fae5',
+                    'title'=>$pc_c.' Claim'.($pc_c>1?'s':'').' Pending','link'=>'manage_claim.php'];
+                $_gb_notif_count += $pc_c;
+            }
+        } catch (Exception $e) { }
     }
 }
 ?>

@@ -2,6 +2,7 @@ USE hrmmanagement;
 
 -- Add missing columns to employees
 ALTER TABLE employees
+    ADD COLUMN IF NOT EXISTS address TEXT NULL,
     ADD COLUMN IF NOT EXISTS employee_type ENUM('regular','intern') DEFAULT 'regular',
     ADD COLUMN IF NOT EXISTS is_subject_to_statutory TINYINT(1) DEFAULT 1,
     ADD COLUMN IF NOT EXISTS nationality VARCHAR(50) DEFAULT 'Malaysian',
@@ -40,6 +41,13 @@ CREATE TABLE IF NOT EXISTS leave_types (
     status ENUM('active','inactive') DEFAULT 'active',
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
+
+-- Add missing columns to leave_types (if table already existed without them)
+ALTER TABLE leave_types
+    ADD COLUMN IF NOT EXISTS status ENUM('active','inactive') DEFAULT 'active',
+    ADD COLUMN IF NOT EXISTS requires_attachment TINYINT(1) DEFAULT 0,
+    ADD COLUMN IF NOT EXISTS max_consecutive_days INT DEFAULT 30,
+    ADD COLUMN IF NOT EXISTS color_code VARCHAR(10) DEFAULT '#3B82F6';
 
 -- Asset categories
 CREATE TABLE IF NOT EXISTS asset_categories (

@@ -4,15 +4,15 @@ redirectIfNotAdmin();
 require_once '../includes/db.php';
 
 if (isset($_POST['add_holiday'])) {
-    $date = $_POST['holiday_date'];
-    $name = $_POST['holiday_name'];
+    $date = mysqli_real_escape_string($conn, $_POST['holiday_date']);
+    $name = mysqli_real_escape_string($conn, $_POST['holiday_name']);
     mysqli_query($conn, "INSERT INTO holidays (holiday_date, holiday_name) VALUES ('$date', '$name')");
     header('Location: holidays.php');
     exit();
 }
 
 if (isset($_GET['delete'])) {
-    $id = $_GET['delete'];
+    $id = intval($_GET['delete']);
     mysqli_query($conn, "DELETE FROM holidays WHERE id = $id");
     header('Location: holidays.php');
     exit();

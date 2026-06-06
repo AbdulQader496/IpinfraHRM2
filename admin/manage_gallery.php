@@ -5,8 +5,8 @@ require_once '../includes/db.php';
 
 // Delete photo
 if (isset($_GET['delete'])) {
-    $id = $_GET['delete'];
-    
+    $id = intval($_GET['delete']);
+
     // Get image path to delete file
     $query = "SELECT image_path FROM gallery WHERE id = $id";
     $result = mysqli_query($conn, $query);
@@ -26,9 +26,8 @@ if (isset($_GET['delete'])) {
 
 // Hide/Show photo
 if (isset($_GET['toggle']) && isset($_GET['id'])) {
-    $id = $_GET['id'];
-    $current_status = $_GET['status'];
-    $new_status = ($current_status == 'active') ? 'hidden' : 'active';
+    $id = intval($_GET['id']);
+    $new_status = (($_GET['status'] ?? '') == 'active') ? 'hidden' : 'active';
     mysqli_query($conn, "UPDATE gallery SET status = '$new_status' WHERE id = $id");
     header('Location: manage_gallery.php');
     exit();

@@ -4,8 +4,8 @@ redirectIfNotLoggedIn();
 require_once '../includes/db.php';
 
 $user_id = $_SESSION['user_id'];
-$year = date('Y');
-$month = date('m');
+$year  = isset($_GET['year'])  ? intval($_GET['year'])  : (int)date('Y');
+$month = isset($_GET['month']) ? intval($_GET['month']) : (int)date('m');
 
 $holidays = mysqli_query($conn, "SELECT * FROM holidays WHERE YEAR(holiday_date) = $year");
 $holiday_dates = [];
@@ -25,11 +25,7 @@ while ($row = mysqli_fetch_assoc($leaves)) {
     }
 }
 
-// Month navigation
-if (isset($_GET['month']) && isset($_GET['year'])) {
-    $month = $_GET['month'];
-    $year = $_GET['year'];
-}
+// Month navigation already resolved above
 $current_month = date('F Y', strtotime("$year-$month-01"));
 $prev_month = date('m', strtotime("$year-$month-01 -1 month"));
 $prev_year = date('Y', strtotime("$year-$month-01 -1 month"));

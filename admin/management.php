@@ -1,4 +1,4 @@
-<?php
+﻿<?php
 require_once '../includes/auth.php';
 redirectIfNotAdmin();
 require_once '../includes/db.php';
@@ -8,8 +8,8 @@ require_once '../includes/functions.php';
 // DELETE RESIGNATION RECORD
 // ========================================
 if (isset($_GET['delete_resignation'])) {
-    $id = $_GET['delete_resignation'];
-    
+    $id = intval($_GET['delete_resignation']);
+
     $res = mysqli_fetch_assoc(mysqli_query($conn, "SELECT employee_id, status FROM employee_resignations WHERE id=$id"));
     if ($res) {
         if ($res['status'] == 'approved') {
@@ -25,8 +25,8 @@ if (isset($_GET['delete_resignation'])) {
 // DELETE TERMINATION RECORD
 // ========================================
 if (isset($_GET['delete_termination'])) {
-    $id = $_GET['delete_termination'];
-    
+    $id = intval($_GET['delete_termination']);
+
     $term = mysqli_fetch_assoc(mysqli_query($conn, "SELECT employee_id FROM terminations WHERE id=$id"));
     if ($term) {
         mysqli_query($conn, "UPDATE employees SET is_terminated = 0, termination_id = NULL, employment_status = 'active', status = 'active' WHERE id={$term['employee_id']}");
@@ -40,7 +40,7 @@ if (isset($_GET['delete_termination'])) {
 // DELETE DOCUMENT
 // ========================================
 if (isset($_GET['delete_doc'])) {
-    $id = $_GET['delete_doc'];
+    $id = intval($_GET['delete_doc']);
     $doc = mysqli_fetch_assoc(mysqli_query($conn, "SELECT file_path FROM employee_documents WHERE id=$id"));
     // Check both possible directories
     if ($doc) {
@@ -64,12 +64,12 @@ if (isset($_GET['delete_doc'])) {
 // HANDLE RESIGNATION APPROVAL/REJECTION
 // ========================================
 if (isset($_GET['approve_resignation'])) {
-    $id = $_GET['approve_resignation'];
-    $status = $_GET['status'];
+    $id = intval($_GET['approve_resignation']);
+    $status = in_array($_GET['status'], ['approved', 'rejected']) ? $_GET['status'] : 'rejected';
     $admin_notes = isset($_POST['admin_notes']) ? mysqli_real_escape_string($conn, $_POST['admin_notes']) : '';
-    
+
     mysqli_query($conn, "UPDATE employee_resignations SET status='$status', admin_notes='$admin_notes', approved_by={$_SESSION['user_id']}, approved_date=CURDATE() WHERE id=$id");
-    
+
     $res = mysqli_fetch_assoc(mysqli_query($conn, "SELECT employee_id FROM employee_resignations WHERE id=$id"));
     if ($status == 'approved') {
         mysqli_query($conn, "UPDATE employees SET employment_status='resigned' WHERE id={$res['employee_id']}");
@@ -85,13 +85,13 @@ if (isset($_GET['approve_resignation'])) {
 // HANDLE TERMINATION
 // ========================================
 if (isset($_POST['send_termination'])) {
-    $employee_id = $_POST['termination_employee_id'];
-    $termination_date = $_POST['termination_date'];
-    $effective_date = $_POST['effective_date'];
+    $employee_id = intval($_POST['termination_employee_id']);
+    $termination_date = mysqli_real_escape_string($conn, $_POST['termination_date']);
+    $effective_date = mysqli_real_escape_string($conn, $_POST['effective_date']);
     $reason = mysqli_real_escape_string($conn, $_POST['reason']);
-    $termination_type = $_POST['termination_type'];
-    $notice_period_days = $_POST['notice_period_days'];
-    $severance_pay = $_POST['severance_pay'];
+    $termination_type = mysqli_real_escape_string($conn, $_POST['termination_type']);
+    $notice_period_days = intval($_POST['notice_period_days']);
+    $severance_pay = floatval($_POST['severance_pay']);
     $notes = mysqli_real_escape_string($conn, $_POST['notes']);
     
     $query = "INSERT INTO terminations (employee_id, termination_date, effective_date, reason, termination_type, notice_period_days, severance_pay, notes, status, created_by) 
@@ -110,20 +110,29 @@ if (isset($_POST['send_termination'])) {
 // HANDLE DOCUMENT UPLOAD
 // ========================================
 if (isset($_POST['upload_document'])) {
-    $employee_id = $_POST['employee_id'];
+    $employee_id = intval($_POST['employee_id']);
     $document_title = mysqli_real_escape_string($conn, $_POST['document_title']);
-    $document_type = $_POST['document_type'];
+    $document_type = mysqli_real_escape_string($conn, $_POST['document_type']);
     $notes = mysqli_real_escape_string($conn, $_POST['notes']);
-    
+
+    $allowed_doc_ext  = ['jpg', 'jpeg', 'png', 'pdf', 'doc', 'docx', 'xls', 'xlsx'];
+    $allowed_doc_mime = ['image/jpeg', 'image/png', 'application/pdf',
+                         'application/msword',
+                         'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+                         'application/vnd.ms-excel',
+                         'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'];
+
     $target_dir = "../uploads/documents/";
     if (!is_dir($target_dir)) mkdir($target_dir, 0777, true);
-    
+
     $file_name = basename($_FILES['document_file']['name']);
     $file_size = $_FILES['document_file']['size'];
-    $file_extension = pathinfo($file_name, PATHINFO_EXTENSION);
+    $file_extension = strtolower(pathinfo($file_name, PATHINFO_EXTENSION));
+    $mime = mime_content_type($_FILES['document_file']['tmp_name']);
     $file_path = time() . '_' . $employee_id . '.' . $file_extension;
-    
-    if (move_uploaded_file($_FILES['document_file']['tmp_name'], $target_dir . $file_path)) {
+
+    if (in_array($file_extension, $allowed_doc_ext) && in_array($mime, $allowed_doc_mime)
+        && move_uploaded_file($_FILES['document_file']['tmp_name'], $target_dir . $file_path)) {
         $query = "INSERT INTO employee_documents (employee_id, document_title, document_type, file_path, file_name, file_size, upload_date, notes, uploaded_by) 
                   VALUES ($employee_id, '$document_title', '$document_type', '$file_path', '$file_name', $file_size, CURDATE(), '$notes', {$_SESSION['user_id']})";
         mysqli_query($conn, $query);
@@ -703,6 +712,29 @@ $pending_count = mysqli_fetch_assoc(mysqli_query($conn, "SELECT COUNT(*) as coun
                 <button type="button" onclick="closeModals()" class="flex-1 bg-gray-200 text-gray-700 py-2.5 rounded-xl font-semibold hover:bg-gray-300 transition">Cancel</button>
             </div>
         </form>
+    </div>
+</div>
+
+<!-- Mobile Bottom Navigation -->
+<div class="fixed bottom-0 left-0 right-0 bg-white/95 backdrop-blur-lg border-t border-gray-200 md:hidden shadow-2xl z-30">
+    <div class="flex justify-around py-2">
+        <a href="dashboard.php" class="flex flex-col items-center py-2 px-4 text-gray-500 hover:text-blue-600 transition group">
+            <i class="fas fa-home text-xl group-hover:scale-110 transition"></i>
+            <span class="text-xs mt-1">Home</span>
+        </a>
+        <a href="employees.php" class="flex flex-col items-center py-2 px-4 text-gray-500 hover:text-blue-600 transition group">
+            <i class="fas fa-users text-xl group-hover:scale-110 transition"></i>
+            <span class="text-xs mt-1">Staff</span>
+        </a>
+        <a href="management.php" class="flex flex-col items-center py-2 px-4 text-blue-600 relative">
+            <i class="fas fa-briefcase text-xl"></i>
+            <span class="text-xs mt-1 font-semibold">Manage</span>
+            <div class="absolute -top-1 right-1 w-2 h-2 bg-blue-600 rounded-full"></div>
+        </a>
+        <a href="payroll.php" class="flex flex-col items-center py-2 px-4 text-gray-500 hover:text-blue-600 transition group">
+            <i class="fas fa-file-invoice-dollar text-xl group-hover:scale-110 transition"></i>
+            <span class="text-xs mt-1">Payroll</span>
+        </a>
     </div>
 </div>
 

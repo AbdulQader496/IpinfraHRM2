@@ -1,4 +1,4 @@
-<?php
+﻿<?php
 require_once '../includes/auth.php';
 redirectIfNotAdmin();
 require_once '../includes/db.php';
@@ -94,12 +94,17 @@ if (isset($_GET['action']) && isset($_GET['request_id'])) {
     $req_query = mysqli_query($conn, "SELECT * FROM asset_requests WHERE id = $request_id");
     $request = mysqli_fetch_assoc($req_query);
     
-    if ($status == 'approved') {
-        mysqli_query($conn, "UPDATE assets SET available_quantity = available_quantity - {$request['quantity']} WHERE id = {$request['asset_id']}");
-        $asset_check = mysqli_query($conn, "SELECT available_quantity FROM assets WHERE id = {$request['asset_id']}");
-        $asset = mysqli_fetch_assoc($asset_check);
-        if ($asset['available_quantity'] == 0) {
-            mysqli_query($conn, "UPDATE assets SET status = 'assigned' WHERE id = {$request['asset_id']}");
+    if ($status == 'approved' && $request) {
+        $asset_check = mysqli_fetch_assoc(mysqli_query($conn, "SELECT available_quantity FROM assets WHERE id = {$request['asset_id']}"));
+        if ($asset_check && $asset_check['available_quantity'] >= $request['quantity']) {
+            mysqli_query($conn, "UPDATE assets SET available_quantity = available_quantity - {$request['quantity']} WHERE id = {$request['asset_id']}");
+            $after = mysqli_fetch_assoc(mysqli_query($conn, "SELECT available_quantity FROM assets WHERE id = {$request['asset_id']}"));
+            if ($after['available_quantity'] == 0) {
+                mysqli_query($conn, "UPDATE assets SET status = 'assigned' WHERE id = {$request['asset_id']}");
+            }
+        } else {
+            // Not enough stock — reject instead
+            $status = 'rejected';
         }
     }
     

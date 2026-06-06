@@ -1,4 +1,4 @@
-<?php
+﻿<?php
 require_once '../includes/auth.php';
 redirectIfNotLoggedIn();
 require_once '../includes/db.php';
@@ -34,11 +34,10 @@ if (isset($_POST['update_claim'])) {
     // Check if claim is still pending
     $check_query = mysqli_query($conn, "SELECT id FROM claims WHERE id = $claim_id AND employee_id = $user_id AND status = 'pending'");
     if (mysqli_num_rows($check_query) > 0) {
-        $update_query = "UPDATE claims SET 
-                            claim_type = '$claim_type', 
-                            amount = $amount, 
-                            description = '$description',
-                            updated_at = NOW()
+        $update_query = "UPDATE claims SET
+                            claim_type = '$claim_type',
+                            amount = $amount,
+                            description = '$description'
                          WHERE id = $claim_id";
         
         if (mysqli_query($conn, $update_query)) {

@@ -652,15 +652,26 @@ img[loading="lazy"].img-loaded {
     forms.forEach(function (form) {
       if (form.hasAttribute('data-no-loading')) return;
 
-      form.addEventListener('submit', function () {
-        /* Find the primary submit button */
-        var btn = form.querySelector('button[type="submit"], input[type="submit"], button[name]');
-        if (!btn) {
-          /* Fallback: any button without an explicit type (defaults to submit) */
-          btn = form.querySelector('button');
-        }
+      form.addEventListener('submit', function (e) {
+        /* Use the exact button the user clicked (e.submitter) so nested-form
+           buttons or earlier submit buttons don't get picked up by mistake.
+           Falls back to querySelector for older browsers. */
+        var btn = (e && e.submitter && e.submitter.form === form) ? e.submitter : null;
+        if (!btn) btn = form.querySelector('button[type="submit"], input[type="submit"], button[name]');
+        if (!btn) btn = form.querySelector('button');
 
         if (btn) {
+          /* Preserve the button's name/value as a hidden field BEFORE disabling.
+             Disabling a button removes it from form data, so PHP would miss the
+             action flag (e.g. apply_leave, apply_claim) without this. */
+          if (btn.name) {
+            var hidden = document.createElement('input');
+            hidden.type  = 'hidden';
+            hidden.name  = btn.name;
+            hidden.value = btn.value || '1';
+            form.appendChild(hidden);
+          }
+
           /* Preserve original label so it can be restored on back-nav */
           if (!btn.getAttribute('data-original-text')) {
             btn.setAttribute('data-original-text', btn.innerHTML);

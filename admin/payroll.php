@@ -1,4 +1,4 @@
-<?php
+﻿<?php
 require_once '../includes/auth.php';
 redirectIfNotAdmin();
 require_once '../includes/db.php';
@@ -24,7 +24,13 @@ if (isset($_GET['regenerate'])) {
         $month_year  = $regen_row['month_year'];
         $month_start = $month_year . '-01';
         $month_end   = date('Y-m-t', strtotime($month_start));
-        $wdays       = (int)date('t', strtotime($month_start));
+        $wdays = 0;
+        $hols_r = mysqli_query($conn, "SELECT holiday_date FROM holidays WHERE holiday_date BETWEEN '$month_start' AND '$month_end'");
+        $hol_dates = [];
+        while ($hh = mysqli_fetch_assoc($hols_r)) $hol_dates[] = $hh['holiday_date'];
+        $dd = new DateTime($month_start); $end_dd = new DateTime($month_end);
+        while ($dd <= $end_dd) { if ((int)$dd->format('N') < 6 && !in_array($dd->format('Y-m-d'), $hol_dates)) $wdays++; $dd->modify('+1 day'); }
+        if ($wdays == 0) $wdays = 1;
         $basic       = $regen_row['basic_salary'];
         $is_intern   = (isset($regen_row['employee_type']) && $regen_row['employee_type'] == 'intern');
         $is_malaysian= ($regen_row['nationality'] == 'Malaysian');
@@ -42,7 +48,7 @@ if (isset($_GET['regenerate'])) {
         }
 
         $per_day = $basic / $wdays;
-        $uq = mysqli_fetch_assoc(mysqli_query($conn, "SELECT COALESCE(SUM(total_days),0) as ud FROM leaves WHERE employee_id={$regen_row['id']} AND status='approved' AND leave_type='unpaid' AND start_date BETWEEN '$month_start' AND '$month_end'"));
+        $uq = mysqli_fetch_assoc(mysqli_query($conn, "SELECT COALESCE(SUM(total_days),0) as ud FROM leaves WHERE employee_id={$regen_row['id']} AND status='approved' AND leave_type IN (SELECT leave_code FROM leave_types WHERE LOWER(leave_name) LIKE '%unpaid%') AND start_date BETWEEN '$month_start' AND '$month_end'"));
         $unpaid_deduction = round($per_day * (float)$uq['ud'], 2);
 
         $cq = mysqli_fetch_assoc(mysqli_query($conn, "SELECT COALESCE(SUM(amount),0) as ca FROM claims WHERE employee_id={$regen_row['id']} AND status='approved' AND DATE_FORMAT(applied_at,'%Y-%m')='$month_year'"));
@@ -260,7 +266,19 @@ if (isset($_POST['generate_payroll'])) {
 
     $month_start = $month_year . '-01';
     $month_end = date('Y-m-t', strtotime($month_start));
-    $working_days_in_month = (int)date('t', strtotime($month_start));
+    // Count actual working days (Mon–Fri) in the month, excluding public holidays
+    $working_days_in_month = 0;
+    $holidays_result = mysqli_query($conn, "SELECT holiday_date FROM holidays WHERE holiday_date BETWEEN '$month_start' AND '$month_end'");
+    $holiday_dates = [];
+    while ($h = mysqli_fetch_assoc($holidays_result)) $holiday_dates[] = $h['holiday_date'];
+    $d = new DateTime($month_start);
+    $end_d = new DateTime($month_end);
+    while ($d <= $end_d) {
+        $dow = (int)$d->format('N');
+        if ($dow < 6 && !in_array($d->format('Y-m-d'), $holiday_dates)) $working_days_in_month++;
+        $d->modify('+1 day');
+    }
+    if ($working_days_in_month == 0) $working_days_in_month = 1;
 
     while ($emp = mysqli_fetch_assoc($employees)) {
         $check = mysqli_query($conn, "SELECT id FROM payroll WHERE employee_id = {$emp['id']} AND month_year = '$month_year'");
@@ -287,7 +305,7 @@ if (isset($_POST['generate_payroll'])) {
             $per_day = $basic / $working_days_in_month;
             $unpaid_q = mysqli_query($conn, "SELECT COALESCE(SUM(total_days),0) as ud FROM leaves
                 WHERE employee_id = {$emp['id']} AND status = 'approved'
-                AND leave_type = 'unpaid'
+                AND leave_type IN (SELECT leave_code FROM leave_types WHERE LOWER(leave_name) LIKE '%unpaid%')
                 AND start_date BETWEEN '$month_start' AND '$month_end'");
             $unpaid_days = (float)mysqli_fetch_assoc($unpaid_q)['ud'];
             $unpaid_deduction = round($per_day * $unpaid_days, 2);

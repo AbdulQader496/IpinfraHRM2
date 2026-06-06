@@ -11,10 +11,11 @@ require_once '../includes/toast_fn.php';
 $page = isset($_GET['page']) ? (int)$_GET['page'] : 1;
 $per_page = isset($_GET['per_page']) ? (int)$_GET['per_page'] : 10;
 $search = isset($_GET['search']) ? mysqli_real_escape_string($conn, $_GET['search']) : '';
-$status_filter = isset($_GET['status']) ? $_GET['status'] : 'pending';
-$type_filter = isset($_GET['type']) ? $_GET['type'] : '';
-$date_from = isset($_GET['date_from']) ? $_GET['date_from'] : '';
-$date_to = isset($_GET['date_to']) ? $_GET['date_to'] : '';
+$allowed_statuses = ['pending', 'approved', 'rejected', ''];
+$status_filter = in_array($_GET['status'] ?? 'pending', $allowed_statuses) ? ($_GET['status'] ?? 'pending') : 'pending';
+$type_filter   = isset($_GET['type']) ? mysqli_real_escape_string($conn, $_GET['type']) : '';
+$date_from = isset($_GET['date_from']) ? preg_replace('/[^0-9\-]/', '', $_GET['date_from']) : '';
+$date_to   = isset($_GET['date_to'])   ? preg_replace('/[^0-9\-]/', '', $_GET['date_to'])   : '';
 
 // Build WHERE clause
 $where = "WHERE 1=1";
@@ -51,7 +52,7 @@ if (isset($_GET['export']) && $_GET['export'] === 'csv') {
 
     $export_result = mysqli_query($conn,
         "SELECT e.employee_id, e.name, e.department, l.leave_type, l.start_date, l.end_date,
-                CASE WHEN l.half_day IS NOT NULL AND l.half_day != 'none' THEN 0.5
+                CASE WHEN l.half_day IS NOT NULL AND l.half_day != 'none' THEN 0
                      ELSE (DATEDIFF(l.end_date, l.start_date) + 1) END AS total_days,
                 l.status, l.applied_at
          FROM leaves l
@@ -149,16 +150,21 @@ if (isset($_POST['bulk_leave_action']) && !empty($_POST['ids'])) {
     $bulk_rows = mysqli_query($conn, "SELECT * FROM leaves WHERE id IN ($ids_safe) AND status='pending'");
     $affected = 0;
     while ($br = mysqli_fetch_assoc($bulk_rows)) {
-        $days = (isset($br['half_day']) && $br['half_day'] != 'none') ? 0.5
+        $days = ($br['leave_type'] === 'HD' || (isset($br['half_day']) && $br['half_day'] != 'none')) ? 0
               : (strtotime($br['end_date']) - strtotime($br['start_date'])) / 86400 + 1;
 
         mysqli_query($conn, "UPDATE leaves SET status='$bulk_status' WHERE id={$br['id']}");
 
         if ($bulk_status === 'approved') {
-            if ($br['leave_type'] == 'annual') {
-                mysqli_query($conn, "UPDATE employees SET used_annual_leave = used_annual_leave + $days WHERE id = {$br['employee_id']}");
-            } elseif ($br['leave_type'] == 'medical') {
-                mysqli_query($conn, "UPDATE employees SET used_medical_leave = used_medical_leave + $days WHERE id = {$br['employee_id']}");
+            $emp = mysqli_fetch_assoc(mysqli_query($conn, "SELECT annual_leave_entitlement, used_annual_leave, medical_leave_entitlement, used_medical_leave FROM employees WHERE id={$br['employee_id']}"));
+            $lt_row = mysqli_fetch_assoc(mysqli_query($conn, "SELECT leave_name FROM leave_types WHERE leave_code='" . mysqli_real_escape_string($conn, $br['leave_type']) . "'"));
+            $lt_name = $lt_row ? strtolower($lt_row['leave_name']) : strtolower($br['leave_type']);
+            if (str_contains($lt_name, 'annual')) {
+                $deduct = min($days, max(0, $emp['annual_leave_entitlement'] - $emp['used_annual_leave']));
+                if ($deduct > 0) mysqli_query($conn, "UPDATE employees SET used_annual_leave = used_annual_leave + $deduct WHERE id = {$br['employee_id']}");
+            } elseif (str_contains($lt_name, 'medical')) {
+                $deduct = min($days, max(0, $emp['medical_leave_entitlement'] - $emp['used_medical_leave']));
+                if ($deduct > 0) mysqli_query($conn, "UPDATE employees SET used_medical_leave = used_medical_leave + $deduct WHERE id = {$br['employee_id']}");
             }
             addNotification($br['employee_id'], 'Leave Approved', 'Your ' . $br['leave_type'] . ' leave has been approved.');
         } else {
@@ -187,18 +193,24 @@ if (isset($_GET['action']) && isset($_GET['id'])) {
     $action = $_GET['action'];
     $status = ($action == 'approve') ? 'approved' : 'rejected';
 
-    $leave = mysqli_fetch_assoc(mysqli_query($conn, "SELECT * FROM leaves WHERE id=$id"));
+    // Only act on pending leaves to prevent double-counting balance
+    $leave = mysqli_fetch_assoc(mysqli_query($conn, "SELECT * FROM leaves WHERE id=$id AND status='pending'"));
     if ($leave) {
-        $days = (isset($leave['half_day']) && $leave['half_day'] != 'none') ? 0.5
+        $days = ($leave['leave_type'] === 'HD' || (isset($leave['half_day']) && $leave['half_day'] != 'none')) ? 0
               : (strtotime($leave['end_date']) - strtotime($leave['start_date'])) / 86400 + 1;
 
         mysqli_query($conn, "UPDATE leaves SET status='$status' WHERE id=$id");
 
         if ($status == 'approved') {
-            if ($leave['leave_type'] == 'annual') {
-                mysqli_query($conn, "UPDATE employees SET used_annual_leave = used_annual_leave + $days WHERE id = {$leave['employee_id']}");
-            } elseif ($leave['leave_type'] == 'medical') {
-                mysqli_query($conn, "UPDATE employees SET used_medical_leave = used_medical_leave + $days WHERE id = {$leave['employee_id']}");
+            $emp = mysqli_fetch_assoc(mysqli_query($conn, "SELECT annual_leave_entitlement, used_annual_leave, medical_leave_entitlement, used_medical_leave FROM employees WHERE id={$leave['employee_id']}"));
+            $lt_row = mysqli_fetch_assoc(mysqli_query($conn, "SELECT leave_name FROM leave_types WHERE leave_code='" . mysqli_real_escape_string($conn, $leave['leave_type']) . "'"));
+            $lt_name = $lt_row ? strtolower($lt_row['leave_name']) : strtolower($leave['leave_type']);
+            if (str_contains($lt_name, 'annual')) {
+                $deduct = min($days, max(0, $emp['annual_leave_entitlement'] - $emp['used_annual_leave']));
+                if ($deduct > 0) mysqli_query($conn, "UPDATE employees SET used_annual_leave = used_annual_leave + $deduct WHERE id = {$leave['employee_id']}");
+            } elseif (str_contains($lt_name, 'medical')) {
+                $deduct = min($days, max(0, $emp['medical_leave_entitlement'] - $emp['used_medical_leave']));
+                if ($deduct > 0) mysqli_query($conn, "UPDATE employees SET used_medical_leave = used_medical_leave + $deduct WHERE id = {$leave['employee_id']}");
             }
             addNotification($leave['employee_id'], 'Leave Approved', 'Your ' . $leave['leave_type'] . ' leave has been approved.');
             showToast('Leave application approved successfully.', 'success');
@@ -222,11 +234,12 @@ if (isset($_POST['adjust_leave'])) {
     $adjust_amount = floatval($_POST['adjust_amount']);
     $op            = ($action_type == 'add') ? '+' : '-';
 
-    if ($adjust_type == 'annual') {
-        $field = ($adjust_field == 'entitlement') ? 'annual_leave_entitlement' : 'used_annual_leave';
-    } else {
-        $field = ($adjust_field == 'entitlement') ? 'medical_leave_entitlement' : 'used_medical_leave';
-    }
+    $allowed_fields = [
+        'annual'  => ['entitlement' => 'annual_leave_entitlement',  'used' => 'used_annual_leave'],
+        'medical' => ['entitlement' => 'medical_leave_entitlement', 'used' => 'used_medical_leave'],
+    ];
+    $field = $allowed_fields[$adjust_type][$adjust_field] ?? null;
+    if (!$field) { header('Location: manage_leave.php'); exit(); }
     mysqli_query($conn, "UPDATE employees SET $field = $field $op $adjust_amount WHERE id = $employee_id");
     showToast('Leave balance updated.', 'success');
     header('Location: manage_leave.php'); exit();
@@ -515,14 +528,18 @@ $leave_type_options = mysqli_query($conn, "SELECT DISTINCT leave_type FROM leave
                                     <span class="text-xs px-2 py-0.5 rounded-full bg-gray-100 text-gray-600"><?php echo $row['department']; ?></span>
                                 </div>
                                 <div class="grid grid-cols-2 md:grid-cols-4 gap-2 text-sm">
-                                    <p><span class="text-gray-500">Type:</span> <span class="font-medium"><?php echo ucfirst($row['leave_type']); ?></span></p>
-                                    <p><span class="text-gray-500">Duration:</span> 
-                                        <?php 
-                                        $days = (strtotime($row['end_date']) - strtotime($row['start_date'])) / 86400 + 1;
-                                        if ($row['half_day'] != 'none') {
-                                            $days = 0.5;
-                                            echo '<span class="text-orange-600">Half Day (' . ($row['half_day'] == 'first_half' ? 'AM' : 'PM') . ')</span>';
+                                    <?php
+                                    $is_hd_row = ($row['leave_type'] === 'HD');
+                                    $session_suffix = $is_hd_row && $row['half_day'] != 'none' ? ' (' . ($row['half_day'] == 'first_half' ? 'Morning' : 'Afternoon') . ')' : '';
+                                    $display_type = $is_hd_row ? 'Half Day' : ucfirst($row['leave_type']);
+                                    ?>
+                                    <p><span class="text-gray-500">Type:</span> <span class="font-medium"><?php echo $display_type . $session_suffix; ?></span></p>
+                                    <p><span class="text-gray-500">Duration:</span>
+                                        <?php
+                                        if ($is_hd_row) {
+                                            echo '<span class="text-orange-600">Half Day' . $session_suffix . '</span>';
                                         } else {
+                                            $days = (strtotime($row['end_date']) - strtotime($row['start_date'])) / 86400 + 1;
                                             echo $days . ' day(s)';
                                         }
                                         ?>
@@ -547,7 +564,7 @@ $leave_type_options = mysqli_query($conn, "SELECT DISTINCT leave_type FROM leave
                                 </span>
                                 <?php if ($row['status'] == 'pending'): ?>
                                     <?php
-                                    $modal_days = (isset($row['half_day']) && $row['half_day'] != 'none') ? 0.5
+                                    $modal_days = ($row['leave_type'] === 'HD' || (isset($row['half_day']) && $row['half_day'] != 'none')) ? 0
                                         : (strtotime($row['end_date']) - strtotime($row['start_date'])) / 86400 + 1;
                                     $leave_modal_data = [
                                         'id'          => $row['id'],

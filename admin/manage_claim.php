@@ -11,10 +11,12 @@ require_once '../includes/toast_fn.php';
 $page = isset($_GET['page']) ? (int)$_GET['page'] : 1;
 $per_page = isset($_GET['per_page']) ? (int)$_GET['per_page'] : 10;
 $search = isset($_GET['search']) ? mysqli_real_escape_string($conn, $_GET['search']) : '';
-$status_filter = isset($_GET['status']) ? $_GET['status'] : 'pending';
-$type_filter = isset($_GET['type']) ? $_GET['type'] : '';
-$date_from = isset($_GET['date_from']) ? $_GET['date_from'] : '';
-$date_to = isset($_GET['date_to']) ? $_GET['date_to'] : '';
+$allowed_statuses = ['pending', 'approved', 'rejected', ''];
+$allowed_types = ['travel', 'meal', 'medical', 'toll', 'parking', 'other', ''];
+$status_filter = in_array($_GET['status'] ?? 'pending', $allowed_statuses) ? ($_GET['status'] ?? 'pending') : 'pending';
+$type_filter   = in_array($_GET['type'] ?? '', $allowed_types) ? ($_GET['type'] ?? '') : '';
+$date_from = isset($_GET['date_from']) ? preg_replace('/[^0-9\-]/', '', $_GET['date_from']) : '';
+$date_to   = isset($_GET['date_to'])   ? preg_replace('/[^0-9\-]/', '', $_GET['date_to'])   : '';
 
 // Build WHERE clause
 $where = "WHERE 1=1";
@@ -150,11 +152,15 @@ if (isset($_GET['action']) && isset($_GET['act'])) {
         /* Bulk action bar */
         #bulkBar {
             transition: transform 0.3s ease, opacity 0.3s ease;
+            bottom: 0;
         }
         #bulkBar.hidden-bar {
             transform: translateY(100%);
             opacity: 0;
             pointer-events: none;
+        }
+        @media (max-width: 767px) {
+            #bulkBar { bottom: 64px; }
         }
         .bulk-check {
             width: 18px; height: 18px;
@@ -569,7 +575,7 @@ if (isset($_GET['action']) && isset($_GET['act'])) {
 </div>
 
 <!-- Bulk Action Bar (sticky at bottom, above mobile nav) -->
-<div id="bulkBar" class="fixed bottom-0 left-0 right-0 z-30 hidden-bar" style="bottom: 0;">
+<div id="bulkBar" class="fixed left-0 right-0 z-30 hidden-bar">
     <div class="bg-gradient-to-r from-indigo-700 to-purple-700 text-white px-4 py-3 shadow-2xl flex items-center justify-between flex-wrap gap-2">
         <span class="text-sm font-semibold" id="bulkCountLabel">0 selected</span>
         <div class="flex items-center gap-2">

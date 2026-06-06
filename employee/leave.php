@@ -1,4 +1,4 @@
-<?php
+﻿<?php
 require_once '../includes/auth.php';
 redirectIfNotLoggedIn();
 require_once '../includes/db.php';
@@ -37,10 +37,17 @@ if (isset($_POST['update_leave'])) {
     $start_date = mysqli_real_escape_string($conn, $_POST['start_date']);
     $end_date = mysqli_real_escape_string($conn, $_POST['end_date']);
     $reason = mysqli_real_escape_string($conn, $_POST['reason']);
-    
-    // Calculate total days
-    if ($half_day != 'none') {
-        $total_days = 0.5;
+
+    if ($leave_type === 'HD' && $half_day === 'none') {
+        $half_day = isset($_POST['half_day_choice']) ? mysqli_real_escape_string($conn, $_POST['half_day_choice']) : 'first_half';
+    }
+
+    // Calculate total days — Half Day (HD) has no balance deduction
+    if ($leave_type === 'HD') {
+        $total_days = 0;
+        $end_date = $start_date;
+    } elseif ($half_day != 'none') {
+        $total_days = 0;
         $end_date = $start_date;
     } else {
         $total_days = (strtotime($end_date) - strtotime($start_date)) / 86400 + 1;
@@ -61,18 +68,25 @@ if (isset($_POST['update_leave'])) {
         if (mysqli_query($conn, $update_query)) {
             // Handle new attachment if uploaded
             if (isset($_FILES['attachment']) && $_FILES['attachment']['error'] == 0) {
-                $target_dir = "../uploads/";
-                if (!is_dir($target_dir)) mkdir($target_dir, 0777, true);
-                
-                // Delete old attachment
-                $old_attach = mysqli_fetch_assoc(mysqli_query($conn, "SELECT attachment FROM leaves WHERE id = $leave_id"));
-                if (!empty($old_attach['attachment']) && file_exists($target_dir . $old_attach['attachment'])) {
-                    unlink($target_dir . $old_attach['attachment']);
+                $allowed_attach_ext  = ['jpg', 'jpeg', 'png', 'pdf', 'doc', 'docx'];
+                $allowed_attach_mime = ['image/jpeg', 'image/png', 'application/pdf',
+                                        'application/msword',
+                                        'application/vnd.openxmlformats-officedocument.wordprocessingml.document'];
+                $attach_ext  = strtolower(pathinfo($_FILES['attachment']['name'], PATHINFO_EXTENSION));
+                $attach_mime = mime_content_type($_FILES['attachment']['tmp_name']);
+                if (in_array($attach_ext, $allowed_attach_ext) && in_array($attach_mime, $allowed_attach_mime)) {
+                    $target_dir = "../uploads/";
+                    if (!is_dir($target_dir)) mkdir($target_dir, 0777, true);
+
+                    $old_attach = mysqli_fetch_assoc(mysqli_query($conn, "SELECT attachment FROM leaves WHERE id = $leave_id"));
+                    if (!empty($old_attach['attachment']) && file_exists($target_dir . $old_attach['attachment'])) {
+                        unlink($target_dir . $old_attach['attachment']);
+                    }
+
+                    $attachment = time() . '_' . basename($_FILES['attachment']['name']);
+                    move_uploaded_file($_FILES['attachment']['tmp_name'], $target_dir . $attachment);
+                    mysqli_query($conn, "UPDATE leaves SET attachment = '$attachment' WHERE id = $leave_id");
                 }
-                
-                $attachment = time() . '_' . basename($_FILES['attachment']['name']);
-                move_uploaded_file($_FILES['attachment']['tmp_name'], $target_dir . $attachment);
-                mysqli_query($conn, "UPDATE leaves SET attachment = '$attachment' WHERE id = $leave_id");
             }
             
             $message = '<div class="bg-green-100 border border-green-200 text-green-700 px-4 py-3 rounded-xl text-sm">✓ Leave application updated successfully!</div>';
@@ -133,7 +147,9 @@ $leave_types = mysqli_query($conn, "SELECT * FROM leave_types WHERE status = 'ac
 // Handle new leave submission
 if (isset($_POST['apply_leave']) && !$edit_mode) {
     $leave_type = mysqli_real_escape_string($conn, $_POST['leave_type']);
-    if ($is_intern && $leave_type != 'unpaid') {
+    $lt_intern = mysqli_fetch_assoc(mysqli_query($conn, "SELECT leave_name FROM leave_types WHERE leave_code = '$leave_type'"));
+    $lt_intern_name = $lt_intern ? strtolower($lt_intern['leave_name']) : strtolower($leave_type);
+    if ($is_intern && !str_contains($lt_intern_name, 'unpaid')) {
         $error = '<div class="bg-red-100 border border-red-200 text-red-700 px-4 py-3 rounded-xl text-sm">✗ Interns can only apply for Unpaid Leave.</div>';
     } else {
         $half_day   = mysqli_real_escape_string($conn, $_POST['half_day']);
@@ -141,8 +157,14 @@ if (isset($_POST['apply_leave']) && !$edit_mode) {
         $end_date   = mysqli_real_escape_string($conn, $_POST['end_date']);
         $reason     = mysqli_real_escape_string($conn, $_POST['reason']);
 
-        if ($half_day != 'none') {
-            $total_days = 0.5;
+        // If HD type but half_day not set (JS failed), default to first_half
+        if ($leave_type === 'HD' && $half_day === 'none') {
+            $half_day = isset($_POST['half_day_choice']) ? mysqli_real_escape_string($conn, $_POST['half_day_choice']) : 'first_half';
+        }
+
+        // Half Day (HD) — no balance deduction, just one date
+        if ($leave_type === 'HD' || $half_day != 'none') {
+            $total_days = 0;
             $end_date   = $start_date;
         } else {
             // Validate end_date >= start_date
@@ -411,42 +433,85 @@ $balance = getLeaveBalance($user_id);
                 <input type="hidden" name="leave_id" value="<?php echo $edit_leave['id']; ?>">
             <?php endif; ?>
             
+            <?php
+            $init_lt       = $edit_mode ? $edit_leave['leave_type'] : '';
+            $init_half_day = $edit_mode ? $edit_leave['half_day']   : 'none';
+            $init_is_hd    = ($init_lt === 'HD');
+            ?>
+
+            <!-- Leave Type -->
             <div>
                 <label class="block text-gray-700 text-sm font-semibold mb-2">Leave Type</label>
-                <select name="leave_type" id="leave_type" required class="w-full px-4 py-2.5 border-2 border-gray-200 rounded-xl focus:border-blue-500 transition" onchange="toggleHalfDayOption()">
-                    <?php if($is_intern): ?>
-                        <option value="unpaid" selected>Unpaid Leave (salary deducted)</option>
+                <select name="leave_type" id="leave_type" required
+                        class="w-full px-4 py-2.5 border-2 border-gray-200 rounded-xl focus:border-blue-500 transition"
+                        onchange="onLeaveTypeChange()">
+                    <?php if ($is_intern): ?>
+                        <option value="UL" selected>Unpaid Leave (salary deducted)</option>
                     <?php else: ?>
-                    <option value="">Select Leave Type</option>
-                    <?php while($type = mysqli_fetch_assoc($leave_types)):
-                        $selected = ($edit_mode && $edit_leave['leave_type'] == $type['leave_code']) ? 'selected' : '';
-                    ?>
-                        <option value="<?php echo $type['leave_code']; ?>" data-requires-attachment="<?php echo $type['requires_attachment']; ?>" <?php echo $selected; ?>>
+                        <option value="">-- Select Leave Type --</option>
+                        <?php while ($type = mysqli_fetch_assoc($leave_types)):
+                            $sel = ($edit_mode && $init_lt == $type['leave_code']) ? 'selected' : '';
+                        ?>
+                        <option value="<?php echo $type['leave_code']; ?>"
+                                data-requires-attachment="<?php echo $type['requires_attachment']; ?>"
+                                <?php echo $sel; ?>>
                             <?php echo $type['leave_name']; ?> (<?php echo $type['days_per_year']; ?> days/year)
                         </option>
-                    <?php endwhile; ?>
+                        <?php endwhile; ?>
+                        <option value="HD" <?php echo $init_is_hd ? 'selected' : ''; ?>>
+                            Half Day (no deduction — for manager info only)
+                        </option>
                     <?php endif; ?>
                 </select>
             </div>
-            
-            <div id="halfDayContainer" style="<?php echo ($edit_mode && $edit_leave['half_day'] != 'none') ? 'display: block;' : 'display: none;'; ?>">
-                <label class="block text-gray-700 text-sm font-semibold mb-2">Leave Duration</label>
-                <select name="half_day" id="half_day" class="w-full px-4 py-2.5 border-2 border-gray-200 rounded-xl focus:border-blue-500 transition">
-                    <option value="none" <?php echo ($edit_mode && $edit_leave['half_day'] == 'none') ? 'selected' : ''; ?>>Full Day</option>
-                    <option value="first_half" <?php echo ($edit_mode && $edit_leave['half_day'] == 'first_half') ? 'selected' : ''; ?>>Half Day (Morning Session)</option>
-                    <option value="second_half" <?php echo ($edit_mode && $edit_leave['half_day'] == 'second_half') ? 'selected' : ''; ?>>Half Day (Afternoon Session)</option>
-                </select>
-                <p class="text-xs text-gray-500 mt-1">Half day leave consumes 0.5 day from your balance</p>
+
+            <!-- hidden field — always submitted -->
+            <input type="hidden" name="half_day" id="half_day"
+                   value="<?php echo htmlspecialchars($init_half_day); ?>">
+
+            <!-- AM / PM session — only visible when Half Day is chosen -->
+            <div id="halfDaySession" style="<?php echo $init_is_hd ? '' : 'display:none;'; ?>">
+                <label class="block text-gray-700 text-sm font-semibold mb-2">Session</label>
+                <div class="grid grid-cols-2 gap-3">
+                    <label id="lbl_first" class="flex items-center gap-3 p-3 rounded-xl border-2 cursor-pointer transition
+                        <?php echo ($init_half_day === 'first_half') ? 'border-blue-500 bg-blue-50' : 'border-gray-200 bg-white hover:border-blue-300'; ?>">
+                        <input type="radio" name="half_day_choice" value="first_half" class="accent-blue-600"
+                               <?php echo ($init_half_day === 'first_half' || $init_is_hd && $init_half_day === 'none') ? 'checked' : ''; ?>
+                               onchange="pickSession(this.value)">
+                        <div>
+                            <div class="font-semibold text-sm text-gray-800"><i class="fas fa-cloud-sun text-amber-500 mr-1"></i> Morning</div>
+                            <div class="text-xs text-gray-400">9:00 AM – 1:00 PM</div>
+                        </div>
+                    </label>
+                    <label id="lbl_second" class="flex items-center gap-3 p-3 rounded-xl border-2 cursor-pointer transition
+                        <?php echo ($init_half_day === 'second_half') ? 'border-blue-500 bg-blue-50' : 'border-gray-200 bg-white hover:border-blue-300'; ?>">
+                        <input type="radio" name="half_day_choice" value="second_half" class="accent-blue-600"
+                               <?php echo ($init_half_day === 'second_half') ? 'checked' : ''; ?>
+                               onchange="pickSession(this.value)">
+                        <div>
+                            <div class="font-semibold text-sm text-gray-800"><i class="fas fa-moon text-indigo-500 mr-1"></i> Afternoon</div>
+                            <div class="text-xs text-gray-400">2:00 PM – 6:00 PM</div>
+                        </div>
+                    </label>
+                </div>
+                <p class="text-xs text-gray-400 mt-1.5"><i class="fas fa-info-circle mr-1"></i>Half Day leave does not deduct from your leave balance.</p>
             </div>
-            
+
             <div class="grid grid-cols-2 gap-3">
                 <div>
-                    <label class="block text-gray-700 text-sm font-semibold mb-2">Start Date</label>
-                    <input type="date" name="start_date" id="start_date" required value="<?php echo $edit_mode ? $edit_leave['start_date'] : ''; ?>" class="w-full px-4 py-2.5 border-2 border-gray-200 rounded-xl focus:border-blue-500 transition" onchange="updateEndDate()">
+                    <label class="block text-gray-700 text-sm font-semibold mb-2" id="startDateLabel">
+                        <?php echo $init_is_hd ? 'Leave Date' : 'Start Date'; ?>
+                    </label>
+                    <input type="date" name="start_date" id="start_date" required
+                           value="<?php echo $edit_mode ? $edit_leave['start_date'] : ''; ?>"
+                           class="w-full px-4 py-2.5 border-2 border-gray-200 rounded-xl focus:border-blue-500 transition"
+                           onchange="syncEndDate()">
                 </div>
-                <div id="endDateContainer" style="<?php echo ($edit_mode && $edit_leave['half_day'] == 'none') ? 'display: block;' : 'display: none;'; ?>">
+                <div id="endDateContainer" style="<?php echo $init_is_hd ? 'display:none;' : 'display:block;'; ?>">
                     <label class="block text-gray-700 text-sm font-semibold mb-2">End Date</label>
-                    <input type="date" name="end_date" id="end_date" value="<?php echo $edit_mode ? $edit_leave['end_date'] : ''; ?>" class="w-full px-4 py-2.5 border-2 border-gray-200 rounded-xl focus:border-blue-500 transition">
+                    <input type="date" name="end_date" id="end_date"
+                           value="<?php echo $edit_mode ? $edit_leave['end_date'] : ''; ?>"
+                           class="w-full px-4 py-2.5 border-2 border-gray-200 rounded-xl focus:border-blue-500 transition">
                 </div>
             </div>
             
@@ -532,19 +597,29 @@ $balance = getLeaveBalance($user_id);
         </div>
         
         <div class="divide-y divide-gray-100">
-            <?php while($leave = mysqli_fetch_assoc($history)): 
-                $days = $leave['total_days'] ?: ((strtotime($leave['end_date']) - strtotime($leave['start_date'])) / 86400 + 1);
+            <?php while($leave = mysqli_fetch_assoc($history)):
+                $is_hd_leave  = ($leave['leave_type'] === 'HD');
+                $session_text = ($is_hd_leave && $leave['half_day'] != 'none') ? ' (' . ($leave['half_day'] == 'first_half' ? 'Morning' : 'Afternoon') . ')' : '';
+                if ($is_hd_leave) {
+                    $days = 0;
+                    $type_label = 'Half Day' . $session_text;
+                    $type_icon  = 'clock';
+                } else {
+                    $days = $leave['total_days'] ?: ((strtotime($leave['end_date']) - strtotime($leave['start_date'])) / 86400 + 1);
+                    $lc = strtolower($leave['leave_type']);
+                    $type_label = ucfirst($leave['leave_type']) . ' Leave' . $session_text;
+                    $type_icon  = str_contains($lc, 'al') ? 'umbrella-beach' : (str_contains($lc, 'ml') ? 'hospital-user' : 'exclamation-triangle');
+                }
                 $status_color = $leave['status'] == 'approved' ? 'green' : ($leave['status'] == 'rejected' ? 'red' : 'yellow');
-                $status_icon = $leave['status'] == 'approved' ? 'check-circle' : ($leave['status'] == 'rejected' ? 'times-circle' : 'clock');
-                $half_day_text = $leave['half_day'] != 'none' ? ' (' . ($leave['half_day'] == 'first_half' ? 'AM' : 'PM') . ')' : '';
+                $status_icon  = $leave['status'] == 'approved' ? 'check-circle' : ($leave['status'] == 'rejected' ? 'times-circle' : 'clock');
             ?>
             <div class="p-4 hover:bg-gray-50 transition">
                 <div class="flex justify-between items-start">
                     <div class="flex-1">
                         <div class="flex items-center gap-2 mb-1">
-                            <i class="fas fa-<?php echo $leave['leave_type'] == 'annual' ? 'umbrella-beach' : ($leave['leave_type'] == 'medical' ? 'hospital-user' : 'exclamation-triangle'); ?> text-<?php echo $status_color; ?>-500"></i>
-                            <span class="font-medium text-gray-800"><?php echo ucfirst($leave['leave_type']); ?> Leave<?php echo $half_day_text; ?></span>
-                            <span class="text-xs text-gray-400">• <?php echo $days; ?> day(s)</span>
+                            <i class="fas fa-<?php echo $type_icon; ?> text-<?php echo $status_color; ?>-500"></i>
+                            <span class="font-medium text-gray-800"><?php echo htmlspecialchars($type_label); ?></span>
+                            <span class="text-xs text-gray-400">• <?php echo $is_hd_leave ? 'Half Day' : $days . ' day(s)'; ?></span>
                         </div>
                         <p class="text-xs text-gray-500">
                             <i class="far fa-calendar-alt mr-1"></i> <?php echo date('d M Y', strtotime($leave['start_date'])); ?> - <?php echo date('d M Y', strtotime($leave['end_date'])); ?>
@@ -665,59 +740,80 @@ document.getElementById('fileInput')?.addEventListener('change', function(e) {
     document.getElementById('fileName').textContent = fileName;
 });
 
-function toggleHalfDayOption() {
-    const leaveType = document.getElementById('leave_type').value;
-    const halfDayContainer = document.getElementById('halfDayContainer');
-    const endDateContainer = document.getElementById('endDateContainer');
-    const startDate = document.getElementById('start_date');
-    const endDate = document.getElementById('end_date');
-    const attachmentRequiredSpan = document.getElementById('attachmentRequired');
-    
-    const select = document.getElementById('leave_type');
-    const selectedOption = select.options[select.selectedIndex];
-    const requiresAttachment = selectedOption.getAttribute('data-requires-attachment');
-    
-    const halfDayTypes = ['annual', 'emergency', 'unpaid'];
-    if (halfDayTypes.includes(leaveType)) {
-        halfDayContainer.style.display = 'block';
+function onLeaveTypeChange() {
+    const select   = document.getElementById('leave_type');
+    const val      = select ? select.value : '';
+    const isHD     = (val === 'HD');
+    const session  = document.getElementById('halfDaySession');
+    const hiddenHD = document.getElementById('half_day');
+
+    // Show/hide AM/PM session block
+    if (session) session.style.display = isHD ? '' : 'none';
+
+    if (isHD) {
+        // Default to first_half when HD first selected
+        const checked = document.querySelector('input[name="half_day_choice"]:checked');
+        hiddenHD.value = checked ? checked.value : 'first_half';
+        if (!checked) {
+            const r = document.querySelector('input[name="half_day_choice"][value="first_half"]');
+            if (r) { r.checked = true; highlightSession('first_half'); }
+        }
     } else {
-        halfDayContainer.style.display = 'none';
-        document.getElementById('half_day').value = 'none';
-        endDateContainer.style.display = 'block';
+        hiddenHD.value = 'none';
     }
-    
-    if (requiresAttachment == '1') {
-        attachmentRequiredSpan.innerHTML = '(Required)';
-        attachmentRequiredSpan.classList.add('text-red-500');
+
+    // Attachment required/optional label
+    const opt = select ? select.options[select.selectedIndex] : null;
+    const span = document.getElementById('attachmentRequired');
+    if (span) {
+        const req = opt ? opt.getAttribute('data-requires-attachment') : '0';
+        span.innerHTML = req == '1' ? '(Required)' : '(Optional)';
+        span.classList.toggle('text-red-500', req == '1');
+    }
+
+    syncEndDate();
+}
+
+function pickSession(val) {
+    document.getElementById('half_day').value = val;
+    highlightSession(val);
+}
+
+function highlightSession(val) {
+    ['first', 'second'].forEach(function(key) {
+        const lbl = document.getElementById('lbl_' + key);
+        if (!lbl) return;
+        const active = (val === key + '_half');
+        lbl.classList.toggle('border-blue-500', active);
+        lbl.classList.toggle('bg-blue-50',      active);
+        lbl.classList.toggle('border-gray-200', !active);
+        lbl.classList.toggle('bg-white',        !active);
+    });
+}
+
+function syncEndDate() {
+    const isHD            = (document.getElementById('leave_type')?.value === 'HD');
+    const endDateContainer = document.getElementById('endDateContainer');
+    const endDateInput    = document.getElementById('end_date');
+    const startLabel      = document.getElementById('startDateLabel');
+
+    if (isHD) {
+        if (endDateContainer) endDateContainer.style.display = 'none';
+        if (endDateInput) {
+            endDateInput.value    = document.getElementById('start_date').value;
+            endDateInput.required = false;
+        }
+        if (startLabel) startLabel.textContent = 'Leave Date';
     } else {
-        attachmentRequiredSpan.innerHTML = '(Optional)';
-        attachmentRequiredSpan.classList.remove('text-red-500');
+        if (endDateContainer) endDateContainer.style.display = 'block';
+        if (endDateInput) endDateInput.required = true;
+        if (startLabel) startLabel.textContent = 'Start Date';
     }
 }
 
-function updateEndDate() {
-    const halfDay = document.getElementById('half_day').value;
-    const endDateContainer = document.getElementById('endDateContainer');
-    const endDateInput = document.getElementById('end_date');
-    
-    if (halfDay !== 'none') {
-        endDateContainer.style.display = 'none';
-        endDateInput.value = document.getElementById('start_date').value;
-        endDateInput.required = false;
-    } else {
-        endDateContainer.style.display = 'block';
-        endDateInput.required = true;
-    }
-}
-
-document.getElementById('half_day')?.addEventListener('change', updateEndDate);
-
-// Initialize on page load for edit mode
 document.addEventListener('DOMContentLoaded', function() {
-    <?php if ($edit_mode): ?>
-        toggleHalfDayOption();
-        updateEndDate();
-    <?php endif; ?>
+    onLeaveTypeChange();
+    syncEndDate();
 });
 </script>
 

@@ -26,9 +26,9 @@ if (!isset($_SESSION['user_id']) && isset($_COOKIE['remember_token'])) {
 
 if (isset($_POST['login'])) {
     $email = mysqli_real_escape_string($conn, $_POST['email']);
-    $password = $_POST['password'];
+    $password = mysqli_real_escape_string($conn, $_POST['password']);
     $remember = isset($_POST['remember']) ? true : false;
-    
+
     $query = "SELECT * FROM employees WHERE email = '$email' AND password = '$password' AND status = 'active'";
     $result = mysqli_query($conn, $query);
     
@@ -43,7 +43,8 @@ if (isset($_POST['login'])) {
         if ($remember) {
             $token = bin2hex(random_bytes(32));
             mysqli_query($conn, "UPDATE employees SET remember_token = '$token' WHERE id = {$user['id']}");
-            setcookie('remember_token', $token, time() + (86400 * 30), "/", "", false, true);
+            $secure = isset($_SERVER['HTTPS']) && $_SERVER['HTTPS'] === 'on';
+            setcookie('remember_token', $token, time() + (86400 * 30), "/", "", $secure, true);
         }
         
         if ($user['role'] == 'admin') {
@@ -553,7 +554,7 @@ if (isset($_POST['login'])) {
                         <input type="checkbox" name="remember" id="remember" class="checkbox-custom">
                         <span style="font-size:.84rem;color:#4b5563;user-select:none;">Remember me</span>
                     </label>
-                    <a href="#" style="font-size:.84rem;color:#2563eb;text-decoration:none;font-weight:500;">Forgot password?</a>
+                    <a href="mailto:support@ipinfra.com.my?subject=Password%20Reset%20Request" style="font-size:.84rem;color:#2563eb;text-decoration:none;font-weight:500;">Forgot password?</a>
                 </div>
 
                 <!-- Submit -->

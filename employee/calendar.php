@@ -1,4 +1,4 @@
-<?php
+﻿<?php
 require_once '../includes/auth.php';
 redirectIfNotLoggedIn();
 require_once '../includes/db.php';
@@ -192,7 +192,8 @@ $next_year = date('Y', strtotime("$year-$month-01 +1 month"));
     </div>
 
     <!-- Calendar Grid -->
-    <div class="bg-white rounded-2xl shadow-xl overflow-hidden">
+    <div class="overflow-x-auto">
+    <div class="bg-white rounded-2xl shadow-xl overflow-hidden min-w-[320px]">
         <!-- Weekday Headers -->
         <div class="grid grid-cols-7 bg-gradient-to-r from-gray-50 to-gray-100 border-b">
             <?php 
@@ -254,6 +255,7 @@ $next_year = date('Y', strtotime("$year-$month-01 +1 month"));
             ?>
         </div>
     </div>
+    </div><!-- /overflow-x-auto -->
 
     <!-- Legend -->
     <div class="flex justify-center gap-6 mt-6">

@@ -1,4 +1,4 @@
-<?php
+﻿<?php
 require_once '../includes/auth.php';
 redirectIfNotLoggedIn();
 require_once '../includes/db.php';
@@ -21,6 +21,9 @@ if (isset($_POST['clock_out'])) {
     header('Location: dashboard.php');
     exit();
 }
+
+// Weekend check
+$is_weekend_dash = in_array(date('l'), ['Saturday', 'Sunday']);
 
 // Get today's attendance
 $attendance_query = mysqli_query($conn, "SELECT * FROM attendance WHERE employee_id = $user_id AND date = '$today'");
@@ -200,7 +203,11 @@ $announcements = mysqli_query($conn, "SELECT * FROM announcements WHERE is_activ
         <div class="bg-white rounded-2xl shadow-xl p-5 mb-6">
             <div class="flex flex-col items-center text-center">
                 <div class="mb-3">
-                    <?php if (!$has_clocked_in): ?>
+                    <?php if ($is_weekend_dash): ?>
+                        <div class="w-24 h-24 mx-auto bg-purple-100 rounded-full flex items-center justify-center">
+                            <i class="fas fa-umbrella-beach text-4xl text-purple-500"></i>
+                        </div>
+                    <?php elseif (!$has_clocked_in): ?>
                         <div class="w-24 h-24 mx-auto bg-green-100 rounded-full flex items-center justify-center pulse">
                             <i class="fas fa-fingerprint text-4xl text-green-600"></i>
                         </div>
@@ -214,8 +221,15 @@ $announcements = mysqli_query($conn, "SELECT * FROM announcements WHERE is_activ
                         </div>
                     <?php endif; ?>
                 </div>
-                
-                <?php if (!$has_clocked_in): ?>
+
+                <?php if ($is_weekend_dash): ?>
+                    <h3 class="text-xl font-bold text-purple-600">It's the Weekend!</h3>
+                    <p class="text-sm text-gray-500 mb-1"><?php echo date('l, d F Y'); ?></p>
+                    <p class="text-xs text-gray-400 mb-4">No attendance required — enjoy your rest day.</p>
+                    <a href="clock.php" class="inline-block bg-purple-100 text-purple-700 hover:bg-purple-200 px-6 py-2 rounded-xl text-sm font-medium transition">
+                        <i class="fas fa-history mr-1"></i> View Attendance History
+                    </a>
+                <?php elseif (!$has_clocked_in): ?>
                     <h3 class="text-xl font-bold text-gray-800">Not Clocked In Yet</h3>
                     <p class="text-sm text-gray-500 mb-4">Office hours: 9:30 AM - 6:00 PM</p>
                     <form method="POST">

@@ -972,10 +972,18 @@ $leave_type_options = mysqli_query($conn, "SELECT DISTINCT leave_type FROM leave
     function leaveSubmitBulk(action) {
         const checked = leaveGetCheckedBoxes();
         if (checked.length === 0) return;
-        const label = action === 'approve' ? 'approve' : 'reject';
-        if (!confirm('Are you sure you want to ' + label + ' ' + checked.length + ' leave application(s)?')) return;
-        document.getElementById('leaveBulkActionInput').value = action;
-        document.getElementById('leaveBulkForm').submit();
+        const isApprove = action === 'approve';
+        const label     = isApprove ? 'Approve' : 'Reject';
+        const count     = checked.length;
+        const icon      = isApprove ? '✅' : '❌';
+        confirmAction(
+            icon + ' ' + label + ' Leave Application' + (count > 1 ? 's' : ''),
+            'You are about to ' + label.toLowerCase() + ' <strong>' + count + ' leave application' + (count > 1 ? 's' : '') + '</strong>. This will notify the employee' + (count > 1 ? 's' : '') + ' immediately.',
+            function () {
+                document.getElementById('leaveBulkActionInput').value = action;
+                document.getElementById('leaveBulkForm').submit();
+            }
+        );
     }
 
     function leaveClearSelection() {

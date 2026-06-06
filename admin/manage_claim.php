@@ -665,10 +665,18 @@ if (isset($_GET['action']) && isset($_GET['act'])) {
     function submitBulk(action) {
         const checked = getCheckedBoxes();
         if (checked.length === 0) return;
-        const label = action === 'approve' ? 'approve' : 'reject';
-        if (!confirm('Are you sure you want to ' + label + ' ' + checked.length + ' claim(s)?')) return;
-        document.getElementById('bulkActionInput').value = action;
-        document.getElementById('bulkForm').submit();
+        const isApprove = action === 'approve';
+        const label     = isApprove ? 'Approve' : 'Reject';
+        const count     = checked.length;
+        const icon      = isApprove ? '✅' : '❌';
+        confirmAction(
+            icon + ' ' + label + ' Claim' + (count > 1 ? 's' : ''),
+            'You are about to ' + label.toLowerCase() + ' <strong>' + count + ' claim' + (count > 1 ? 's' : '') + '</strong>. This will notify the employee' + (count > 1 ? 's' : '') + ' immediately.',
+            function () {
+                document.getElementById('bulkActionInput').value = action;
+                document.getElementById('bulkForm').submit();
+            }
+        );
     }
 
     function clearSelection() {

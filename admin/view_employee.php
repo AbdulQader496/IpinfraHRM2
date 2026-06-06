@@ -35,6 +35,16 @@ $recent_payroll = mysqli_query($conn, "
     ORDER BY month_year DESC LIMIT 3
 ");
 
+// Employee documents
+$emp_docs = [];
+$doc_res = @mysqli_query($conn, "SELECT * FROM employee_documents WHERE employee_id=$id ORDER BY created_at DESC");
+if ($doc_res) while ($d = mysqli_fetch_assoc($doc_res)) $emp_docs[] = $d;
+
+// Employee warnings
+$emp_warnings = [];
+$warn_res = @mysqli_query($conn, "SELECT w.*, a.name as issued_by_name FROM employee_warnings w LEFT JOIN employees a ON w.issued_by=a.id WHERE w.employee_id=$id ORDER BY w.issued_date DESC");
+if ($warn_res) while ($w = mysqli_fetch_assoc($warn_res)) $emp_warnings[] = $w;
+
 $profile_pic_path = "../uploads/profiles/" . $emp['profile_pic'];
 $has_profile = !empty($emp['profile_pic']) && file_exists($profile_pic_path);
 $is_intern = ($emp['employee_type'] ?? '') === 'intern';
@@ -402,6 +412,103 @@ $ml_remain  = ($emp['medical_leave_entitlement'] ?? 0) - ($emp['used_medical_lea
                     <p class="text-sm font-bold text-green-600">RM <?php echo number_format($rp['net_salary'], 2); ?></p>
                     <p class="text-xs text-gray-400">Net</p>
                 </div>
+            </div>
+            <?php endforeach; ?>
+        </div>
+        <?php endif; ?>
+    </div>
+
+
+    <!-- Documents -->
+    <div class="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
+        <div class="px-5 py-4 border-b border-gray-100 flex items-center justify-between">
+            <div class="flex items-center gap-2">
+                <div class="w-8 h-8 bg-blue-100 rounded-lg flex items-center justify-center">
+                    <i class="fas fa-folder-open text-blue-600 text-sm"></i>
+                </div>
+                <h3 class="font-semibold text-gray-800">Documents <span class="ml-1 text-xs bg-blue-100 text-blue-700 px-2 py-0.5 rounded-full"><?php echo count($emp_docs); ?></span></h3>
+            </div>
+            <a href="management.php?tab=upload" class="text-xs text-blue-600 hover:underline">Upload</a>
+        </div>
+        <?php if(empty($emp_docs)): ?>
+        <div class="p-8 text-center">
+            <i class="fas fa-folder text-4xl text-gray-200 mb-3 block"></i>
+            <p class="text-sm text-gray-400">No documents uploaded yet</p>
+        </div>
+        <?php else: ?>
+        <div class="divide-y divide-gray-50">
+            <?php foreach($emp_docs as $doc):
+                $fp = '';
+                foreach(['../uploads/documents/','../uploads/employee_documents/'] as $dp) {
+                    if(file_exists($dp.$doc['file_path'])) { $fp=$dp.$doc['file_path']; break; }
+                }
+                $ext = strtolower(pathinfo($doc['file_name'], PATHINFO_EXTENSION));
+                $icon = in_array($ext,['pdf']) ? 'fa-file-pdf text-red-500' : (in_array($ext,['doc','docx']) ? 'fa-file-word text-blue-500' : (in_array($ext,['jpg','jpeg','png']) ? 'fa-file-image text-purple-500' : 'fa-file text-gray-400'));
+            ?>
+            <div class="flex items-center gap-3 px-5 py-3 hover:bg-gray-50 transition">
+                <i class="fas <?php echo $icon; ?> text-xl flex-shrink-0"></i>
+                <div class="flex-1 min-w-0">
+                    <p class="text-sm font-medium text-gray-800 truncate"><?php echo htmlspecialchars($doc['document_title']); ?></p>
+                    <p class="text-xs text-gray-400"><?php echo ucfirst(str_replace('_',' ',$doc['document_type'])); ?> &bull; <?php echo date('d M Y', strtotime($doc['upload_date'])); ?></p>
+                </div>
+                <?php if($fp): ?>
+                <div class="flex gap-2 flex-shrink-0">
+                    <a href="<?php echo $fp; ?>" target="_blank" class="text-blue-500 hover:text-blue-700 p-1.5" title="View"><i class="fas fa-eye text-sm"></i></a>
+                    <a href="<?php echo $fp; ?>" download class="text-green-500 hover:text-green-700 p-1.5" title="Download"><i class="fas fa-download text-sm"></i></a>
+                </div>
+                <?php endif; ?>
+            </div>
+            <?php endforeach; ?>
+        </div>
+        <?php endif; ?>
+    </div>
+
+    <!-- Warnings / Disciplinary -->
+    <div class="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
+        <div class="px-5 py-4 border-b border-gray-100 flex items-center justify-between">
+            <div class="flex items-center gap-2">
+                <div class="w-8 h-8 bg-orange-100 rounded-lg flex items-center justify-center">
+                    <i class="fas fa-exclamation-triangle text-orange-600 text-sm"></i>
+                </div>
+                <h3 class="font-semibold text-gray-800">Warnings <span class="ml-1 text-xs <?php echo count($emp_warnings) > 0 ? 'bg-orange-100 text-orange-700' : 'bg-gray-100 text-gray-500'; ?> px-2 py-0.5 rounded-full"><?php echo count($emp_warnings); ?></span></h3>
+            </div>
+            <a href="management.php?tab=warnings" class="text-xs text-orange-600 hover:underline">Manage</a>
+        </div>
+        <?php if(empty($emp_warnings)): ?>
+        <div class="p-8 text-center">
+            <div class="w-14 h-14 bg-green-50 rounded-full flex items-center justify-center mx-auto mb-3">
+                <i class="fas fa-check-circle text-3xl text-green-400"></i>
+            </div>
+            <p class="text-sm font-medium text-gray-600">No warnings on record</p>
+            <p class="text-xs text-gray-400 mt-1">Employee is in good standing</p>
+        </div>
+        <?php else:
+            $wbadges = [
+                'verbal'=>['bg-blue-100 text-blue-700','fa-comment','Verbal'],
+                'written'=>['bg-yellow-100 text-yellow-700','fa-file-alt','Written'],
+                'final'=>['bg-red-100 text-red-700','fa-exclamation-circle','Final'],
+                'suspension'=>['bg-purple-100 text-purple-700','fa-ban','Suspension'],
+                'counselling'=>['bg-green-100 text-green-700','fa-hands-helping','Counselling'],
+            ];
+        ?>
+        <div class="divide-y divide-gray-50">
+            <?php foreach($emp_warnings as $w):
+                $wb = $wbadges[$w['warning_type']] ?? ['bg-gray-100 text-gray-700','fa-flag','Warning'];
+            ?>
+            <div class="px-5 py-3 hover:bg-orange-50/40 transition">
+                <div class="flex items-center justify-between gap-2 mb-1">
+                    <p class="text-sm font-semibold text-gray-800"><?php echo htmlspecialchars($w['subject']); ?></p>
+                    <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-semibold flex-shrink-0 <?php echo $wb[0]; ?>">
+                        <i class="fas <?php echo $wb[1]; ?> text-xs"></i><?php echo $wb[2]; ?>
+                    </span>
+                </div>
+                <?php if($w['description']): ?>
+                <p class="text-xs text-gray-500 mb-1 line-clamp-2"><?php echo htmlspecialchars(substr($w['description'],0,150)); ?></p>
+                <?php endif; ?>
+                <p class="text-xs text-gray-400">
+                    <i class="fas fa-calendar-alt mr-1"></i><?php echo date('d M Y', strtotime($w['issued_date'])); ?>
+                    <?php if($w['issued_by_name']): ?>&nbsp;&bull;&nbsp;<i class="fas fa-user-shield mr-1"></i><?php echo htmlspecialchars($w['issued_by_name']); ?><?php endif; ?>
+                </p>
             </div>
             <?php endforeach; ?>
         </div>

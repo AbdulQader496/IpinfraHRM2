@@ -126,6 +126,45 @@ while ($dr = mysqli_fetch_assoc($dept_result)) {
 // Get recent employees
 $recent_employees = mysqli_query($conn, "SELECT * FROM employees WHERE role='employee' ORDER BY id DESC LIMIT 5");
 
+// ── Employee of the Month (best attendance this month) ────────────────
+$eom_row = mysqli_fetch_assoc(mysqli_query($conn,
+    "SELECT e.id, e.name, e.department, e.employee_id as emp_code, e.photo,
+            COUNT(a.id) as days_present
+     FROM employees e
+     LEFT JOIN attendance a ON a.employee_id = e.id
+         AND DATE_FORMAT(a.date,'%Y-%m') = DATE_FORMAT(CURDATE(),'%Y-%m')
+         AND a.clock_in IS NOT NULL
+     WHERE e.role='employee' AND e.status='active'
+     GROUP BY e.id
+     ORDER BY days_present DESC, e.id ASC
+     LIMIT 1"));
+
+// ── Work Anniversaries this month ─────────────────────────────────────
+$anniversaries = [];
+$ann_res = mysqli_query($conn,
+    "SELECT id, name, department, join_date,
+            YEAR(CURDATE()) - YEAR(join_date) as years
+     FROM employees
+     WHERE role='employee' AND status='active'
+       AND MONTH(join_date) = MONTH(CURDATE())
+       AND DAY(join_date) >= DAY(CURDATE())
+     ORDER BY DAY(join_date) ASC
+     LIMIT 5");
+while ($ar = mysqli_fetch_assoc($ann_res)) $anniversaries[] = $ar;
+
+// ── Upcoming Birthdays (IC number: YYMMDD, chars 4-5 = day, 2-3 = month) ──
+$birthdays = [];
+$bday_res = mysqli_query($conn,
+    "SELECT id, name, department, ic_number
+     FROM employees
+     WHERE role='employee' AND status='active'
+       AND ic_number IS NOT NULL AND LENGTH(ic_number) >= 6
+       AND SUBSTRING(ic_number,3,2) = DATE_FORMAT(CURDATE(),'%m')
+       AND CAST(SUBSTRING(ic_number,5,2) AS UNSIGNED) >= DAY(CURDATE())
+     ORDER BY CAST(SUBSTRING(ic_number,5,2) AS UNSIGNED) ASC
+     LIMIT 5");
+while ($br2 = mysqli_fetch_assoc($bday_res)) $birthdays[] = $br2;
+
 // Get announcements
 $announcements = mysqli_query($conn, "SELECT * FROM announcements WHERE is_active = 1 AND (end_date IS NULL OR end_date >= CURDATE()) ORDER BY 
     CASE announcement_type 
@@ -656,6 +695,112 @@ $announcements = mysqli_query($conn, "SELECT * FROM announcements WHERE is_activ
                     <i class="fas fa-file-invoice-dollar text-2xl"></i>
                 </div>
             </div>
+        </div>
+    </div>
+
+    <!-- ═══ Employee of the Month + People Events ═══════════════════════ -->
+    <div class="grid grid-cols-1 lg:grid-cols-3 gap-6 mt-6">
+
+        <!-- Employee of the Month -->
+        <div class="bg-gradient-to-br from-indigo-600 via-purple-600 to-pink-600 rounded-2xl shadow-xl p-6 text-white relative overflow-hidden">
+            <div class="absolute top-0 right-0 w-32 h-32 bg-white/10 rounded-full -translate-y-1/2 translate-x-1/2"></div>
+            <div class="absolute bottom-0 left-0 w-24 h-24 bg-white/10 rounded-full translate-y-1/2 -translate-x-1/2"></div>
+            <div class="relative z-10">
+                <div class="flex items-center gap-2 mb-4">
+                    <i class="fas fa-trophy text-yellow-300 text-xl"></i>
+                    <p class="font-bold text-sm uppercase tracking-widest text-white/90">Employee of the Month</p>
+                </div>
+                <?php if($eom_row && $eom_row['days_present'] > 0): ?>
+                <div class="text-center">
+                    <div class="w-20 h-20 mx-auto mb-3 rounded-2xl bg-white/20 backdrop-blur-sm flex items-center justify-center overflow-hidden border-2 border-white/40 shadow-lg">
+                        <?php if(!empty($eom_row['photo']) && file_exists('../uploads/'.$eom_row['photo'])): ?>
+                            <img src="../uploads/<?php echo $eom_row['photo']; ?>" class="w-full h-full object-cover">
+                        <?php else: ?>
+                            <span class="text-3xl font-bold text-white"><?php echo strtoupper(substr($eom_row['name'],0,1)); ?></span>
+                        <?php endif; ?>
+                    </div>
+                    <a href="view_employee.php?id=<?php echo $eom_row['id']; ?>" class="text-xl font-bold hover:underline block"><?php echo htmlspecialchars($eom_row['name']); ?></a>
+                    <p class="text-sm text-white/80 mt-0.5"><?php echo htmlspecialchars($eom_row['department'] ?: 'No department'); ?></p>
+                    <div class="mt-3 inline-flex items-center gap-2 bg-white/20 rounded-full px-4 py-1.5">
+                        <i class="fas fa-calendar-check text-yellow-300 text-sm"></i>
+                        <span class="text-sm font-semibold"><?php echo $eom_row['days_present']; ?> days present this month</span>
+                    </div>
+                </div>
+                <?php else: ?>
+                <div class="text-center py-4">
+                    <i class="fas fa-calendar-times text-white/40 text-4xl mb-3 block"></i>
+                    <p class="text-white/70 text-sm">No attendance data yet this month</p>
+                </div>
+                <?php endif; ?>
+            </div>
+        </div>
+
+        <!-- Work Anniversaries -->
+        <div class="bg-white rounded-2xl shadow-xl overflow-hidden">
+            <div class="bg-gradient-to-r from-emerald-50 to-teal-50 px-5 py-4 border-b">
+                <div class="flex items-center gap-2">
+                    <i class="fas fa-cake-candles text-emerald-600 text-xl"></i>
+                    <h3 class="font-semibold text-gray-800">Work Anniversaries</h3>
+                    <span class="ml-auto text-xs text-gray-400">This month</span>
+                </div>
+            </div>
+            <?php if(!empty($anniversaries)): ?>
+            <div class="divide-y divide-gray-50">
+                <?php foreach($anniversaries as $av): ?>
+                <div class="flex items-center gap-3 px-4 py-3 hover:bg-emerald-50/50 transition">
+                    <div class="w-10 h-10 rounded-xl bg-emerald-100 flex items-center justify-center flex-shrink-0">
+                        <span class="text-emerald-700 font-bold text-sm"><?php echo $av['years']; ?>yr</span>
+                    </div>
+                    <div class="flex-1 min-w-0">
+                        <p class="font-semibold text-gray-800 text-sm truncate"><?php echo htmlspecialchars($av['name']); ?></p>
+                        <p class="text-xs text-gray-500"><?php echo date('d M', strtotime($av['join_date'])); ?></p>
+                    </div>
+                    <i class="fas fa-star text-yellow-400 text-sm"></i>
+                </div>
+                <?php endforeach; ?>
+            </div>
+            <?php else: ?>
+            <div class="p-8 text-center">
+                <i class="fas fa-calendar text-3xl text-gray-200 mb-3 block"></i>
+                <p class="text-sm text-gray-400">No anniversaries this month</p>
+            </div>
+            <?php endif; ?>
+        </div>
+
+        <!-- Upcoming Birthdays -->
+        <div class="bg-white rounded-2xl shadow-xl overflow-hidden">
+            <div class="bg-gradient-to-r from-pink-50 to-rose-50 px-5 py-4 border-b">
+                <div class="flex items-center gap-2">
+                    <i class="fas fa-birthday-cake text-pink-600 text-xl"></i>
+                    <h3 class="font-semibold text-gray-800">Upcoming Birthdays</h3>
+                    <span class="ml-auto text-xs text-gray-400">This month</span>
+                </div>
+            </div>
+            <?php if(!empty($birthdays)): ?>
+            <div class="divide-y divide-gray-50">
+                <?php foreach($birthdays as $bd):
+                    $ic = preg_replace('/[^0-9]/', '', $bd['ic_number']);
+                    $bday_day = (strlen($ic) >= 6) ? (int)substr($ic, 4, 2) : '?';
+                    $bday_month = date('M');
+                ?>
+                <div class="flex items-center gap-3 px-4 py-3 hover:bg-pink-50/50 transition">
+                    <div class="w-10 h-10 rounded-xl bg-pink-100 flex items-center justify-center flex-shrink-0">
+                        <span class="text-pink-700 font-bold text-sm"><?php echo $bday_day; ?></span>
+                    </div>
+                    <div class="flex-1 min-w-0">
+                        <p class="font-semibold text-gray-800 text-sm truncate"><?php echo htmlspecialchars($bd['name']); ?></p>
+                        <p class="text-xs text-gray-500"><?php echo $bday_day . ' ' . $bday_month; ?></p>
+                    </div>
+                    <i class="fas fa-gift text-pink-400 text-sm"></i>
+                </div>
+                <?php endforeach; ?>
+            </div>
+            <?php else: ?>
+            <div class="p-8 text-center">
+                <i class="fas fa-birthday-cake text-3xl text-gray-200 mb-3 block"></i>
+                <p class="text-sm text-gray-400">No birthdays this month</p>
+            </div>
+            <?php endif; ?>
         </div>
     </div>
 

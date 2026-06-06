@@ -1,4 +1,16 @@
 <?php
+// ── Notification data for logged-in user ──────────────────────────────
+$_gb_notif_count = 0;
+$_gb_notifs      = [];
+if (isset($_SESSION['user_id']) && isset($conn) && $conn) {
+    $uid = (int)$_SESSION['user_id'];
+    $r = @mysqli_query($conn, "SELECT COUNT(*) as c FROM notifications WHERE employee_id=$uid AND is_read=0");
+    if ($r) $_gb_notif_count = (int)(mysqli_fetch_assoc($r)['c'] ?? 0);
+    $r2 = @mysqli_query($conn, "SELECT * FROM notifications WHERE employee_id=$uid ORDER BY created_at DESC LIMIT 15");
+    if ($r2) while ($n = mysqli_fetch_assoc($r2)) $_gb_notifs[] = $n;
+}
+?>
+<?php
 /**
  * Global UI Enhancements
  * ----------------------
@@ -268,6 +280,66 @@ img[loading="lazy"].img-loaded {
 .form-submitting {
   opacity: 0.8;
   pointer-events: none;
+}
+
+/* ── 12. Notification Bell ────────────────────────────────────────── */
+#gb-notif-btn {
+  position: fixed; top: 10px; right: 14px; z-index: 999;
+  width: 38px; height: 38px;
+  background: rgba(255,255,255,0.15);
+  backdrop-filter: blur(8px);
+  border-radius: 50%; border: none; cursor: pointer;
+  display: flex; align-items: center; justify-content: center;
+  color: white; transition: background 0.2s;
+}
+#gb-notif-btn:hover { background: rgba(255,255,255,0.28); }
+
+#gb-notif-badge {
+  position: absolute; top: -3px; right: -3px;
+  min-width: 18px; height: 18px;
+  background: #ef4444; border-radius: 9px;
+  font-size: 10px; font-weight: 700; color: #fff;
+  display: flex; align-items: center; justify-content: center;
+  padding: 0 4px; border: 1.5px solid #0f172a;
+  animation: gb-pulse 2s ease-in-out infinite;
+}
+@keyframes gb-pulse {
+  0%,100% { transform: scale(1); }
+  50%      { transform: scale(1.18); }
+}
+
+#gb-notif-panel {
+  position: fixed; top: 56px; right: 8px;
+  width: 320px; max-height: 480px;
+  background: #fff; border-radius: 16px;
+  box-shadow: 0 24px 64px rgba(0,0,0,0.22);
+  z-index: 9998; overflow: hidden;
+  display: none; flex-direction: column;
+}
+#gb-notif-panel.open {
+  display: flex;
+  animation: gb-slide-down 0.2s ease;
+}
+@keyframes gb-slide-down {
+  from { opacity:0; transform: translateY(-10px); }
+  to   { opacity:1; transform: translateY(0); }
+}
+
+.gb-ni {
+  display: flex; align-items: flex-start; gap: 10px;
+  padding: 11px 14px; border-bottom: 1px solid #f1f5f9;
+  cursor: pointer; transition: background 0.15s;
+}
+.gb-ni:hover { background: #f8fafc; }
+.gb-ni.unread { background: #eff6ff; }
+.gb-ni.unread:hover { background: #dbeafe; }
+.gb-ni-icon {
+  width: 34px; height: 34px; border-radius: 9px;
+  display: flex; align-items: center; justify-content: center; flex-shrink: 0;
+}
+.gb-ni-dot {
+  width: 8px; height: 8px; border-radius: 50%;
+  background: #3b82f6; flex-shrink: 0; margin-top: 5px;
 }
 </style>
 
@@ -707,7 +779,117 @@ img[loading="lazy"].img-loaded {
   }
 
   /* ================================================================
-     9. BOOTSTRAP — run everything on DOMContentLoaded
+     9. NOTIFICATION BELL — inject on pages without their own bell
+     ================================================================ */
+
+  var GB_NOTIF_COUNT = <?php echo (int)$_gb_notif_count; ?>;
+  var GB_NOTIF_ITEMS = <?php echo json_encode($_gb_notifs); ?>;
+
+  function gbEsc(s) {
+    if (!s) return '';
+    return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+  }
+
+  function gbAgo(ds) {
+    var diff = Math.floor((Date.now() - new Date(ds).getTime()) / 1000);
+    if (diff < 60)    return 'Just now';
+    if (diff < 3600)  return Math.floor(diff/60) + 'm ago';
+    if (diff < 86400) return Math.floor(diff/3600) + 'h ago';
+    return Math.floor(diff/86400) + 'd ago';
+  }
+
+  function gbBuildItems(items) {
+    if (!items.length) {
+      return '<div style="padding:40px 16px;text-align:center">' +
+        '<i class="fas fa-bell-slash" style="font-size:30px;color:#d1d5db"></i>' +
+        '<p style="margin:10px 0 0;color:#9ca3af;font-size:13px">No notifications yet</p></div>';
+    }
+    return items.map(function(n) {
+      var unread = n.is_read == 0;
+      return '<div class="gb-ni' + (unread ? ' unread' : '') + '" onclick="gbMarkRead(' + n.id + ',this)">' +
+        '<div class="gb-ni-icon" style="background:' + (unread ? '#dbeafe' : '#f3f4f6') + '">' +
+        '<i class="fas fa-bell" style="font-size:13px;color:' + (unread ? '#3b82f6' : '#9ca3af') + '"></i></div>' +
+        '<div style="flex:1;min-width:0">' +
+        '<p style="margin:0;font-size:13px;font-weight:600;color:#111827">' + gbEsc(n.title) + '</p>' +
+        '<p style="margin:2px 0 0;font-size:11px;color:#6b7280;line-height:1.4">' + gbEsc(n.message) + '</p>' +
+        '<p style="margin:4px 0 0;font-size:10px;color:#9ca3af">' + gbAgo(n.created_at) + '</p></div>' +
+        (unread ? '<div class="gb-ni-dot"></div>' : '') + '</div>';
+    }).join('');
+  }
+
+  function gbBuildPanel(count, items) {
+    var markAll = count > 0
+      ? '<button onclick="gbMarkAll()" style="background:none;border:none;cursor:pointer;color:#c4b5fd;font-size:11px;font-weight:600;">Mark all read</button>'
+      : '';
+    return '<div style="background:linear-gradient(135deg,#4f46e5,#7c3aed);padding:14px 16px;display:flex;align-items:center;justify-content:space-between">' +
+      '<div><p style="margin:0;color:#fff;font-weight:700;font-size:14px">Notifications</p>' +
+      '<p style="margin:2px 0 0;color:#c4b5fd;font-size:11px">' + (count > 0 ? count + ' unread' : 'All caught up ✓') + '</p></div>' +
+      markAll + '</div>' +
+      '<div style="overflow-y:auto;max-height:390px">' + gbBuildItems(items) + '</div>';
+  }
+
+  function gbUpdateBadge(delta) {
+    var badge = document.getElementById('gb-notif-badge');
+    if (!badge) return;
+    var c = (parseInt(badge.textContent) || 0) + delta;
+    if (c <= 0) { badge.style.display = 'none'; }
+    else { badge.style.display = 'flex'; badge.textContent = c > 99 ? '99+' : c; }
+  }
+
+  window.gbMarkRead = function(id, el) {
+    fetch('../includes/notifications_api.php?action=mark_read&id=' + id);
+    el.classList.remove('unread');
+    var dot = el.querySelector('.gb-ni-dot');
+    if (dot) dot.remove();
+    var icon = el.querySelector('.gb-ni-icon');
+    if (icon) { icon.style.background = '#f3f4f6'; icon.querySelector('i').style.color = '#9ca3af'; }
+    gbUpdateBadge(-1);
+  };
+
+  window.gbMarkAll = function() {
+    fetch('../includes/notifications_api.php?action=mark_all');
+    document.querySelectorAll('.gb-ni.unread').forEach(function(el) {
+      el.classList.remove('unread');
+      var dot = el.querySelector('.gb-ni-dot');
+      if (dot) dot.remove();
+      var icon = el.querySelector('.gb-ni-icon');
+      if (icon) { icon.style.background = '#f3f4f6'; icon.querySelector('i').style.color = '#9ca3af'; }
+    });
+    var badge = document.getElementById('gb-notif-badge');
+    if (badge) badge.style.display = 'none';
+    var sub = document.querySelector('#gb-notif-panel div p:last-child');
+    if (sub) sub.textContent = 'All caught up ✓';
+  };
+
+  function initNotifBell() {
+    // Skip if this page already has its own bell (admin dashboard)
+    if (document.getElementById('notifWrapper')) return;
+    if (!document.body) return;
+
+    var btn = document.createElement('button');
+    btn.id = 'gb-notif-btn';
+    btn.title = 'Notifications';
+    btn.innerHTML = '<i class="fas fa-bell" style="font-size:15px"></i>' +
+      '<span id="gb-notif-badge" style="' + (GB_NOTIF_COUNT > 0 ? '' : 'display:none') + '">' +
+      (GB_NOTIF_COUNT > 99 ? '99+' : GB_NOTIF_COUNT) + '</span>';
+    document.body.appendChild(btn);
+
+    var panel = document.createElement('div');
+    panel.id = 'gb-notif-panel';
+    panel.innerHTML = gbBuildPanel(GB_NOTIF_COUNT, GB_NOTIF_ITEMS);
+    document.body.appendChild(panel);
+
+    btn.addEventListener('click', function(e) {
+      e.stopPropagation();
+      panel.classList.toggle('open');
+    });
+    document.addEventListener('click', function(e) {
+      if (!panel.contains(e.target) && e.target !== btn) panel.classList.remove('open');
+    });
+  }
+
+  /* ================================================================
+     10. BOOTSTRAP — run everything on DOMContentLoaded
      ================================================================ */
 
   function init() {
@@ -717,6 +899,7 @@ img[loading="lazy"].img-loaded {
     setupPageTransitions();
     setupLazyImages();
     setupFormLoadingStates();
+    initNotifBell();
   }
 
   if (document.readyState === 'loading') {

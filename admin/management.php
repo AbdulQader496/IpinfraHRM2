@@ -37,6 +37,35 @@ if (isset($_GET['delete_termination'])) {
 }
 
 // ========================================
+// ADD WARNING RECORD
+// ========================================
+if (isset($_POST['add_warning'])) {
+    $employee_id  = intval($_POST['warn_employee_id']);
+    $warning_type = mysqli_real_escape_string($conn, $_POST['warning_type']);
+    $subject      = mysqli_real_escape_string($conn, $_POST['subject']);
+    $description  = mysqli_real_escape_string($conn, $_POST['description']);
+    $issued_date  = mysqli_real_escape_string($conn, $_POST['issued_date']);
+    $issued_by    = intval($_SESSION['user_id']);
+    mysqli_query($conn, "INSERT INTO employee_warnings (employee_id, warning_type, subject, description, issued_by, issued_date)
+        VALUES ($employee_id, '$warning_type', '$subject', '$description', $issued_by, '$issued_date')");
+    $type_labels = ['verbal'=>'Verbal Warning','written'=>'Written Warning','final'=>'Final Warning','suspension'=>'Suspension','counselling'=>'Counselling'];
+    $label = $type_labels[$_POST['warning_type']] ?? 'Warning';
+    addNotification($employee_id, $label . ' Issued', 'You have received a ' . strtolower($label) . ': ' . $_POST['subject']);
+    header('Location: management.php?tab=warnings');
+    exit();
+}
+
+// ========================================
+// DELETE WARNING RECORD
+// ========================================
+if (isset($_GET['delete_warning'])) {
+    $id = intval($_GET['delete_warning']);
+    mysqli_query($conn, "DELETE FROM employee_warnings WHERE id=$id");
+    header('Location: management.php?tab=warnings');
+    exit();
+}
+
+// ========================================
 // DELETE DOCUMENT
 // ========================================
 if (isset($_GET['delete_doc'])) {
@@ -165,6 +194,17 @@ $documents = mysqli_query($conn, "SELECT d.*, e.name, e.employee_id,
 $employees = mysqli_query($conn, "SELECT id, name, employee_id FROM employees WHERE role='employee' AND status='active' AND (is_terminated = 0 OR is_terminated IS NULL)");
 
 $pending_count = mysqli_fetch_assoc(mysqli_query($conn, "SELECT COUNT(*) as count FROM employee_resignations WHERE status='pending'"))['count'];
+
+// Warnings — check table exists first
+$warnings_result = @mysqli_query($conn,
+    "SELECT w.*, e.name, e.employee_id as emp_code, a.name as issued_by_name
+     FROM employee_warnings w
+     JOIN employees e ON w.employee_id = e.id
+     LEFT JOIN employees a ON w.issued_by = a.id
+     ORDER BY w.issued_date DESC");
+$all_warnings = [];
+if ($warnings_result) while ($wr = mysqli_fetch_assoc($warnings_result)) $all_warnings[] = $wr;
+$warnings_count = count($all_warnings);
 ?>
 <!DOCTYPE html>
 <html lang="en">
@@ -310,6 +350,12 @@ $pending_count = mysqli_fetch_assoc(mysqli_query($conn, "SELECT COUNT(*) as coun
         </button>
         <button onclick="showTab('upload')" id="tabUpload" class="tab-btn flex-1 py-2.5 rounded-xl font-semibold transition-all tab-inactive">
             <i class="fas fa-upload mr-2"></i> Upload Document
+        </button>
+        <button onclick="showTab('warnings')" id="tabWarnings" class="tab-btn flex-1 py-2.5 rounded-xl font-semibold transition-all tab-inactive">
+            <i class="fas fa-exclamation-triangle mr-2"></i> Warnings
+            <?php if($warnings_count > 0): ?>
+                <span class="ml-1 bg-orange-500 text-white text-xs px-1.5 py-0.5 rounded-full"><?php echo $warnings_count; ?></span>
+            <?php endif; ?>
         </button>
     </div>
 
@@ -602,6 +648,135 @@ $pending_count = mysqli_fetch_assoc(mysqli_query($conn, "SELECT COUNT(*) as coun
     </div>
 
     <!-- ======================================== -->
+    <!-- WARNINGS TAB -->
+    <!-- ======================================== -->
+    <div id="warningsTab" class="hidden animate-fadeInUp">
+        <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+            <!-- Issue Warning Form -->
+            <div class="bg-white rounded-2xl shadow-xl p-6 card-hover">
+                <div class="flex items-center gap-3 mb-5">
+                    <div class="w-10 h-10 bg-gradient-to-br from-orange-500 to-amber-600 rounded-xl flex items-center justify-center shadow-md">
+                        <i class="fas fa-exclamation-triangle text-white"></i>
+                    </div>
+                    <div>
+                        <h2 class="text-lg font-bold text-gray-800">Issue Warning / Disciplinary Notice</h2>
+                        <p class="text-xs text-gray-500">Record a warning or counselling session</p>
+                    </div>
+                </div>
+                <form method="POST" class="space-y-4">
+                    <div>
+                        <label class="block text-sm font-semibold text-gray-700 mb-2">Employee</label>
+                        <select name="warn_employee_id" required class="w-full px-4 py-2.5 border-2 border-gray-200 rounded-xl focus:border-orange-500 focus:outline-none">
+                            <option value="">Select Employee</option>
+                            <?php
+                            $we = mysqli_query($conn, "SELECT id, name, employee_id FROM employees WHERE role='employee' AND status='active' ORDER BY name");
+                            while($emp = mysqli_fetch_assoc($we)): ?>
+                                <option value="<?php echo $emp['id']; ?>"><?php echo htmlspecialchars($emp['name']); ?> (<?php echo $emp['employee_id']; ?>)</option>
+                            <?php endwhile; ?>
+                        </select>
+                    </div>
+                    <div>
+                        <label class="block text-sm font-semibold text-gray-700 mb-2">Warning Type</label>
+                        <select name="warning_type" required class="w-full px-4 py-2.5 border-2 border-gray-200 rounded-xl focus:border-orange-500 focus:outline-none">
+                            <option value="verbal">💬 Verbal Warning</option>
+                            <option value="written">📝 Written Warning</option>
+                            <option value="final">⛔ Final Warning</option>
+                            <option value="suspension">🚫 Suspension</option>
+                            <option value="counselling">🤝 Counselling</option>
+                        </select>
+                    </div>
+                    <div>
+                        <label class="block text-sm font-semibold text-gray-700 mb-2">Subject</label>
+                        <input type="text" name="subject" required class="w-full px-4 py-2.5 border-2 border-gray-200 rounded-xl focus:border-orange-500 focus:outline-none" placeholder="e.g., Late attendance — 3rd occurrence">
+                    </div>
+                    <div>
+                        <label class="block text-sm font-semibold text-gray-700 mb-2">Date Issued</label>
+                        <input type="date" name="issued_date" required value="<?php echo date('Y-m-d'); ?>" class="w-full px-4 py-2.5 border-2 border-gray-200 rounded-xl focus:border-orange-500 focus:outline-none">
+                    </div>
+                    <div>
+                        <label class="block text-sm font-semibold text-gray-700 mb-2">Description / Details</label>
+                        <textarea name="description" rows="3" class="w-full px-4 py-2.5 border-2 border-gray-200 rounded-xl focus:border-orange-500 focus:outline-none" placeholder="Describe the incident or reason for warning..."></textarea>
+                    </div>
+                    <button type="submit" name="add_warning" class="w-full bg-gradient-to-r from-orange-500 to-amber-500 text-white py-3 rounded-xl font-semibold hover:shadow-xl transition transform hover:scale-105">
+                        <i class="fas fa-paper-plane mr-2"></i> Issue Warning
+                    </button>
+                </form>
+            </div>
+
+            <!-- Warning History -->
+            <div class="bg-white rounded-2xl shadow-xl overflow-hidden">
+                <div class="bg-gradient-to-r from-gray-50 to-white px-5 py-4 border-b">
+                    <div class="flex items-center gap-2">
+                        <i class="fas fa-history text-2xl text-orange-500"></i>
+                        <div>
+                            <p class="font-semibold text-gray-800">Warning Records</p>
+                            <p class="text-xs text-gray-500"><?php echo $warnings_count; ?> record(s) total</p>
+                        </div>
+                    </div>
+                </div>
+                <?php if(empty($all_warnings)): ?>
+                <div class="p-12 text-center">
+                    <div class="w-16 h-16 bg-orange-50 rounded-full flex items-center justify-center mx-auto mb-3">
+                        <i class="fas fa-shield-check text-3xl text-orange-300"></i>
+                    </div>
+                    <p class="font-semibold text-gray-600">No warnings on record</p>
+                    <p class="text-xs text-gray-400 mt-1">All employees are in good standing</p>
+                </div>
+                <?php else: ?>
+                <div class="divide-y divide-gray-100 max-h-[520px] overflow-y-auto">
+                    <?php
+                    $warn_badges = [
+                        'verbal'      => ['bg-blue-100 text-blue-700',   'fa-comment',              'Verbal'],
+                        'written'     => ['bg-yellow-100 text-yellow-700','fa-file-alt',             'Written'],
+                        'final'       => ['bg-red-100 text-red-700',     'fa-exclamation-circle',   'Final'],
+                        'suspension'  => ['bg-purple-100 text-purple-700','fa-ban',                  'Suspension'],
+                        'counselling' => ['bg-green-100 text-green-700', 'fa-hands-helping',        'Counselling'],
+                    ];
+                    foreach($all_warnings as $w):
+                        $badge = $warn_badges[$w['warning_type']] ?? ['bg-gray-100 text-gray-700','fa-flag','Unknown'];
+                    ?>
+                    <div class="p-4 hover:bg-orange-50/40 transition">
+                        <div class="flex items-start justify-between gap-3">
+                            <div class="flex items-center gap-2 min-w-0">
+                                <div class="w-9 h-9 rounded-full bg-orange-100 flex items-center justify-center flex-shrink-0">
+                                    <i class="fas fa-user text-orange-600 text-sm"></i>
+                                </div>
+                                <div class="min-w-0">
+                                    <p class="font-semibold text-gray-800 truncate"><?php echo htmlspecialchars($w['name']); ?></p>
+                                    <p class="text-xs text-gray-400"><?php echo $w['emp_code']; ?></p>
+                                </div>
+                            </div>
+                            <div class="flex items-center gap-2 flex-shrink-0">
+                                <span class="inline-flex items-center gap-1 px-2 py-1 rounded-full text-xs font-semibold <?php echo $badge[0]; ?>">
+                                    <i class="fas <?php echo $badge[1]; ?> text-xs"></i>
+                                    <?php echo $badge[2]; ?>
+                                </span>
+                                <a href="?delete_warning=<?php echo $w['id']; ?>" data-confirm="Delete this warning record permanently?" data-confirm-title="Delete Warning" class="text-red-400 hover:text-red-600 transition p-1" title="Delete">
+                                    <i class="fas fa-trash text-sm"></i>
+                                </a>
+                            </div>
+                        </div>
+                        <div class="mt-2 ml-11">
+                            <p class="text-sm font-medium text-gray-700"><?php echo htmlspecialchars($w['subject']); ?></p>
+                            <?php if($w['description']): ?>
+                                <p class="text-xs text-gray-500 mt-1 line-clamp-2"><?php echo htmlspecialchars(substr($w['description'], 0, 120)); ?></p>
+                            <?php endif; ?>
+                            <p class="text-xs text-gray-400 mt-1.5">
+                                <i class="fas fa-calendar-alt mr-1"></i><?php echo date('d M Y', strtotime($w['issued_date'])); ?>
+                                <?php if($w['issued_by_name']): ?>
+                                    &nbsp;·&nbsp;<i class="fas fa-user-shield mr-1"></i><?php echo htmlspecialchars($w['issued_by_name']); ?>
+                                <?php endif; ?>
+                            </p>
+                        </div>
+                    </div>
+                    <?php endforeach; ?>
+                </div>
+                <?php endif; ?>
+            </div>
+        </div>
+    </div>
+
+    <!-- ======================================== -->
     <!-- UPLOAD TAB -->
     <!-- ======================================== -->
     <div id="uploadTab" class="hidden animate-fadeInUp">
@@ -747,22 +922,25 @@ function toggleSidebar() {
 }
 
 function showTab(tab) {
-    const tabs = ['resignations', 'terminations', 'documents', 'upload'];
+    const tabs = ['resignations', 'terminations', 'documents', 'upload', 'warnings'];
     tabs.forEach(t => {
         const el = document.getElementById(t + 'Tab');
         if (el) el.classList.add('hidden');
         const btn = document.getElementById('tab' + t.charAt(0).toUpperCase() + t.slice(1));
-        if (btn) {
-            btn.className = 'tab-btn flex-1 py-2.5 rounded-xl font-semibold transition-all tab-inactive';
-        }
+        if (btn) btn.className = 'tab-btn flex-1 py-2.5 rounded-xl font-semibold transition-all tab-inactive';
     });
     const activeEl = document.getElementById(tab + 'Tab');
     if (activeEl) activeEl.classList.remove('hidden');
     const activeBtn = document.getElementById('tab' + tab.charAt(0).toUpperCase() + tab.slice(1));
-    if (activeBtn) {
-        activeBtn.className = 'tab-btn flex-1 py-2.5 rounded-xl font-semibold transition-all tab-active';
-    }
+    if (activeBtn) activeBtn.className = 'tab-btn flex-1 py-2.5 rounded-xl font-semibold transition-all tab-active';
 }
+
+// Auto-open tab from URL
+(function() {
+    const params = new URLSearchParams(window.location.search);
+    const t = params.get('tab');
+    if (t) showTab(t);
+})();
 
 function openApproveModal(resignation) {
     currentResignationId = resignation.id;

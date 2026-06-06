@@ -930,6 +930,44 @@ img[loading="lazy"].img-loaded {
      10. BOOTSTRAP — run everything on DOMContentLoaded
      ================================================================ */
 
+  /* ================================================================
+     SCROLL POSITION RESTORE — keeps position after filter/pagination
+     ================================================================ */
+  (function() {
+    var KEY = 'gb_scroll_' + location.pathname;
+
+    // Restore on load
+    var saved = sessionStorage.getItem(KEY);
+    if (saved !== null) {
+      var target = parseInt(saved, 10);
+      sessionStorage.removeItem(KEY);
+      // Use requestAnimationFrame to wait for layout
+      requestAnimationFrame(function() {
+        requestAnimationFrame(function() {
+          window.scrollTo(0, target);
+        });
+      });
+    }
+
+    // Save before same-page GET form submits (filters, per_page selectors)
+    document.addEventListener('submit', function(e) {
+      var form = e.target;
+      if ((form.method || 'get').toLowerCase() === 'get') {
+        sessionStorage.setItem(KEY, window.scrollY);
+      }
+    }, true);
+
+    // Save before same-page pagination/query-string links
+    document.addEventListener('click', function(e) {
+      var a = e.target.closest('a[href]');
+      if (!a) return;
+      var href = a.getAttribute('href') || '';
+      if (href.charAt(0) === '?' || href.indexOf(location.pathname + '?') !== -1) {
+        sessionStorage.setItem(KEY, window.scrollY);
+      }
+    }, true);
+  })();
+
   function init() {
     applyAvatarColors();
     applyCounters();

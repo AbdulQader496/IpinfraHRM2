@@ -26,9 +26,9 @@ $search = isset($_GET['search']) ? $_GET['search'] : '';
 $category_filter = isset($_GET['category']) ? $_GET['category'] : '';
 
 // Get available assets with search and filter
-$query = "SELECT a.*, c.category_name, c.icon 
-    FROM assets a 
-    JOIN asset_categories c ON a.category_id = c.id 
+$query = "SELECT a.*, c.category_name
+    FROM assets a
+    LEFT JOIN asset_categories c ON a.category_id = c.id
     WHERE a.available_quantity > 0";
     
 if (!empty($search)) {
@@ -271,7 +271,7 @@ $history_count = mysqli_num_rows($request_history);
                         <div class="p-5">
                             <div class="flex items-start gap-3">
                                 <div class="w-14 h-14 rounded-xl bg-gradient-to-br from-blue-500 to-indigo-600 flex items-center justify-center shadow-md">
-                                    <i class="fas <?php echo $asset['icon']; ?> text-white text-2xl"></i>
+                                    <i class="fas fa-box text-white text-2xl"></i>
                                 </div>
                                 <div class="flex-1">
                                     <div class="flex justify-between items-start flex-wrap gap-2">

@@ -5,8 +5,6 @@ require_once '../includes/db.php';
 require_once '../includes/toast_fn.php';
 
 $user_id = $_SESSION['user_id'];
-$message = '';
-$error = '';
 $edit_mode = false;
 $edit_claim_id = 0;
 
@@ -84,9 +82,6 @@ if (isset($_GET['delete_attachment'])) {
             unlink($file_path);
         }
         mysqli_query($conn, "DELETE FROM claim_attachments WHERE id = $attach_id");
-        $message = '<div class="bg-green-100 border-l-4 border-green-500 text-green-700 px-4 py-3 rounded-xl text-sm">
-                        <i class="fas fa-trash mr-2"></i> Attachment deleted successfully!
-                    </div>';
     }
     header("Location: claim.php?edit=$claim_id");
     exit();
@@ -96,28 +91,19 @@ if (isset($_GET['delete_attachment'])) {
 // HANDLE DELETE CLAIM (Only pending claims)
 // ========================================
 if (isset($_GET['delete'])) {
-    $claim_id = (int)$_GET['delete'];
-    
-    // Check if claim is pending
-    $check_query = mysqli_query($conn, "SELECT id FROM claims WHERE id = $claim_id AND employee_id = $user_id AND status = 'pending'");
+    $claim_id    = (int)$_GET['delete'];
+    $check_query = mysqli_query($conn, "SELECT id FROM claims WHERE id=$claim_id AND employee_id=$user_id AND status='pending'");
     if (mysqli_num_rows($check_query) > 0) {
-        // Delete attachments first
-        $attach_query = mysqli_query($conn, "SELECT file_path FROM claim_attachments WHERE claim_id = $claim_id");
+        $attach_query = mysqli_query($conn, "SELECT file_path FROM claim_attachments WHERE claim_id=$claim_id");
         while ($attach = mysqli_fetch_assoc($attach_query)) {
-            $file_path = "../uploads/claims/" . $attach['file_path'];
-            if (file_exists($file_path)) {
-                unlink($file_path);
-            }
+            $fp = "../uploads/claims/" . $attach['file_path'];
+            if (file_exists($fp)) unlink($fp);
         }
-        mysqli_query($conn, "DELETE FROM claim_attachments WHERE claim_id = $claim_id");
-        mysqli_query($conn, "DELETE FROM claims WHERE id = $claim_id");
-        $message = '<div class="bg-green-100 border-l-4 border-green-500 text-green-700 px-4 py-3 rounded-xl text-sm">
-                        <i class="fas fa-trash mr-2"></i> Claim deleted successfully!
-                    </div>';
+        mysqli_query($conn, "DELETE FROM claim_attachments WHERE claim_id=$claim_id");
+        mysqli_query($conn, "DELETE FROM claims WHERE id=$claim_id");
+        header('Location: claim.php?msg=deleted'); exit();
     } else {
-        $error = '<div class="bg-red-100 border-l-4 border-red-500 text-red-700 px-4 py-3 rounded-xl text-sm">
-                      <i class="fas fa-exclamation-circle mr-2"></i> Cannot delete claim that is already processed.
-                  </div>';
+        header('Location: claim.php?err=' . urlencode('Cannot delete a claim that is already processed.')); exit();
     }
 }
 
@@ -389,10 +375,15 @@ $pending_total = mysqli_fetch_assoc(mysqli_query($conn, "SELECT SUM(amount) as t
             } elseif ($_GET['msg'] == 'updated') {
                 echo '<div class="bg-green-100 border-l-4 border-green-500 text-green-700 px-4 py-3 rounded-xl text-sm mb-4">
                     <i class="fas fa-check-circle mr-2"></i> ✓ Claim updated successfully!</div>';
+            } elseif ($_GET['msg'] == 'deleted') {
+                echo '<div class="bg-green-100 border-l-4 border-green-500 text-green-700 px-4 py-3 rounded-xl text-sm mb-4">
+                    <i class="fas fa-trash mr-2"></i> ✓ Claim deleted successfully!</div>';
             }
         }
-        echo $message;
-        echo $error;
+        if (isset($_GET['err'])) {
+            echo '<div class="bg-red-100 border-l-4 border-red-500 text-red-700 px-4 py-3 rounded-xl text-sm mb-4">
+                <i class="fas fa-exclamation-circle mr-2"></i> ' . htmlspecialchars($_GET['err']) . '</div>';
+        }
         ?>
 
         <form method="POST" enctype="multipart/form-data" class="space-y-4" id="claimForm">

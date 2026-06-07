@@ -7,26 +7,24 @@ $user_id = $_SESSION['user_id'];
 
 // Handle image upload
 if (isset($_POST['upload_photo'])) {
-    $caption = mysqli_real_escape_string($conn, $_POST['caption']);
-    $activity_date = $_POST['activity_date'];
-    
-    $target_dir = "../uploads/gallery/";
-    if (!is_dir($target_dir)) {
-        mkdir($target_dir, 0777, true);
-    }
-    
-    $image_name = time() . '_' . basename($_FILES['photo']['name']);
+    $caption       = mysqli_real_escape_string($conn, $_POST['caption']);
+    $activity_date = mysqli_real_escape_string($conn, $_POST['activity_date']);
+    $target_dir    = "../uploads/gallery/";
+    if (!is_dir($target_dir)) mkdir($target_dir, 0777, true);
+    $image_name  = time() . '_' . basename($_FILES['photo']['name']);
     $target_file = $target_dir . $image_name;
-    
     if (move_uploaded_file($_FILES['photo']['tmp_name'], $target_file)) {
-        $query = "INSERT INTO gallery (employee_id, image_path, caption, activity_date) 
-                  VALUES ($user_id, '$image_name', '$caption', '$activity_date')";
-        mysqli_query($conn, $query);
-        $success = "Photo uploaded successfully!";
+        mysqli_query($conn, "INSERT INTO gallery (employee_id, image_path, caption, activity_date)
+            VALUES ($user_id, '$image_name', '$caption', '$activity_date')");
+        header('Location: gallery.php?msg=' . urlencode('Photo uploaded successfully!')); exit();
     } else {
-        $error = "Error uploading photo.";
+        header('Location: gallery.php?err=' . urlencode('Error uploading photo. Please try again.')); exit();
     }
 }
+
+// Flash messages
+$success = htmlspecialchars($_GET['msg'] ?? '');
+$error   = htmlspecialchars($_GET['err'] ?? '');
 
 // Get all gallery images
 $gallery = mysqli_query($conn, "SELECT g.*, e.name, e.employee_id 

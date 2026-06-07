@@ -7,19 +7,19 @@ $user_id = $_SESSION['user_id'];
 
 // Handle asset request
 if (isset($_POST['request_asset'])) {
-    $asset_id = intval($_POST['asset_id']);
-    $purpose = mysqli_real_escape_string($conn, $_POST['purpose']);
-    $start_date = mysqli_real_escape_string($conn, $_POST['start_date']);
-    $end_date = mysqli_real_escape_string($conn, $_POST['end_date']);
+    $asset_id           = intval($_POST['asset_id']);
+    $purpose            = mysqli_real_escape_string($conn, $_POST['purpose']);
+    $start_date         = mysqli_real_escape_string($conn, $_POST['start_date']);
+    $end_date           = mysqli_real_escape_string($conn, $_POST['end_date']);
     $quantity_requested = intval($_POST['quantity_requested']);
-    
-    $query = "INSERT INTO asset_requests (employee_id, asset_id, purpose, start_date, end_date, request_date, quantity) 
-              VALUES ($user_id, $asset_id, '$purpose', '$start_date', '$end_date', CURDATE(), $quantity_requested)";
-    mysqli_query($conn, $query);
-    $success = '<div class="bg-gradient-to-r from-green-50 to-emerald-50 border-l-4 border-green-500 text-green-700 px-4 py-3 rounded-xl text-sm animate-fadeIn">
-                    <i class="fas fa-check-circle mr-2"></i> ✓ Asset request submitted successfully!
-                </div>';
+    mysqli_query($conn, "INSERT INTO asset_requests (employee_id, asset_id, purpose, start_date, end_date, request_date, quantity)
+        VALUES ($user_id, $asset_id, '$purpose', '$start_date', '$end_date', CURDATE(), $quantity_requested)");
+    header('Location: assets.php?msg=' . urlencode('Asset request submitted successfully!')); exit();
 }
+
+// Flash messages
+$_m    = htmlspecialchars($_GET['msg'] ?? '');
+$success = $_m ? '<div class="bg-gradient-to-r from-green-50 to-emerald-50 border-l-4 border-green-500 text-green-700 px-4 py-3 rounded-xl text-sm animate-fadeIn"><i class="fas fa-check-circle mr-2"></i> ✓ ' . $_m . '</div>' : '';
 
 // Search functionality
 $search = isset($_GET['search']) ? $_GET['search'] : '';

@@ -6,8 +6,6 @@ require_once '../includes/functions.php';
 require_once '../includes/toast_fn.php';
 
 $user_id = $_SESSION['user_id'];
-$message = '';
-$error = '';
 $edit_mode = false;
 $edit_leave_id = 0;
 
@@ -31,69 +29,49 @@ if (isset($_GET['edit'])) {
 // HANDLE UPDATE LEAVE
 // ========================================
 if (isset($_POST['update_leave'])) {
-    $leave_id = (int)$_POST['leave_id'];
+    $leave_id   = (int)$_POST['leave_id'];
     $leave_type = mysqli_real_escape_string($conn, $_POST['leave_type']);
-    $half_day = mysqli_real_escape_string($conn, $_POST['half_day']);
+    $half_day   = mysqli_real_escape_string($conn, $_POST['half_day']);
     $start_date = mysqli_real_escape_string($conn, $_POST['start_date']);
-    $end_date = mysqli_real_escape_string($conn, $_POST['end_date']);
-    $reason = mysqli_real_escape_string($conn, $_POST['reason']);
+    $end_date   = mysqli_real_escape_string($conn, $_POST['end_date']);
+    $reason     = mysqli_real_escape_string($conn, $_POST['reason']);
 
     if ($leave_type === 'HD' && $half_day === 'none') {
         $half_day = isset($_POST['half_day_choice']) ? mysqli_real_escape_string($conn, $_POST['half_day_choice']) : 'first_half';
     }
-
-    // Calculate total days — Half Day (HD) has no balance deduction
-    if ($leave_type === 'HD') {
-        $total_days = 0;
-        $end_date = $start_date;
-    } elseif ($half_day != 'none') {
-        $total_days = 0;
-        $end_date = $start_date;
+    if ($leave_type === 'HD' || $half_day != 'none') {
+        $total_days = 0; $end_date = $start_date;
     } else {
         $total_days = (strtotime($end_date) - strtotime($start_date)) / 86400 + 1;
     }
-    
-    // Check if leave is still pending
-    $check_query = mysqli_query($conn, "SELECT id FROM leaves WHERE id = $leave_id AND employee_id = $user_id AND status = 'pending'");
+
+    $check_query = mysqli_query($conn, "SELECT id FROM leaves WHERE id=$leave_id AND employee_id=$user_id AND status='pending'");
     if (mysqli_num_rows($check_query) > 0) {
-        $update_query = "UPDATE leaves SET 
-                            leave_type = '$leave_type', 
-                            half_day = '$half_day',
-                            start_date = '$start_date', 
-                            end_date = '$end_date', 
-                            total_days = $total_days,
-                            reason = '$reason'
-                         WHERE id = $leave_id";
-        
-        if (mysqli_query($conn, $update_query)) {
-            // Handle new attachment if uploaded
+        if (mysqli_query($conn, "UPDATE leaves SET leave_type='$leave_type', half_day='$half_day', start_date='$start_date', end_date='$end_date', total_days=$total_days, reason='$reason' WHERE id=$leave_id")) {
             if (isset($_FILES['attachment']) && $_FILES['attachment']['error'] == 0) {
-                $allowed_attach_ext  = ['jpg', 'jpeg', 'png', 'pdf', 'doc', 'docx'];
-                $allowed_attach_mime = ['image/jpeg', 'image/png', 'application/pdf',
-                                        'application/msword',
+                $allowed_attach_ext  = ['jpg','jpeg','png','pdf','doc','docx'];
+                $allowed_attach_mime = ['image/jpeg','image/png','application/pdf','application/msword',
                                         'application/vnd.openxmlformats-officedocument.wordprocessingml.document'];
                 $attach_ext  = strtolower(pathinfo($_FILES['attachment']['name'], PATHINFO_EXTENSION));
                 $attach_mime = mime_content_type($_FILES['attachment']['tmp_name']);
                 if (in_array($attach_ext, $allowed_attach_ext) && in_array($attach_mime, $allowed_attach_mime)) {
                     $target_dir = "../uploads/";
                     if (!is_dir($target_dir)) mkdir($target_dir, 0777, true);
-
-                    $old_attach = mysqli_fetch_assoc(mysqli_query($conn, "SELECT attachment FROM leaves WHERE id = $leave_id"));
+                    $old_attach = mysqli_fetch_assoc(mysqli_query($conn, "SELECT attachment FROM leaves WHERE id=$leave_id"));
                     if (!empty($old_attach['attachment']) && file_exists($target_dir . $old_attach['attachment'])) {
                         unlink($target_dir . $old_attach['attachment']);
                     }
-
                     $attachment = time() . '_' . basename($_FILES['attachment']['name']);
                     move_uploaded_file($_FILES['attachment']['tmp_name'], $target_dir . $attachment);
-                    mysqli_query($conn, "UPDATE leaves SET attachment = '$attachment' WHERE id = $leave_id");
+                    mysqli_query($conn, "UPDATE leaves SET attachment='$attachment' WHERE id=$leave_id");
                 }
             }
-            
-            $message = '<div class="bg-green-100 border border-green-200 text-green-700 px-4 py-3 rounded-xl text-sm">✓ Leave application updated successfully!</div>';
-            $edit_mode = false;
+            header('Location: leave.php?msg=' . urlencode('Leave application updated successfully!')); exit();
         } else {
-            $error = '<div class="bg-red-100 border border-red-200 text-red-700 px-4 py-3 rounded-xl text-sm">✗ Error updating leave application.</div>';
+            header('Location: leave.php?err=' . urlencode('Error updating leave application.')); exit();
         }
+    } else {
+        header('Location: leave.php?err=' . urlencode('Cannot update a leave that is no longer pending.')); exit();
     }
 }
 
@@ -101,23 +79,18 @@ if (isset($_POST['update_leave'])) {
 // HANDLE DELETE LEAVE
 // ========================================
 if (isset($_GET['delete'])) {
-    $leave_id = (int)$_GET['delete'];
-    
-    // Check if leave is pending
-    $check_query = mysqli_query($conn, "SELECT attachment FROM leaves WHERE id = $leave_id AND employee_id = $user_id AND status = 'pending'");
+    $leave_id    = (int)$_GET['delete'];
+    $check_query = mysqli_query($conn, "SELECT attachment FROM leaves WHERE id=$leave_id AND employee_id=$user_id AND status='pending'");
     if (mysqli_num_rows($check_query) > 0) {
         $leave_data = mysqli_fetch_assoc($check_query);
-        // Delete attachment file if exists
         if (!empty($leave_data['attachment'])) {
-            $file_path = "../uploads/" . $leave_data['attachment'];
-            if (file_exists($file_path)) {
-                unlink($file_path);
-            }
+            $fp = "../uploads/" . $leave_data['attachment'];
+            if (file_exists($fp)) unlink($fp);
         }
-        mysqli_query($conn, "DELETE FROM leaves WHERE id = $leave_id");
-        $message = '<div class="bg-green-100 border border-green-200 text-green-700 px-4 py-3 rounded-xl text-sm">✓ Leave application deleted successfully!</div>';
+        mysqli_query($conn, "DELETE FROM leaves WHERE id=$leave_id");
+        header('Location: leave.php?msg=' . urlencode('Leave application deleted successfully!')); exit();
     } else {
-        $error = '<div class="bg-red-100 border border-red-200 text-red-700 px-4 py-3 rounded-xl text-sm">✗ Cannot delete leave that is already processed.</div>';
+        header('Location: leave.php?err=' . urlencode('Cannot delete leave that is already processed.')); exit();
     }
 }
 
@@ -146,65 +119,61 @@ $leave_types = mysqli_query($conn, "SELECT * FROM leave_types WHERE status = 'ac
 
 // Handle new leave submission
 if (isset($_POST['apply_leave']) && !$edit_mode) {
-    $leave_type = mysqli_real_escape_string($conn, $_POST['leave_type']);
-    $lt_intern = mysqli_fetch_assoc(mysqli_query($conn, "SELECT leave_name FROM leave_types WHERE leave_code = '$leave_type'"));
+    $leave_type     = mysqli_real_escape_string($conn, $_POST['leave_type']);
+    $lt_intern      = mysqli_fetch_assoc(mysqli_query($conn, "SELECT leave_name FROM leave_types WHERE leave_code='$leave_type'"));
     $lt_intern_name = $lt_intern ? strtolower($lt_intern['leave_name']) : strtolower($leave_type);
+
     if ($is_intern && !str_contains($lt_intern_name, 'unpaid')) {
-        $error = '<div class="bg-red-100 border border-red-200 text-red-700 px-4 py-3 rounded-xl text-sm">✗ Interns can only apply for Unpaid Leave.</div>';
+        header('Location: leave.php?err=' . urlencode('Interns can only apply for Unpaid Leave.')); exit();
+    }
+
+    $half_day   = mysqli_real_escape_string($conn, $_POST['half_day']);
+    $start_date = mysqli_real_escape_string($conn, $_POST['start_date']);
+    $end_date   = mysqli_real_escape_string($conn, $_POST['end_date']);
+    $reason     = mysqli_real_escape_string($conn, $_POST['reason']);
+
+    if ($leave_type === 'HD' && $half_day === 'none') {
+        $half_day = isset($_POST['half_day_choice']) ? mysqli_real_escape_string($conn, $_POST['half_day_choice']) : 'first_half';
+    }
+
+    if ($leave_type === 'HD' || $half_day != 'none') {
+        $total_days = 0;
+        $end_date   = $start_date;
     } else {
-        $half_day   = mysqli_real_escape_string($conn, $_POST['half_day']);
-        $start_date = mysqli_real_escape_string($conn, $_POST['start_date']);
-        $end_date   = mysqli_real_escape_string($conn, $_POST['end_date']);
-        $reason     = mysqli_real_escape_string($conn, $_POST['reason']);
-
-        // If HD type but half_day not set (JS failed), default to first_half
-        if ($leave_type === 'HD' && $half_day === 'none') {
-            $half_day = isset($_POST['half_day_choice']) ? mysqli_real_escape_string($conn, $_POST['half_day_choice']) : 'first_half';
+        if (strtotime($end_date) < strtotime($start_date)) {
+            header('Location: leave.php?err=' . urlencode('End date cannot be before start date.')); exit();
         }
+        $total_days = (strtotime($end_date) - strtotime($start_date)) / 86400 + 1;
+    }
 
-        // Half Day (HD) — no balance deduction, just one date
-        if ($leave_type === 'HD' || $half_day != 'none') {
-            $total_days = 0;
-            $end_date   = $start_date;
-        } else {
-            // Validate end_date >= start_date
-            if (strtotime($end_date) < strtotime($start_date)) {
-                $error = '<div class="bg-red-100 border border-red-200 text-red-700 px-4 py-3 rounded-xl text-sm">✗ End date cannot be before start date.</div>';
-                $total_days = 0;
-            } else {
-                $total_days = (strtotime($end_date) - strtotime($start_date)) / 86400 + 1;
-            }
-        }
+    $attachment          = '';
+    $type_data           = mysqli_fetch_assoc(mysqli_query($conn, "SELECT requires_attachment FROM leave_types WHERE leave_code='$leave_type'"));
+    $requires_attachment = $type_data ? $type_data['requires_attachment'] : 0;
 
-        if (empty($error)) {
-            $attachment = '';
-            $type_query = mysqli_query($conn, "SELECT requires_attachment FROM leave_types WHERE leave_code = '$leave_type'");
-            $type_data  = mysqli_fetch_assoc($type_query);
-            $requires_attachment = $type_data ? $type_data['requires_attachment'] : 0;
+    if (isset($_FILES['attachment']) && $_FILES['attachment']['error'] == 0) {
+        $target_dir = "../uploads/";
+        if (!is_dir($target_dir)) mkdir($target_dir, 0777, true);
+        $attachment = time() . '_' . basename($_FILES['attachment']['name']);
+        move_uploaded_file($_FILES['attachment']['tmp_name'], $target_dir . $attachment);
+    } elseif ($requires_attachment) {
+        header('Location: leave.php?err=' . urlencode('This leave type requires an attachment (e.g., Medical Certificate).')); exit();
+    }
 
-            if (isset($_FILES['attachment']) && $_FILES['attachment']['error'] == 0) {
-                $target_dir = "../uploads/";
-                if (!is_dir($target_dir)) mkdir($target_dir, 0777, true);
-                $attachment = time() . '_' . basename($_FILES['attachment']['name']);
-                move_uploaded_file($_FILES['attachment']['tmp_name'], $target_dir . $attachment);
-            } elseif ($requires_attachment) {
-                $message = '<div class="bg-red-100 border border-red-200 text-red-700 px-4 py-3 rounded-xl text-sm">✗ This leave type requires an attachment (e.g., Medical Certificate).</div>';
-            }
-
-            if (empty($message)) {
-                $query = "INSERT INTO leaves (employee_id, leave_type, half_day, start_date, end_date, total_days, reason, attachment)
-                          VALUES ($user_id, '$leave_type', '$half_day', '$start_date', '$end_date', $total_days, '$reason', '$attachment')";
-                if (mysqli_query($conn, $query)) {
-                    $message = '<div class="bg-green-100 border border-green-200 text-green-700 px-4 py-3 rounded-xl text-sm">✓ Leave application submitted successfully!</div>';
-                } else {
-                    $message = '<div class="bg-red-100 border border-red-200 text-red-700 px-4 py-3 rounded-xl text-sm">✗ Error submitting leave application.</div>';
-                }
-            }
-        }
+    if (mysqli_query($conn, "INSERT INTO leaves (employee_id, leave_type, half_day, start_date, end_date, total_days, reason, attachment)
+            VALUES ($user_id, '$leave_type', '$half_day', '$start_date', '$end_date', $total_days, '$reason', '$attachment')")) {
+        header('Location: leave.php?msg=' . urlencode('Leave application submitted successfully!')); exit();
+    } else {
+        header('Location: leave.php?err=' . urlencode('Error submitting leave application. Please try again.')); exit();
     }
 }
 
 $balance = getLeaveBalance($user_id);
+
+// Flash messages from redirect
+$_m     = htmlspecialchars($_GET['msg'] ?? '');
+$_e     = htmlspecialchars($_GET['err'] ?? '');
+$message = $_m ? '<div class="bg-green-100 border border-green-200 text-green-700 px-4 py-3 rounded-xl text-sm">✓ ' . $_m . '</div>' : '';
+$error   = $_e ? '<div class="bg-red-100 border border-red-200 text-red-700 px-4 py-3 rounded-xl text-sm">✗ ' . $_e . '</div>' : '';
 ?>
 <!DOCTYPE html>
 <html lang="en">

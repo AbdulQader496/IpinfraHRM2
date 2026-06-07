@@ -4,8 +4,6 @@ redirectIfNotLoggedIn();
 require_once '../includes/db.php';
 
 $user_id = $_SESSION['user_id'];
-$message = '';
-$error = '';
 
 $query = "SELECT * FROM employees WHERE id = $user_id";
 $result = mysqli_query($conn, $query);
@@ -17,50 +15,44 @@ if (isset($_POST['update'])) {
     $address      = mysqli_real_escape_string($conn, $_POST['address']);
     $bank_name    = mysqli_real_escape_string($conn, $_POST['bank_name']);
     $bank_account = mysqli_real_escape_string($conn, $_POST['bank_account']);
-    
-    // Handle profile picture upload
-    $profile_pic = $employee['profile_pic'];
+    $profile_pic  = $employee['profile_pic'];
     if (isset($_FILES['profile_pic']) && $_FILES['profile_pic']['error'] == 0) {
         $target_dir = "../uploads/profiles/";
-        if (!is_dir($target_dir)) {
-            mkdir($target_dir, 0777, true);
-        }
+        if (!is_dir($target_dir)) mkdir($target_dir, 0777, true);
         $file_extension = pathinfo($_FILES['profile_pic']['name'], PATHINFO_EXTENSION);
         $profile_pic = time() . '_' . $employee['employee_id'] . '.' . $file_extension;
         move_uploaded_file($_FILES['profile_pic']['tmp_name'], $target_dir . $profile_pic);
     }
-    
-    $update = "UPDATE employees SET phone='$phone', address='$address', bank_name='$bank_name', bank_account='$bank_account', profile_pic='$profile_pic' WHERE id=$user_id";
-    if (mysqli_query($conn, $update)) {
-        $message = '<div class="bg-green-100 border border-green-200 text-green-700 px-4 py-3 rounded-xl text-sm">✓ Profile updated successfully!</div>';
-        // Refresh employee data
-        $result = mysqli_query($conn, $query);
-        $employee = mysqli_fetch_assoc($result);
-    }
+    mysqli_query($conn, "UPDATE employees SET phone='$phone', address='$address', bank_name='$bank_name', bank_account='$bank_account', profile_pic='$profile_pic' WHERE id=$user_id");
+    header('Location: profile.php?msg=' . urlencode('Profile updated successfully!')); exit();
 }
 
 // Change Password
 if (isset($_POST['change_password'])) {
     $current_password = $_POST['current_password'];
-    $new_password = $_POST['new_password'];
+    $new_password     = $_POST['new_password'];
     $confirm_password = $_POST['confirm_password'];
-    
     if ($employee['password'] != $current_password) {
-        $error = '<div class="bg-red-100 border border-red-200 text-red-700 px-4 py-3 rounded-xl text-sm">✗ Current password is incorrect!</div>';
+        header('Location: profile.php?err=' . urlencode('Current password is incorrect.')); exit();
     } elseif (strlen($new_password) < 6) {
-        $error = '<div class="bg-red-100 border border-red-200 text-red-700 px-4 py-3 rounded-xl text-sm">✗ New password must be at least 6 characters!</div>';
+        header('Location: profile.php?err=' . urlencode('New password must be at least 6 characters.')); exit();
     } elseif ($new_password != $confirm_password) {
-        $error = '<div class="bg-red-100 border border-red-200 text-red-700 px-4 py-3 rounded-xl text-sm">✗ New password and confirm password do not match!</div>';
+        header('Location: profile.php?err=' . urlencode('New password and confirm password do not match.')); exit();
     } else {
-        $new_password    = mysqli_real_escape_string($conn, $new_password);
-        $update_password = "UPDATE employees SET password='$new_password' WHERE id=$user_id";
-        if (mysqli_query($conn, $update_password)) {
-            $message = '<div class="bg-green-100 border border-green-200 text-green-700 px-4 py-3 rounded-xl text-sm">✓ Password changed successfully!</div>';
+        $new_password = mysqli_real_escape_string($conn, $new_password);
+        if (mysqli_query($conn, "UPDATE employees SET password='$new_password' WHERE id=$user_id")) {
+            header('Location: profile.php?msg=' . urlencode('Password changed successfully!')); exit();
         } else {
-            $error = '<div class="bg-red-100 border border-red-200 text-red-700 px-4 py-3 rounded-xl text-sm">✗ Error changing password. Please try again.</div>';
+            header('Location: profile.php?err=' . urlencode('Error changing password. Please try again.')); exit();
         }
     }
 }
+
+// Flash messages from redirect
+$_m = htmlspecialchars($_GET['msg'] ?? '');
+$_e = htmlspecialchars($_GET['err'] ?? '');
+$message = $_m ? '<div class="bg-green-100 border border-green-200 text-green-700 px-4 py-3 rounded-xl text-sm">✓ ' . $_m . '</div>' : '';
+$error   = $_e ? '<div class="bg-red-100 border border-red-200 text-red-700 px-4 py-3 rounded-xl text-sm">✗ ' . $_e . '</div>' : '';
 
 $profile_pic_path = "../uploads/profiles/" . $employee['profile_pic'];
 $has_profile_pic = !empty($employee['profile_pic']) && file_exists($profile_pic_path);

@@ -78,6 +78,7 @@ if (isset($_POST['bulk_action']) && !empty($_POST['ids'])) {
     while ($br = mysqli_fetch_assoc($bulk_rows)) {
         mysqli_query($conn, "UPDATE claims SET status='$bulk_status', reviewed_at=NOW() WHERE id={$br['id']}");
         addNotification($br['employee_id'], 'Claim ' . ucfirst($bulk_status), 'Your claim has been ' . $bulk_status . '.');
+        logAction($bulk_action, 'Claim ' . $bulk_status . ' for employee #' . $br['employee_id'], $br['id'], 'claim');
         $affected++;
     }
 
@@ -104,6 +105,7 @@ if (isset($_GET['action']) && isset($_GET['act'])) {
     $claim = mysqli_fetch_assoc(mysqli_query($conn, "SELECT employee_id FROM claims WHERE id=$id"));
     if ($claim) {
         addNotification($claim['employee_id'], 'Claim ' . ucfirst($status), 'Your claim has been ' . $status);
+        logAction($action, 'Claim ' . $status . ' for employee #' . $claim['employee_id'], $id, 'claim');
     }
 
     if ($status === 'approved') {

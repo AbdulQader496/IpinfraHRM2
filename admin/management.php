@@ -51,6 +51,7 @@ if (isset($_POST['add_warning'])) {
     $type_labels = ['verbal'=>'Verbal Warning','written'=>'Written Warning','final'=>'Final Warning','suspension'=>'Suspension','counselling'=>'Counselling'];
     $label = $type_labels[$_POST['warning_type']] ?? 'Warning';
     addNotification($employee_id, $label . ' Issued', 'You have received a ' . strtolower($label) . ': ' . $_POST['subject']);
+    logAction('create', $label . ' issued to employee #' . $employee_id . ': ' . $_POST['subject'], mysqli_insert_id($conn), 'warning');
     header('Location: management.php?tab=warnings');
     exit();
 }
@@ -60,7 +61,9 @@ if (isset($_POST['add_warning'])) {
 // ========================================
 if (isset($_GET['delete_warning'])) {
     $id = intval($_GET['delete_warning']);
+    $warn = mysqli_fetch_assoc(mysqli_query($conn, "SELECT employee_id, subject FROM employee_warnings WHERE id=$id"));
     mysqli_query($conn, "DELETE FROM employee_warnings WHERE id=$id");
+    logAction('delete', 'Warning record deleted: ' . ($warn['subject'] ?? 'Unknown') . ' for employee #' . ($warn['employee_id'] ?? ''), $id, 'warning');
     header('Location: management.php?tab=warnings');
     exit();
 }

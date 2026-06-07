@@ -2,18 +2,22 @@
 require_once '../includes/auth.php';
 redirectIfNotAdmin();
 require_once '../includes/db.php';
+require_once '../includes/functions.php';
 
 if (isset($_POST['add_holiday'])) {
     $date = mysqli_real_escape_string($conn, $_POST['holiday_date']);
     $name = mysqli_real_escape_string($conn, $_POST['holiday_name']);
     mysqli_query($conn, "INSERT INTO holidays (holiday_date, holiday_name) VALUES ('$date', '$name')");
+    logAction('create', 'Holiday added: ' . $_POST['holiday_name'] . ' on ' . $_POST['holiday_date'], mysqli_insert_id($conn), 'holiday');
     header('Location: holidays.php');
     exit();
 }
 
 if (isset($_GET['delete'])) {
     $id = intval($_GET['delete']);
+    $hol = mysqli_fetch_assoc(mysqli_query($conn, "SELECT holiday_name, holiday_date FROM holidays WHERE id=$id"));
     mysqli_query($conn, "DELETE FROM holidays WHERE id = $id");
+    logAction('delete', 'Holiday deleted: ' . ($hol['holiday_name'] ?? 'Unknown') . ' (' . ($hol['holiday_date'] ?? '') . ')', $id, 'holiday');
     header('Location: holidays.php');
     exit();
 }

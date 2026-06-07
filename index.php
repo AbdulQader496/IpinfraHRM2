@@ -1,6 +1,7 @@
 <?php
 session_start();
 require_once 'includes/db.php';
+require_once 'includes/functions.php';
 
 // Check if user has remember me cookie
 if (!isset($_SESSION['user_id']) && isset($_COOKIE['remember_token'])) {
@@ -47,6 +48,7 @@ if (isset($_POST['login'])) {
             setcookie('remember_token', $token, time() + (86400 * 30), "/", "", $secure, true);
         }
         
+        logAction('login', 'User logged in: ' . $user['name'] . ' (' . $user['email'] . ')', $user['id'], 'employee');
         if ($user['role'] == 'admin') {
             header('Location: admin/dashboard.php');
         } else {

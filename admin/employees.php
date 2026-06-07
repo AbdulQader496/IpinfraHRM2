@@ -2,6 +2,7 @@
 require_once '../includes/auth.php';
 redirectIfNotAdmin();
 require_once '../includes/db.php';
+require_once '../includes/functions.php';
 require_once '../includes/toast_fn.php';
 
 // Handle Add Employee
@@ -50,6 +51,7 @@ if (isset($_POST['add_employee'])) {
         $query = "INSERT INTO employees (employee_id, name, ic_number, passport_no, nationality, email, password, department, position, basic_salary, join_date, profile_pic, is_subject_to_statutory, phone, address, bank_name, bank_account, employee_type)
                   VALUES ('$employee_id', '$name', '$ic_number', '$passport_no', '$nationality', '$email', '$password', '$department', '$position', '$basic_salary', '$join_date', '$profile_pic', '$is_subject', '$phone', '$address', '$bank_name', '$bank_account', '$employee_type')";
         mysqli_query($conn, $query);
+        logAction('create', 'New employee added: ' . $_POST['name'] . ' (' . $_POST['employee_id'] . ')', mysqli_insert_id($conn), 'employee');
         header('Location: employees.php');
         exit();
     }
@@ -113,6 +115,7 @@ if (isset($_POST['update_employee'])) {
                 employee_type='$employee_type'
               WHERE id=$id";
     mysqli_query($conn, $query);
+    logAction('update', 'Employee record updated: ' . $_POST['name'] . ' (ID ' . $id . ')', $id, 'employee');
     header('Location: employees.php');
     exit();
 }
@@ -120,7 +123,9 @@ if (isset($_POST['update_employee'])) {
 // Handle Delete
 if (isset($_GET['delete'])) {
     $id = intval($_GET['delete']);
+    $del_emp = mysqli_fetch_assoc(mysqli_query($conn, "SELECT name, employee_id FROM employees WHERE id=$id"));
     mysqli_query($conn, "DELETE FROM employees WHERE id = $id");
+    logAction('delete', 'Employee deleted: ' . ($del_emp['name'] ?? 'Unknown') . ' (' . ($del_emp['employee_id'] ?? '') . ')', $id, 'employee');
     header('Location: employees.php');
     exit();
 }

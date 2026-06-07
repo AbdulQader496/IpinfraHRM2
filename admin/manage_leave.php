@@ -167,8 +167,10 @@ if (isset($_POST['bulk_leave_action']) && !empty($_POST['ids'])) {
                 if ($deduct > 0) mysqli_query($conn, "UPDATE employees SET used_medical_leave = used_medical_leave + $deduct WHERE id = {$br['employee_id']}");
             }
             addNotification($br['employee_id'], 'Leave Approved', 'Your ' . $br['leave_type'] . ' leave has been approved.');
+            logAction('approve', 'Leave approved: ' . $br['leave_type'] . ' for employee #' . $br['employee_id'] . ' (' . $br['start_date'] . ' – ' . $br['end_date'] . ')', $br['id'], 'leave');
         } else {
             addNotification($br['employee_id'], 'Leave Rejected', 'Your ' . $br['leave_type'] . ' leave has been rejected.');
+            logAction('reject', 'Leave rejected: ' . $br['leave_type'] . ' for employee #' . $br['employee_id'], $br['id'], 'leave');
         }
         $affected++;
     }
@@ -213,9 +215,11 @@ if (isset($_GET['action']) && isset($_GET['id'])) {
                 if ($deduct > 0) mysqli_query($conn, "UPDATE employees SET used_medical_leave = used_medical_leave + $deduct WHERE id = {$leave['employee_id']}");
             }
             addNotification($leave['employee_id'], 'Leave Approved', 'Your ' . $leave['leave_type'] . ' leave has been approved.');
+            logAction('approve', 'Leave approved: ' . $leave['leave_type'] . ' for employee #' . $leave['employee_id'] . ' (' . $leave['start_date'] . ' – ' . $leave['end_date'] . ')', $id, 'leave');
             showToast('Leave application approved successfully.', 'success');
         } else {
             addNotification($leave['employee_id'], 'Leave Rejected', 'Your ' . $leave['leave_type'] . ' leave has been rejected.');
+            logAction('reject', 'Leave rejected: ' . $leave['leave_type'] . ' for employee #' . $leave['employee_id'], $id, 'leave');
             showToast('Leave application rejected.', 'warning');
         }
     }

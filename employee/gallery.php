@@ -233,8 +233,18 @@ while ($r = mysqli_fetch_assoc($gallery)) $photos[] = $r;
                     </span>
                     <span><?php echo date('d M Y', strtotime($photo['activity_date'])); ?></span>
                 </div>
+                <!-- Download — visible to everyone -->
+                <?php if (file_exists($img_path)): ?>
+                <div class="mt-3 pt-3 border-t border-gray-100">
+                    <a href="../uploads/gallery/<?php echo htmlspecialchars($photo['image_path']); ?>"
+                       download="<?php echo htmlspecialchars($photo['name'] . '_' . date('d-M-Y', strtotime($photo['activity_date'])) . '.' . pathinfo($photo['image_path'], PATHINFO_EXTENSION)); ?>"
+                       class="flex items-center justify-center gap-1.5 py-1.5 rounded-lg bg-green-50 hover:bg-green-100 text-green-600 text-xs font-semibold transition w-full">
+                        <i class="fas fa-download text-[11px]"></i>Download
+                    </a>
+                </div>
+                <?php endif; ?>
                 <?php if ($is_owner): ?>
-                <div class="flex gap-2 mt-3 pt-3 border-t border-gray-100">
+                <div class="flex gap-2 mt-2">
                     <button onclick='openEditModal(<?php echo json_encode([
                         "id"            => $photo["id"],
                         "caption"       => $photo["caption"],

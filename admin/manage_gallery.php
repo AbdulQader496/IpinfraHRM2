@@ -131,6 +131,8 @@ $gallery = mysqli_query($conn, "SELECT g.*, e.name, e.employee_id
 </div>
 
 <div id="overlay" class="fixed inset-0 bg-black/50 z-40 hidden" onclick="toggleSidebar()"></div>
+<?php require_once '../includes/global_ui.php'; ?>
+<?php require_once '../includes/confirm_modal.php'; ?>
 
     <!-- Main Content -->
     <div class="px-4 py-6 pb-24 max-w-7xl mx-auto">
@@ -182,13 +184,20 @@ $gallery = mysqli_query($conn, "SELECT g.*, e.name, e.employee_id
                         <span><i class="fas fa-user mr-1"></i> <?php echo $photo['name']; ?></span>
                         <span><i class="fas fa-calendar mr-1"></i> <?php echo date('d M Y', strtotime($photo['activity_date'])); ?></span>
                     </div>
+                    <?php if (file_exists($image_path)): ?>
+                    <a href="../uploads/gallery/<?php echo htmlspecialchars($photo['image_path']); ?>"
+                       download="<?php echo htmlspecialchars($photo['name'] . '_' . date('d-M-Y', strtotime($photo['activity_date'])) . '.' . pathinfo($photo['image_path'], PATHINFO_EXTENSION)); ?>"
+                       class="flex items-center justify-center gap-1.5 w-full bg-green-50 hover:bg-green-100 text-green-600 border border-green-200 px-3 py-1.5 rounded-lg text-xs font-semibold mb-2 transition">
+                        <i class="fas fa-download"></i>Download
+                    </a>
+                    <?php endif; ?>
                     <div class="flex gap-2">
-                        <a href="?toggle=1&id=<?php echo $photo['id']; ?>&status=<?php echo $photo['status']; ?>" 
+                        <a href="?toggle=1&id=<?php echo $photo['id']; ?>&status=<?php echo $photo['status']; ?>"
                            class="flex-1 text-center <?php echo $photo['status'] == 'active' ? 'bg-yellow-500 hover:bg-yellow-600' : 'bg-green-500 hover:bg-green-600'; ?> text-white px-3 py-1 rounded-lg text-xs">
                             <?php echo $photo['status'] == 'active' ? 'Hide' : 'Show'; ?>
                         </a>
-                        <a href="?delete=<?php echo $photo['id']; ?>" 
-                           data-confirm="Delete this photo permanently?" data-confirm-title="Delete Photo" 
+                        <a href="?delete=<?php echo $photo['id']; ?>"
+                           data-confirm="Delete this photo permanently?" data-confirm-title="Delete Photo"
                            class="flex-1 text-center bg-red-500 hover:bg-red-600 text-white px-3 py-1 rounded-lg text-xs">
                             Delete
                         </a>

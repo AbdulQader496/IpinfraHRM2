@@ -16,104 +16,105 @@ $_emp_nav = [
 
 $_sections = ['overview'=>'Overview','work'=>'Work','company'=>'Company','finance'=>'Finance','account'=>'Account'];
 
+// [icon-color, icon-bg] for light background
 $_ic = [
-    'fa-home'                => ['#93c5fd','rgba(147,197,253,.18)'],
-    'fa-clock'               => ['#67e8f9','rgba(103,232,249,.18)'],
-    'fa-calendar-check'      => ['#6ee7b7','rgba(110,231,183,.18)'],
-    'fa-receipt'             => ['#fcd34d','rgba(252,211,77,.18)'],
-    'fa-images'              => ['#f9a8d4','rgba(249,168,212,.18)'],
-    'fa-boxes'               => ['#fdba74','rgba(253,186,116,.18)'],
-    'fa-briefcase'           => ['#a5b4fc','rgba(165,180,252,.18)'],
-    'fa-file-invoice-dollar' => ['#86efac','rgba(134,239,172,.18)'],
-    'fa-calendar-alt'        => ['#fda4af','rgba(253,164,175,.18)'],
-    'fa-user-circle'         => ['#c4b5fd','rgba(196,181,253,.18)'],
+    'fa-home'                => ['#0284c7','#e0f2fe'],
+    'fa-clock'               => ['#0891b2','#cffafe'],
+    'fa-calendar-check'      => ['#059669','#d1fae5'],
+    'fa-receipt'             => ['#d97706','#fef3c7'],
+    'fa-images'              => ['#db2777','#fce7f3'],
+    'fa-boxes'               => ['#ea580c','#ffedd5'],
+    'fa-briefcase'           => ['#4f46e5','#e0e7ff'],
+    'fa-file-invoice-dollar' => ['#16a34a','#dcfce7'],
+    'fa-calendar-alt'        => ['#e11d48','#ffe4e6'],
+    'fa-user-circle'         => ['#7c3aed','#ede9fe'],
 ];
 $_ps = '';
 ?>
 <style>
-/* ── Page background ──────────────────────────────────── */
+/* ── Page background ─────────────────────────────────── */
 body {
-    background-color: #f0f5fb !important;
-    background-image:
-        radial-gradient(ellipse 65% 40% at 8% -5%,  rgba(14,165,233,.07) 0%, transparent 55%),
-        radial-gradient(ellipse 55% 35% at 90% 108%, rgba(6,182,212,.05)  0%, transparent 50%) !important;
+    background-color: #f3f6fb !important;
     min-height: 100vh;
 }
 :not(#esb) ::-webkit-scrollbar { width:5px; height:5px; }
 :not(#esb) ::-webkit-scrollbar-track { background:transparent; }
 :not(#esb) ::-webkit-scrollbar-thumb { background:#d1d5db; border-radius:4px; }
-:not(#esb) ::-webkit-scrollbar-thumb:hover { background:#9ca3af; }
 body.esb-open { overflow:hidden; }
 
-/* ── Employee Sidebar ─────────────────────────────────── */
+/* ── Employee Sidebar ────────────────────────────────── */
 #esb {
-    background: linear-gradient(175deg, #0b1e3d 0%, #0d2447 45%, #091b35 100%);
-    background-image:
-        radial-gradient(ellipse 200% 50% at 50% -8%, rgba(14,165,233,.42) 0%, transparent 55%),
-        radial-gradient(ellipse 100% 50% at 95% 85%, rgba(6,182,212,.18)  0%, transparent 50%),
-        linear-gradient(175deg, #0b1e3d 0%, #0d2447 45%, #091b35 100%);
-    border-right: 1px solid rgba(255,255,255,.1);
+    background: #ffffff;
+    border-right: 1px solid #e5e7eb;
 }
 #esb::-webkit-scrollbar { width:3px; }
 #esb::-webkit-scrollbar-track { background:transparent; }
-#esb::-webkit-scrollbar-thumb { background:rgba(125,211,252,.35); border-radius:3px; }
+#esb::-webkit-scrollbar-thumb { background:#bae6fd; border-radius:3px; }
 
 .esb-link {
-    display:flex; align-items:center; gap:.7rem;
-    padding:.72rem .85rem; border-radius:.75rem;
-    font-size:.825rem; font-weight:500; line-height:1;
-    text-decoration:none; transition:all .17s ease;
-    color:rgba(255,255,255,.55); border:1px solid transparent;
+    display:flex; align-items:center; gap:.65rem;
+    padding:.65rem .8rem; border-radius:.65rem;
+    font-size:.82rem; font-weight:500; line-height:1;
+    text-decoration:none; transition:all .15s ease;
+    color:#4b5563; border:1px solid transparent;
     min-height:2.75rem;
 }
-.esb-link:hover { background:rgba(255,255,255,.1); color:rgba(255,255,255,.9); }
+.esb-link:hover { background:#e0f2fe; color:#075985; }
 .esb-link.on {
-    background:rgba(14,165,233,.28);
-    border-color:rgba(125,211,252,.35);
-    color:#e0f2fe;
-    box-shadow:0 2px 20px rgba(14,165,233,.3), inset 0 1px 0 rgba(255,255,255,.12);
+    background:#0ea5e9;
+    color:#ffffff;
+    box-shadow: 0 4px 14px rgba(14,165,233,.3);
 }
-.esb-link.on .esb-ico { background:rgba(255,255,255,.2) !important; color:#e0f2fe !important; }
+.esb-link.on .esb-ico { background:rgba(255,255,255,.22) !important; color:#fff !important; }
 .esb-ico {
-    width:2rem; height:2rem; border-radius:.55rem;
+    width:1.9rem; height:1.9rem; border-radius:.5rem;
     display:flex; align-items:center; justify-content:center;
-    flex-shrink:0; font-size:.75rem; transition:all .17s;
+    flex-shrink:0; font-size:.72rem; transition:all .15s;
 }
-.esb-sec { display:flex; align-items:center; gap:.6rem; padding:.15rem .85rem .1rem; margin-top:.9rem; }
-.esb-sec:first-child { margin-top:.25rem; }
-.esb-sec-lbl { font-size:.62rem; font-weight:700; letter-spacing:.15em; text-transform:uppercase; color:rgba(255,255,255,.3); white-space:nowrap; }
-.esb-sec-line { flex:1; height:1px; background:rgba(255,255,255,.1); }
-.esb-close { width:2rem; height:2rem; border-radius:.5rem; border:none; cursor:pointer; background:none; display:flex; align-items:center; justify-content:center; color:rgba(255,255,255,.4); transition:all .15s; flex-shrink:0; }
-.esb-close:hover { background:rgba(255,255,255,.12); color:rgba(255,255,255,.85); }
+.esb-sec { display:flex; align-items:center; gap:.5rem; padding:.1rem .8rem; margin-top:.85rem; }
+.esb-sec:first-child { margin-top:.15rem; }
+.esb-sec-lbl { font-size:.6rem; font-weight:700; letter-spacing:.14em; text-transform:uppercase; color:#9ca3af; white-space:nowrap; }
+.esb-sec-line { flex:1; height:1px; background:#f3f4f6; }
+.esb-close {
+    width:2rem; height:2rem; border-radius:.5rem; border:none; cursor:pointer;
+    background:none; display:flex; align-items:center; justify-content:center;
+    color:rgba(255,255,255,.65); transition:all .15s; flex-shrink:0;
+}
+.esb-close:hover { background:rgba(255,255,255,.2); color:#fff; }
 </style>
 
-<div id="esb" class="fixed top-0 left-0 h-full z-50 -translate-x-full transition-[transform] duration-300 ease-out flex flex-col overflow-hidden" style="width:min(280px,85vw);font-family:'Inter',sans-serif;box-shadow:6px 0 40px rgba(0,0,0,.55)">
+<div id="esb" class="fixed top-0 left-0 h-full z-50 -translate-x-full transition-[transform] duration-300 ease-out flex flex-col overflow-hidden"
+     style="width:min(260px,78vw);font-family:'Inter',sans-serif;box-shadow:4px 0 24px rgba(0,0,0,.13)">
 
-    <!-- Brand -->
-    <div class="flex items-center gap-3 px-4 shrink-0" style="padding-top:20px;padding-bottom:18px;border-bottom:1px solid rgba(255,255,255,.1)">
-        <div class="flex items-center justify-center shrink-0" style="width:36px;height:36px;border-radius:10px;background:linear-gradient(135deg,#38bdf8,#0ea5e9);box-shadow:0 4px 18px rgba(14,165,233,.55)">
-            <span style="color:#fff;font-weight:900;font-size:.75rem;letter-spacing:-.02em">IN</span>
+    <!-- Brand strip -->
+    <div class="flex items-center gap-3 px-4 shrink-0"
+         style="padding-top:18px;padding-bottom:16px;background:linear-gradient(135deg,#0284c7,#0ea5e9);flex-shrink:0">
+        <div class="flex items-center justify-center shrink-0"
+             style="width:34px;height:34px;border-radius:9px;background:rgba(255,255,255,.2)">
+            <span style="color:#fff;font-weight:900;font-size:.75rem">IN</span>
         </div>
         <div class="flex-1 min-w-0">
-            <p style="color:#fff;font-weight:700;font-size:.85rem;letter-spacing:.01em;line-height:1">IPINFRA HRM</p>
-            <p style="font-size:.62rem;letter-spacing:.18em;color:#38bdf8;font-weight:700;text-transform:uppercase;margin-top:4px">Employee Portal</p>
+            <p style="color:#fff;font-weight:700;font-size:.82rem;line-height:1">IPINFRA HRM</p>
+            <p style="font-size:.6rem;color:rgba(255,255,255,.7);font-weight:600;letter-spacing:.15em;text-transform:uppercase;margin-top:3px">Employee Portal</p>
         </div>
-        <button class="esb-close" onclick="esbToggle()"><i class="fas fa-times" style="font-size:.8rem"></i></button>
+        <button class="esb-close" onclick="esbToggle()">
+            <i class="fas fa-times" style="font-size:.8rem"></i>
+        </button>
     </div>
 
     <!-- User card -->
-    <div class="mx-3 mt-3.5 mb-1 px-3 shrink-0" style="padding-top:11px;padding-bottom:11px;border-radius:12px;background:rgba(255,255,255,.08);border:1px solid rgba(255,255,255,.12)">
-        <div class="flex items-center gap-3">
-            <div class="flex items-center justify-center shrink-0" style="width:40px;height:40px;border-radius:10px;background:linear-gradient(135deg,#38bdf8,#0ea5e9);color:#fff;font-weight:700;font-size:.9rem;box-shadow:0 3px 12px rgba(14,165,233,.42)">
+    <div class="mx-3 mt-3 mb-1 px-3 shrink-0"
+         style="padding-top:10px;padding-bottom:10px;border-radius:10px;background:#e0f2fe;border:1px solid #bae6fd">
+        <div class="flex items-center gap-2.5">
+            <div class="flex items-center justify-center shrink-0"
+                 style="width:38px;height:38px;border-radius:9px;background:linear-gradient(135deg,#0284c7,#0ea5e9);color:#fff;font-weight:700;font-size:.85rem">
                 <?php echo strtoupper(substr($_SESSION['user_name'],0,1)); ?>
             </div>
             <div class="flex-1 min-w-0">
-                <p style="color:#fff;font-weight:600;font-size:.85rem;line-height:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap"><?php echo htmlspecialchars($_SESSION['user_name']); ?></p>
-                <p style="font-size:.7rem;color:rgba(255,255,255,.45);margin-top:4px"><?php echo htmlspecialchars($_SESSION['employee_id'] ?? 'Employee'); ?></p>
+                <p style="color:#0c4a6e;font-weight:600;font-size:.82rem;line-height:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap"><?php echo htmlspecialchars($_SESSION['user_name']); ?></p>
+                <p style="font-size:.68rem;color:#0369a1;margin-top:3px"><?php echo htmlspecialchars($_SESSION['employee_id'] ?? 'Employee'); ?></p>
             </div>
-            <div class="flex items-center gap-1.5 shrink-0">
-                <span style="width:8px;height:8px;border-radius:50%;background:#4ade80;box-shadow:0 0 8px rgba(74,222,128,.7)"></span>
-            </div>
+            <span style="width:8px;height:8px;border-radius:50%;background:#22c55e;flex-shrink:0"></span>
         </div>
     </div>
 
@@ -127,31 +128,32 @@ body.esb-open { overflow:hidden; }
         </div>
         <?php endif;
             $on = ($_cur === $href);
-            [$ic,$ib] = $_ic[$icon] ?? ['#cbd5e1','rgba(203,213,225,.18)'];
+            [$ic,$ib] = $_ic[$icon] ?? ['#6b7280','#f3f4f6'];
         ?>
         <a href="<?php echo $href ?>" class="esb-link <?php echo $on?'on':'' ?>">
             <span class="esb-ico" style="color:<?php echo $ic ?>;background:<?php echo $ib ?>">
                 <i class="fas <?php echo $icon ?>"></i>
             </span>
             <span class="flex-1"><?php echo $label ?></span>
-            <?php if($on): ?><span style="width:6px;height:6px;border-radius:50%;background:rgba(186,230,253,.7);flex-shrink:0"></span><?php endif ?>
         </a>
         <?php endforeach ?>
     </nav>
 
     <!-- Footer -->
-    <div class="px-2.5 pb-6 pt-2.5 shrink-0" style="border-top:1px solid rgba(255,255,255,.08)">
+    <div class="px-2.5 pb-6 pt-2 shrink-0" style="border-top:1px solid #f3f4f6">
         <a href="../logout.php" class="esb-link"
-           style="color:rgba(255,255,255,.55);background:rgba(239,68,68,.12);border-color:rgba(239,68,68,.2)"
-           onmouseover="this.style.background='rgba(239,68,68,.25)';this.style.color='#fca5a5';this.style.borderColor='rgba(239,68,68,.4)'"
-           onmouseout="this.style.background='rgba(239,68,68,.12)';this.style.color='rgba(255,255,255,.55)';this.style.borderColor='rgba(239,68,68,.2)'">
-            <span class="esb-ico" style="color:#fca5a5;background:rgba(239,68,68,.2)"><i class="fas fa-sign-out-alt"></i></span>
+           style="color:#dc2626;background:#fef2f2;border-color:#fecaca"
+           onmouseover="this.style.background='#fee2e2';this.style.borderColor='#fca5a5'"
+           onmouseout="this.style.background='#fef2f2';this.style.borderColor='#fecaca'">
+            <span class="esb-ico" style="color:#dc2626;background:#fee2e2"><i class="fas fa-sign-out-alt"></i></span>
             <span class="flex-1">Sign Out</span>
         </a>
     </div>
 </div>
 
-<div id="esb-ov" class="fixed inset-0 z-40 hidden" style="background:rgba(0,0,0,.65);backdrop-filter:blur(4px);-webkit-backdrop-filter:blur(4px)" onclick="esbToggle()"></div>
+<div id="esb-ov" class="fixed inset-0 z-40 hidden"
+     style="background:rgba(0,0,0,.45);backdrop-filter:blur(3px);-webkit-backdrop-filter:blur(3px)"
+     onclick="esbToggle()"></div>
 
 <script>
 function toggleSidebar(){esbToggle()}
@@ -173,8 +175,8 @@ document.addEventListener('touchstart',function(e){_esbTx=e.touches[0].clientX},
 document.addEventListener('touchend',function(e){
     var dx=e.changedTouches[0].clientX-_esbTx;
     var sb=document.getElementById('esb');
-    var isOpen=!sb.classList.contains('-translate-x-full');
-    if(isOpen&&dx<-55)esbClose();
-    if(!isOpen&&_esbTx<22&&dx>65)esbToggle();
+    var open=!sb.classList.contains('-translate-x-full');
+    if(open&&dx<-50)esbClose();
+    if(!open&&_esbTx<20&&dx>60)esbToggle();
 },{passive:true});
 </script>

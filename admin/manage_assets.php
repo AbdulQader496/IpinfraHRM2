@@ -192,7 +192,7 @@ $categories = mysqli_query($conn, "SELECT * FROM asset_categories ORDER BY categ
 <body class="bg-gradient-to-br from-gray-50 to-gray-100 min-h-screen pb-20">
 
 <!-- Premium Mobile Header -->
-<div class="bg-gradient-to-r from-slate-900 via-indigo-900 to-slate-900 text-white sticky top-0 z-40 shadow-2xl">
+<div class="bg-[#060912] text-white sticky top-0 z-40 shadow-2xl">
     <div class="flex justify-between items-center px-4 py-4">
         <div class="flex items-center gap-3">
             <button onclick="toggleSidebar()" class="text-white/80 hover:text-white p-2 rounded-full hover:bg-white/10">

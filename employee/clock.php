@@ -162,7 +162,7 @@ $history     = mysqli_query($conn, "SELECT * FROM attendance $hw ORDER BY date D
 <!-- ══════════════════════════════════════
      HEADER
 ══════════════════════════════════════ -->
-<header class="bg-gradient-to-r from-slate-900 via-indigo-950 to-slate-900 text-white sticky top-0 z-40 shadow-2xl">
+<header class="bg-[#060912] text-white sticky top-0 z-40 shadow-2xl">
     <div class="flex items-center justify-between px-4 py-3.5 max-w-3xl mx-auto">
         <div class="flex items-center gap-3">
             <button onclick="toggleSidebar()" class="w-9 h-9 rounded-xl bg-white/10 flex items-center justify-center hover:bg-white/20 transition">

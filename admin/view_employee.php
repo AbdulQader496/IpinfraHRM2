@@ -73,7 +73,7 @@ $ml_remain  = ($emp['medical_leave_entitlement'] ?? 0) - ($emp['used_medical_lea
 <?php require_once '../includes/global_ui.php'; ?>
 
 <!-- Header -->
-<div class="bg-gradient-to-r from-slate-900 via-indigo-900 to-slate-900 text-white sticky top-0 z-40 shadow-2xl">
+<div class="bg-[#060912] text-white sticky top-0 z-40 shadow-2xl">
     <div class="flex items-center gap-4 px-4 py-4">
         <a href="employees.php" class="w-9 h-9 rounded-xl bg-white/10 hover:bg-white/20 flex items-center justify-center transition">
             <i class="fas fa-arrow-left"></i>

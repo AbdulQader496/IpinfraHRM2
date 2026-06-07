@@ -131,7 +131,7 @@ $initials = strtoupper(substr($me['name'],0,1) . (strpos($me['name'],' ')!==fals
 <?php require_once '../includes/confirm_modal.php'; ?>
 
 <!-- Sticky Header -->
-<div class="sticky top-0 z-40 bg-gradient-to-r from-slate-900 via-indigo-900 to-slate-900 text-white shadow-2xl">
+<div class="sticky top-0 z-40 bg-[#060912] text-white shadow-2xl">
     <div class="flex items-center justify-between px-4 py-3.5">
         <div class="flex items-center gap-3">
             <button onclick="toggleSidebar()" class="w-9 h-9 rounded-xl bg-white/10 hover:bg-white/20 flex items-center justify-center transition">

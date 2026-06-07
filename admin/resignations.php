@@ -73,7 +73,7 @@ $completed = mysqli_fetch_assoc(mysqli_query($conn, "SELECT COUNT(*) as count FR
 <body class="bg-gradient-to-br from-gray-50 to-gray-100 min-h-screen pb-20">
 
 <!-- Premium Mobile Header -->
-<div class="bg-gradient-to-r from-slate-900 via-indigo-900 to-slate-900 text-white sticky top-0 z-40 shadow-2xl">
+<div class="bg-[#060912] text-white sticky top-0 z-40 shadow-2xl">
     <div class="flex justify-between items-center px-4 py-4">
         <div class="flex items-center gap-3">
             <!-- MENU BUTTON - Left side -->

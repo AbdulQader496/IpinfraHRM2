@@ -100,7 +100,7 @@ $announcements = mysqli_query($conn, "SELECT * FROM announcements WHERE is_activ
 <?php require_once '../includes/toast.php'; ?>
 <?php require_once '../includes/confirm_modal.php'; ?>
 <!-- Premium Header -->
-<div class="bg-gradient-to-r from-slate-900 via-indigo-900 to-slate-900 text-white sticky top-0 z-40 shadow-2xl backdrop-blur-sm">
+<div class="bg-[#060912] text-white sticky top-0 z-40 shadow-2xl backdrop-blur-sm">
     <div class="flex items-center justify-between px-5 py-4">
         <div class="flex items-center gap-3">
             <!-- Menu Button -->

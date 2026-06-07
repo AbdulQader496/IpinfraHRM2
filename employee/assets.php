@@ -104,7 +104,7 @@ $history_count = mysqli_num_rows($request_history);
 <body class="bg-gradient-to-br from-gray-50 to-gray-100 min-h-screen pb-20">
     
 <!-- Premium Header -->
-<div class="bg-gradient-to-r from-slate-900 via-indigo-900 to-slate-900 text-white sticky top-0 z-40 shadow-2xl backdrop-blur-sm">
+<div class="bg-[#060912] text-white sticky top-0 z-40 shadow-2xl backdrop-blur-sm">
     <div class="flex items-center justify-between px-5 py-4">
         <div class="flex items-center gap-3">
             <!-- Menu Button -->

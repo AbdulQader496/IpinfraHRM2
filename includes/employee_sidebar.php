@@ -55,19 +55,20 @@ body.esb-open { overflow:hidden; }
     display:flex; align-items:center; gap:.65rem;
     padding:.65rem .8rem; border-radius:.65rem;
     font-size:.82rem; font-weight:500; line-height:1;
-    text-decoration:none; transition:all .15s ease;
-    color:#4b5563; border:1px solid transparent;
+    text-decoration:none !important;
+    transition:background-color .15s ease, box-shadow .15s ease;
+    color:#1f2937 !important; border:1px solid transparent;
     min-height:2.75rem;
 }
-.esb-link:hover { background:#e0f2fe; color:#075985; }
+.esb-link:hover { background:#e0f2fe !important; color:#0c4a6e !important; }
 .esb-link.on {
-    background:#bfdbfe;
-    color:#1e3a8a;
-    font-weight:600;
-    border-color:#93c5fd;
-    box-shadow:inset 3px 0 0 #0ea5e9;
+    background:#0284c7 !important;
+    color:#ffffff !important;
+    font-weight:700 !important;
+    border-color:#0369a1 !important;
+    box-shadow:inset 3px 0 0 #7dd3fc;
 }
-.esb-link.on .esb-ico { background:#bae6fd !important; color:#0369a1 !important; }
+.esb-link.on .esb-ico { background:rgba(255,255,255,.22) !important; color:#ffffff !important; }
 .esb-ico {
     width:1.9rem; height:1.9rem; border-radius:.5rem;
     display:flex; align-items:center; justify-content:center;

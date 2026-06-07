@@ -57,19 +57,20 @@ body.asb-open { overflow:hidden; }
     display:flex; align-items:center; gap:.65rem;
     padding:.65rem .8rem; border-radius:.65rem;
     font-size:.82rem; font-weight:500; line-height:1;
-    text-decoration:none; transition:all .15s ease;
-    color:#4b5563; border:1px solid transparent;
+    text-decoration:none !important;
+    transition:background-color .15s ease, box-shadow .15s ease;
+    color:#1f2937 !important; border:1px solid transparent;
     min-height:2.75rem;
 }
-.asb-link:hover { background:#eef2ff; color:#3730a3; }
+.asb-link:hover { background:#eef2ff !important; color:#312e81 !important; }
 .asb-link.on {
-    background:#e0e7ff;
-    color:#3730a3;
-    font-weight:600;
-    border-color:#c7d2fe;
-    box-shadow:inset 3px 0 0 #4f46e5;
+    background:#4f46e5 !important;
+    color:#ffffff !important;
+    font-weight:700 !important;
+    border-color:#4338ca !important;
+    box-shadow:inset 3px 0 0 #a5b4fc;
 }
-.asb-link.on .asb-ico { background:#c7d2fe !important; color:#4338ca !important; }
+.asb-link.on .asb-ico { background:rgba(255,255,255,.22) !important; color:#ffffff !important; }
 .asb-ico {
     width:1.9rem; height:1.9rem; border-radius:.5rem;
     display:flex; align-items:center; justify-content:center;

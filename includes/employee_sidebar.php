@@ -61,11 +61,13 @@ body.esb-open { overflow:hidden; }
 }
 .esb-link:hover { background:#e0f2fe; color:#075985; }
 .esb-link.on {
-    background:#0ea5e9;
-    color:#ffffff;
-    box-shadow: 0 4px 14px rgba(14,165,233,.3);
+    background:#bfdbfe;
+    color:#1e3a8a;
+    font-weight:600;
+    border-color:#93c5fd;
+    box-shadow:inset 3px 0 0 #0ea5e9;
 }
-.esb-link.on .esb-ico { background:rgba(255,255,255,.22) !important; color:#fff !important; }
+.esb-link.on .esb-ico { background:#bae6fd !important; color:#0369a1 !important; }
 .esb-ico {
     width:1.9rem; height:1.9rem; border-radius:.5rem;
     display:flex; align-items:center; justify-content:center;

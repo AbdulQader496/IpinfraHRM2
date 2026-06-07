@@ -105,13 +105,31 @@ function getUnreadNotificationsCount($employee_id) {
 
 function logAction($action, $description, $target_id = null, $target_type = null) {
     global $conn;
-    $user_id     = isset($_SESSION['user_id']) ? intval($_SESSION['user_id']) : 0;
-    $action      = mysqli_real_escape_string($conn, $action);
-    $description = mysqli_real_escape_string($conn, $description);
-    $target_type = mysqli_real_escape_string($conn, $target_type ?? '');
-    $target_id   = intval($target_id ?? 0);
-    $ip          = mysqli_real_escape_string($conn, $_SERVER['REMOTE_ADDR'] ?? '');
-    mysqli_query($conn, "INSERT INTO audit_log (user_id, action, description, target_type, target_id, ip_address)
-        VALUES ($user_id, '$action', '$description', '$target_type', $target_id, '$ip')");
+    try {
+        // Ensure table exists (first-time setup)
+        mysqli_query($conn, "CREATE TABLE IF NOT EXISTS audit_log (
+            id INT PRIMARY KEY AUTO_INCREMENT,
+            user_id INT DEFAULT 0,
+            action VARCHAR(50),
+            description TEXT,
+            target_type VARCHAR(50),
+            target_id INT DEFAULT 0,
+            ip_address VARCHAR(45),
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            INDEX idx_action (action),
+            INDEX idx_created (created_at)
+        )");
+        $user_id     = isset($_SESSION['user_id']) ? intval($_SESSION['user_id']) : 0;
+        $action_esc  = mysqli_real_escape_string($conn, $action);
+        $description = mysqli_real_escape_string($conn, $description);
+        $target_type = mysqli_real_escape_string($conn, $target_type ?? '');
+        $target_id   = intval($target_id ?? 0);
+        $ip          = mysqli_real_escape_string($conn, $_SERVER['REMOTE_ADDR'] ?? '');
+        mysqli_query($conn, "INSERT INTO audit_log (user_id, action, description, target_type, target_id, ip_address)
+            VALUES ($user_id, '$action_esc', '$description', '$target_type', $target_id, '$ip')");
+    } catch (Exception $e) {
+        // Never crash the calling page over a logging failure
+        error_log('logAction failed: ' . $e->getMessage());
+    }
 }
 ?>

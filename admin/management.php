@@ -250,6 +250,10 @@ $warnings_count = count($all_warnings);
 </head>
 <body class="bg-gradient-to-br from-gray-50 to-gray-100 min-h-screen pb-20">
 
+<?php require_once '../includes/global_ui.php'; ?>
+<?php require_once '../includes/toast.php'; ?>
+<?php require_once '../includes/confirm_modal.php'; ?>
+
 <!-- Premium Mobile Header -->
 <div class="bg-gradient-to-r from-slate-900 via-indigo-900 to-slate-900 text-white sticky top-0 z-40 shadow-2xl">
     <div class="flex justify-between items-center px-4 py-4">
@@ -333,7 +337,7 @@ $warnings_count = count($all_warnings);
 <div class="px-4 py-6 max-w-7xl mx-auto">
     
     <div class="text-center mb-6 animate-fadeInUp">
-        <h1 class="text-2xl font-bold text-gray-800">📋 Management Portal</h1>
+        <h1 class="text-2xl font-bold text-gray-800"><i class="fas fa-briefcase mr-2 text-indigo-600"></i>Management Portal</h1>
         <p class="text-sm text-gray-500 mt-1">Manage resignations, terminations, and employee documents</p>
     </div>
 
@@ -352,26 +356,26 @@ $warnings_count = count($all_warnings);
     <?php endif; ?>
 
     <!-- Tabs -->
-    <div class="flex gap-3 mb-6 bg-white/50 backdrop-blur-sm rounded-2xl p-2 shadow-lg">
-        <button onclick="showTab('resignations')" id="tabResignations" class="tab-btn flex-1 py-2.5 rounded-xl font-semibold transition-all tab-active">
-            <i class="fas fa-user-minus mr-2"></i> Resignations
+    <div class="flex gap-2 mb-6 overflow-x-auto pb-1">
+        <button onclick="showTab('resignations')" id="tabResignations" class="tab-btn shrink-0 px-4 py-2.5 rounded-xl font-semibold transition-all tab-active whitespace-nowrap">
+            <i class="fas fa-user-minus mr-1.5"></i>Resignations
             <?php if($pending_count > 0): ?>
-                <span class="ml-2 bg-red-500 text-white text-xs px-2 py-0.5 rounded-full"><?php echo $pending_count; ?></span>
+                <span class="ml-1.5 bg-red-500 text-white text-xs px-1.5 py-0.5 rounded-full"><?php echo $pending_count; ?></span>
             <?php endif; ?>
         </button>
-        <button onclick="showTab('terminations')" id="tabTerminations" class="tab-btn flex-1 py-2.5 rounded-xl font-semibold transition-all tab-inactive">
-            <i class="fas fa-gavel mr-2"></i> Terminations
+        <button onclick="showTab('terminations')" id="tabTerminations" class="tab-btn shrink-0 px-4 py-2.5 rounded-xl font-semibold transition-all tab-inactive whitespace-nowrap">
+            <i class="fas fa-gavel mr-1.5"></i>Terminations
         </button>
-        <button onclick="showTab('documents')" id="tabDocuments" class="tab-btn flex-1 py-2.5 rounded-xl font-semibold transition-all tab-inactive">
-            <i class="fas fa-folder-open mr-2"></i> Employee Documents
+        <button onclick="showTab('documents')" id="tabDocuments" class="tab-btn shrink-0 px-4 py-2.5 rounded-xl font-semibold transition-all tab-inactive whitespace-nowrap">
+            <i class="fas fa-folder-open mr-1.5"></i>Documents
         </button>
-        <button onclick="showTab('upload')" id="tabUpload" class="tab-btn flex-1 py-2.5 rounded-xl font-semibold transition-all tab-inactive">
-            <i class="fas fa-upload mr-2"></i> Upload Document
+        <button onclick="showTab('upload')" id="tabUpload" class="tab-btn shrink-0 px-4 py-2.5 rounded-xl font-semibold transition-all tab-inactive whitespace-nowrap">
+            <i class="fas fa-upload mr-1.5"></i>Upload
         </button>
-        <button onclick="showTab('warnings')" id="tabWarnings" class="tab-btn flex-1 py-2.5 rounded-xl font-semibold transition-all tab-inactive">
-            <i class="fas fa-exclamation-triangle mr-2"></i> Warnings
+        <button onclick="showTab('warnings')" id="tabWarnings" class="tab-btn shrink-0 px-4 py-2.5 rounded-xl font-semibold transition-all tab-inactive whitespace-nowrap">
+            <i class="fas fa-exclamation-triangle mr-1.5"></i>Warnings
             <?php if($warnings_count > 0): ?>
-                <span class="ml-1 bg-orange-500 text-white text-xs px-1.5 py-0.5 rounded-full"><?php echo $warnings_count; ?></span>
+                <span class="ml-1.5 bg-orange-500 text-white text-xs px-1.5 py-0.5 rounded-full"><?php echo $warnings_count; ?></span>
             <?php endif; ?>
         </button>
     </div>
@@ -411,8 +415,8 @@ $warnings_count = count($all_warnings);
                                         <i class="fas fa-user text-red-600 text-sm"></i>
                                     </div>
                                     <div>
-                                        <p class="font-semibold text-gray-800"><?php echo $row['name']; ?></p>
-                                        <p class="text-xs text-gray-500"><?php echo $row['employee_id']; ?></p>
+                                        <p class="font-semibold text-gray-800"><?php echo htmlspecialchars($row['name']); ?></p>
+                                        <p class="text-xs text-gray-500"><?php echo htmlspecialchars($row['employee_id']); ?></p>
                                     </div>
                                 </div>
                             </td>
@@ -517,7 +521,7 @@ $warnings_count = count($all_warnings);
                         <label class="block text-sm font-semibold text-gray-700 mb-2">Additional Notes</label>
                         <textarea name="notes" rows="2" class="w-full px-4 py-2.5 border-2 border-gray-200 rounded-xl"></textarea>
                     </div>
-                    <button type="submit" name="send_termination" class="w-full bg-gradient-to-r from-red-600 to-rose-600 text-white py-3 rounded-xl font-semibold hover:shadow-xl transition transform hover:scale-105" onclick="return confirmAction('Send Termination Notice', 'This will permanently mark the employee as terminated. Continue?', function(){ document.querySelector(\'form[data-termination-form]\') ? document.querySelector(\'form[data-termination-form]\').submit() : this.closest(\'form\').submit(); })">
+                    <button type="button" onclick="confirmTermination(this)" class="w-full bg-gradient-to-r from-red-600 to-rose-600 text-white py-3 rounded-xl font-semibold hover:shadow-xl transition transform hover:scale-105">
                         <i class="fas fa-paper-plane mr-2"></i> Send Termination Notice
                     </button>
                 </form>
@@ -543,8 +547,8 @@ $warnings_count = count($all_warnings);
                                     <i class="fas fa-user text-red-600 text-sm"></i>
                                 </div>
                                 <div>
-                                    <p class="font-semibold text-gray-800"><?php echo $term['name']; ?></p>
-                                    <p class="text-xs text-gray-500"><?php echo $term['employee_id']; ?></p>
+                                    <p class="font-semibold text-gray-800"><?php echo htmlspecialchars($term['name']); ?></p>
+                                    <p class="text-xs text-gray-500"><?php echo htmlspecialchars($term['employee_id']); ?></p>
                                 </div>
                             </div>
                             <div class="flex items-center gap-2">
@@ -620,8 +624,8 @@ $warnings_count = count($all_warnings);
                                         <i class="fas fa-user text-blue-600 text-sm"></i>
                                     </div>
                                     <div>
-                                        <p class="font-semibold text-gray-800"><?php echo $doc['name']; ?></p>
-                                        <p class="text-xs text-gray-500"><?php echo $doc['employee_id']; ?></p>
+                                        <p class="font-semibold text-gray-800"><?php echo htmlspecialchars($doc['name']); ?></p>
+                                        <p class="text-xs text-gray-500"><?php echo htmlspecialchars($doc['employee_id']); ?></p>
                                     </div>
                                 </div>
                             </td>
@@ -974,6 +978,15 @@ function openRejectModal(resignation) {
 function closeModals() {
     document.getElementById('approveModal').classList.add('hidden');
     document.getElementById('rejectModal').classList.add('hidden');
+}
+
+function confirmTermination(btn) {
+    const form = btn.closest('form');
+    confirmAction(
+        'Send Termination Notice',
+        'This will permanently mark the employee as <strong>terminated</strong> and deactivate their account. This cannot be undone.',
+        function() { form.submit(); }
+    );
 }
 
 // File name display

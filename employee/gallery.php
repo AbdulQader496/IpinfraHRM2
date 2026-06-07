@@ -122,39 +122,7 @@ while ($r = mysqli_fetch_assoc($gallery)) $photos[] = $r;
     </div>
 </div>
 
-<!-- Sidebar -->
-<div id="sidebar" class="fixed top-0 left-0 h-full w-72 bg-gradient-to-b from-gray-900 to-gray-950 text-white z-50 transform -translate-x-full transition-transform duration-300 shadow-2xl overflow-y-auto">
-    <div class="p-6 border-b border-gray-800 relative">
-        <div class="flex items-center gap-3">
-            <div class="avatar w-11 h-11 bg-gradient-to-br from-indigo-500 to-purple-600 text-white text-base font-bold rounded-full flex items-center justify-center"><?php echo strtoupper(substr($_SESSION['user_name'],0,1)); ?></div>
-            <div><h2 class="font-bold text-sm"><?php echo htmlspecialchars($_SESSION['user_name']); ?></h2><p class="text-xs text-gray-400">Employee</p></div>
-        </div>
-        <button onclick="toggleSidebar()" class="absolute top-5 right-4 text-gray-400 hover:text-white"><i class="fas fa-times text-lg"></i></button>
-    </div>
-    <nav class="p-4 space-y-0.5">
-        <?php foreach ([
-            ['dashboard.php','fa-home','Dashboard'],
-            ['leave.php','fa-calendar-check','My Leave'],
-            ['claim.php','fa-receipt','My Claims'],
-            ['clock.php','fa-fingerprint','Attendance'],
-            ['assets.php','fa-boxes','My Assets'],
-            ['gallery.php','fa-images','Gallery'],
-            ['management.php','fa-briefcase','Management'],
-            ['calendar.php','fa-calendar-alt','Calendar'],
-            ['profile.php','fa-user-circle','Profile'],
-            ['payslip.php','fa-file-invoice-dollar','Payslip'],
-        ] as [$href,$icon,$label]):
-            $active = basename($href)==='gallery.php' ? 'bg-indigo-600/30 text-white' : 'text-gray-300 hover:bg-gray-800/40 hover:text-white';
-        ?>
-        <a href="<?php echo $href; ?>" class="flex items-center gap-3 py-2.5 px-4 rounded-xl transition text-sm <?php echo $active; ?>">
-            <i class="fas <?php echo $icon; ?> w-4 text-center"></i><?php echo $label; ?>
-        </a>
-        <?php endforeach; ?>
-        <div class="border-t border-gray-800 my-3"></div>
-        <a href="../logout.php" class="flex items-center gap-3 py-2.5 px-4 rounded-xl bg-red-600/20 text-red-300 hover:bg-red-600/30 transition text-sm"><i class="fas fa-sign-out-alt w-4"></i>Logout</a>
-    </nav>
-</div>
-<div id="overlay" class="fixed inset-0 bg-black/50 z-40 hidden" onclick="toggleSidebar()"></div>
+<?php require_once '../includes/employee_sidebar.php'; ?>
 
 <div class="max-w-7xl mx-auto px-4 py-6 space-y-5">
 
@@ -373,10 +341,6 @@ while ($r = mysqli_fetch_assoc($gallery)) $photos[] = $r;
 </div>
 
 <script>
-function toggleSidebar() {
-    document.getElementById('sidebar').classList.toggle('-translate-x-full');
-    document.getElementById('overlay').classList.toggle('hidden');
-}
 
 function openUploadModal()  { document.getElementById('uploadModal').classList.remove('hidden'); }
 function closeUploadModal() { document.getElementById('uploadModal').classList.add('hidden'); }

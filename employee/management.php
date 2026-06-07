@@ -146,48 +146,7 @@ $initials = strtoupper(substr($me['name'],0,1) . (strpos($me['name'],' ')!==fals
     </div>
 </div>
 
-<!-- Sidebar -->
-<div id="sidebar" class="fixed top-0 left-0 h-full w-72 bg-gradient-to-b from-gray-900 to-gray-950 text-white z-50 transform -translate-x-full transition-transform duration-300 shadow-2xl overflow-y-auto">
-    <div class="p-6 border-b border-gray-800 relative">
-        <div class="flex items-center gap-3">
-            <?php if (!empty($me['profile_pic']) && file_exists('../uploads/profile_pics/' . $me['profile_pic'])): ?>
-                <img src="../uploads/profile_pics/<?php echo htmlspecialchars($me['profile_pic']); ?>" class="w-11 h-11 rounded-xl object-cover">
-            <?php else: ?>
-                <div class="avatar w-11 h-11 bg-gradient-to-br from-indigo-500 to-purple-600 text-white text-base"><?php echo $initials; ?></div>
-            <?php endif; ?>
-            <div>
-                <h2 class="font-bold text-sm"><?php echo htmlspecialchars($me['name']); ?></h2>
-                <p class="text-xs text-gray-400"><?php echo htmlspecialchars($me['position'] ?? 'Employee'); ?></p>
-            </div>
-        </div>
-        <button onclick="toggleSidebar()" class="absolute top-5 right-4 text-gray-400 hover:text-white"><i class="fas fa-times text-lg"></i></button>
-    </div>
-    <nav class="p-4 space-y-0.5">
-        <?php
-        $nav = [
-            ['dashboard.php','fa-home','Dashboard'],
-            ['leave.php','fa-calendar-check','My Leave'],
-            ['claim.php','fa-receipt','My Claims'],
-            ['clock.php','fa-fingerprint','Attendance'],
-            ['assets.php','fa-boxes','My Assets'],
-            ['gallery.php','fa-images','Gallery'],
-            ['management.php','fa-briefcase','Management'],
-            ['calendar.php','fa-calendar-alt','Calendar'],
-            ['profile.php','fa-user-circle','Profile'],
-            ['payslip.php','fa-file-invoice-dollar','Payslip'],
-        ];
-        foreach ($nav as [$href,$icon,$label]):
-            $active = basename($href) === 'management.php' ? 'bg-indigo-600/30 text-white' : 'text-gray-300 hover:bg-gray-800/40 hover:text-white';
-        ?>
-        <a href="<?php echo $href; ?>" class="flex items-center gap-3 py-2.5 px-4 rounded-xl transition text-sm <?php echo $active; ?>">
-            <i class="fas <?php echo $icon; ?> w-4 text-center"></i><?php echo $label; ?>
-        </a>
-        <?php endforeach; ?>
-        <div class="border-t border-gray-800 my-3"></div>
-        <a href="../logout.php" class="flex items-center gap-3 py-2.5 px-4 rounded-xl bg-red-600/20 text-red-300 hover:bg-red-600/30 transition text-sm"><i class="fas fa-sign-out-alt w-4 text-center"></i>Logout</a>
-    </nav>
-</div>
-<div id="overlay" class="fixed inset-0 bg-black/50 z-40 hidden" onclick="toggleSidebar()"></div>
+<?php require_once '../includes/employee_sidebar.php'; ?>
 
 <!-- Page Content -->
 <div class="max-w-4xl mx-auto px-4 py-6 space-y-5">
@@ -631,10 +590,6 @@ $initials = strtoupper(substr($me['name'],0,1) . (strpos($me['name'],' ')!==fals
 </div>
 
 <script>
-function toggleSidebar() {
-    document.getElementById('sidebar').classList.toggle('-translate-x-full');
-    document.getElementById('overlay').classList.toggle('hidden');
-}
 
 function showTab(tab) {
     document.querySelectorAll('.tab-btn').forEach(b => b.className = b.className.replace('tab-active','tab-inactive'));

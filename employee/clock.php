@@ -186,53 +186,7 @@ $history     = mysqli_query($conn, "SELECT * FROM attendance $hw ORDER BY date D
     <div class="h-px bg-gradient-to-r from-transparent via-indigo-400/50 to-transparent"></div>
 </header>
 
-<!-- ══════════════════════════════════════
-     SIDEBAR
-══════════════════════════════════════ -->
-<div id="sidebar" class="fixed top-0 left-0 h-full w-72 bg-gradient-to-b from-slate-900 to-blue-950 text-white z-50 transform -translate-x-full transition-transform duration-300 shadow-2xl overflow-y-auto">
-    <div class="p-6 border-b border-white/10">
-        <div class="flex items-center gap-3 mb-1">
-            <div class="w-11 h-11 bg-gradient-to-br from-blue-500 to-indigo-600 rounded-xl flex items-center justify-center font-bold text-lg shadow">
-                <?php echo strtoupper(substr($_SESSION['user_name'], 0, 1)); ?>
-            </div>
-            <div>
-                <p class="font-semibold text-sm"><?php echo htmlspecialchars($_SESSION['user_name'], ENT_QUOTES, 'UTF-8'); ?></p>
-                <p class="text-xs text-blue-300"><?php echo htmlspecialchars($_SESSION['employee_id'] ?? '', ENT_QUOTES, 'UTF-8'); ?></p>
-            </div>
-        </div>
-        <button onclick="toggleSidebar()" class="absolute top-5 right-4 text-white/50 hover:text-white transition">
-            <i class="fas fa-times text-lg"></i>
-        </button>
-    </div>
-    <nav class="p-4 space-y-1">
-        <?php
-        $nav = [
-            ['dashboard.php',  'fa-tachometer-alt', 'Dashboard'],
-            ['clock.php',      'fa-clock',          'Attendance'],
-            ['leave.php',      'fa-calendar-alt',   'Apply Leave'],
-            ['claim.php',      'fa-receipt',        'Apply Claim'],
-            ['gallery.php',    'fa-images',         'Gallery'],
-            ['assets.php',     'fa-boxes',          'Asset Tracker'],
-            ['management.php', 'fa-briefcase',      'My Management'],
-            ['payslip.php',    'fa-file-invoice-dollar', 'Payslip'],
-            ['calendar.php',   'fa-calendar',       'Calendar'],
-            ['profile.php',    'fa-user-circle',    'My Profile'],
-        ];
-        $cur = basename($_SERVER['PHP_SELF']);
-        foreach ($nav as [$href, $icon, $label]):
-            $active = ($cur === $href) ? 'bg-white/15 font-semibold' : 'hover:bg-white/10';
-        ?>
-        <a href="<?php echo $href; ?>" class="flex items-center gap-3 py-2.5 px-4 rounded-xl transition text-sm <?php echo $active; ?>">
-            <i class="fas <?php echo $icon; ?> w-5 text-center opacity-80"></i> <?php echo $label; ?>
-        </a>
-        <?php endforeach; ?>
-        <div class="border-t border-white/10 my-3"></div>
-        <a href="../logout.php" class="flex items-center gap-3 py-2.5 px-4 rounded-xl bg-red-500/20 text-red-300 hover:bg-red-500/30 transition text-sm">
-            <i class="fas fa-sign-out-alt w-5 text-center"></i> Logout
-        </a>
-    </nav>
-</div>
-<div id="overlay" class="fixed inset-0 bg-black/50 z-40 hidden" onclick="toggleSidebar()"></div>
+<?php require_once '../includes/employee_sidebar.php'; ?>
 
 <!-- ══════════════════════════════════════
      MAIN CONTENT
@@ -741,10 +695,6 @@ if ($total_mins_worked >= $work_target_h * 60) {
 
 <script>
 /* ── Sidebar ─────────────────────────────────────────────── */
-function toggleSidebar() {
-    document.getElementById('sidebar').classList.toggle('-translate-x-full');
-    document.getElementById('overlay').classList.toggle('hidden');
-}
 
 /* ── Live clock ──────────────────────────────────────────── */
 const DAYS   = ['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'];

@@ -194,42 +194,7 @@ while ($e = mysqli_fetch_assoc($active_emps)) $emp_list[] = $e;
     </div>
 </div>
 
-<!-- Sidebar -->
-<div id="sidebar" class="fixed top-0 left-0 h-full w-72 bg-gradient-to-b from-gray-900 to-gray-950 text-white z-50 transform -translate-x-full transition-transform duration-300 shadow-2xl overflow-y-auto">
-    <div class="p-6 border-b border-gray-800 relative">
-        <div class="flex items-center gap-3">
-            <div class="w-11 h-11 bg-white rounded-xl flex items-center justify-center"><span class="text-gray-900 font-bold text-lg">IN</span></div>
-            <div><h2 class="font-bold text-sm"><?php echo htmlspecialchars($_SESSION['user_name']); ?></h2><p class="text-xs text-gray-400">Administrator</p></div>
-        </div>
-        <button onclick="toggleSidebar()" class="absolute top-5 right-4 text-gray-400 hover:text-white"><i class="fas fa-times text-lg"></i></button>
-    </div>
-    <nav class="p-4 space-y-0.5">
-        <?php
-        $nav = [
-            ['dashboard.php','fa-tachometer-alt','Dashboard'],
-            ['employees.php','fa-users','Employees'],
-            ['manage_leave.php','fa-calendar-check','Leave'],
-            ['manage_claim.php','fa-receipt','Claims'],
-            ['attendance.php','fa-fingerprint','Attendance'],
-            ['manage_assets.php','fa-boxes','Assets'],
-            ['manage_gallery.php','fa-images','Gallery'],
-            ['management.php','fa-briefcase','Management'],
-            ['payroll.php','fa-file-invoice-dollar','Payroll'],
-            ['holidays.php','fa-calendar-alt','Holidays'],
-            ['audit_log.php','fa-shield-alt','Audit Log'],
-        ];
-        foreach ($nav as [$href,$icon,$label]):
-            $active = basename($href) === 'management.php' ? 'bg-indigo-600/30 text-white' : 'text-gray-300 hover:bg-gray-800/40 hover:text-white';
-        ?>
-        <a href="<?php echo $href; ?>" class="flex items-center gap-3 py-2.5 px-4 rounded-xl transition text-sm <?php echo $active; ?>">
-            <i class="fas <?php echo $icon; ?> w-4 text-center"></i><?php echo $label; ?>
-        </a>
-        <?php endforeach; ?>
-        <div class="border-t border-gray-800 my-3"></div>
-        <a href="../logout.php" class="flex items-center gap-3 py-2.5 px-4 rounded-xl bg-red-600/20 text-red-300 hover:bg-red-600/30 transition text-sm"><i class="fas fa-sign-out-alt w-4 text-center"></i>Logout</a>
-    </nav>
-</div>
-<div id="overlay" class="fixed inset-0 bg-black/50 z-40 hidden" onclick="toggleSidebar()"></div>
+<?php require_once '../includes/admin_sidebar.php'; ?>
 
 <!-- Page Content -->
 <div class="max-w-7xl mx-auto px-4 py-6 space-y-6">
@@ -813,10 +778,6 @@ while ($e = mysqli_fetch_assoc($active_emps)) $emp_list[] = $e;
 </div>
 
 <script>
-function toggleSidebar() {
-    document.getElementById('sidebar').classList.toggle('-translate-x-full');
-    document.getElementById('overlay').classList.toggle('hidden');
-}
 
 function showTab(tab) {
     document.querySelectorAll('.tab-btn').forEach(b => b.className = b.className.replace('tab-active','tab-inactive'));

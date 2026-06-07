@@ -137,7 +137,7 @@ $initials = strtoupper(substr($me['name'],0,1) . (strpos($me['name'],' ')!==fals
             <button onclick="toggleSidebar()" class="w-9 h-9 rounded-xl bg-white/10 hover:bg-white/20 flex items-center justify-center transition">
                 <i class="fas fa-bars"></i>
             </button>
-            <div class="w-9 h-9 bg-gradient-to-br from-blue-400 to-indigo-600 rounded-xl flex items-center justify-center text-sm font-bold shadow-lg">IN</div>
+            <div class="w-9 h-9 bg-gradient-to-br from-blue-400 to-indigo-600 rounded-xl flex items-center justify-center text-sm font-bold shadow-lg"><img src="../uploads/1775551018_4xzREYTcMvK7ReGODviudjeDBIofOQ78mr5DsN9g.jpg" alt="IPINFRA" style="width:28px;height:28px;object-fit:contain;border-radius:4px;background:#fff;"></div>
             <div class="hidden sm:block">
                 <p class="text-[10px] text-blue-300 font-medium tracking-widest uppercase">IPINFRA Networks</p>
                 <p class="text-sm font-bold leading-tight">Employee Portal</p>

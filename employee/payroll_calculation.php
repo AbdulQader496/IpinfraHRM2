@@ -158,7 +158,7 @@ $net_salary = $basic_salary - $unpaid_deduction + $approved_claims_amount - $tot
             <div class="bg-gradient-to-r from-blue-800 to-indigo-800 text-white p-6 text-center">
                 <div class="flex justify-center mb-3">
                     <div class="w-16 h-16 bg-white rounded-xl flex items-center justify-center">
-                        <span class="text-blue-800 font-bold text-2xl">IN</span>
+                        <img src="../uploads/1775551018_4xzREYTcMvK7ReGODviudjeDBIofOQ78mr5DsN9g.jpg" alt="IPINFRA" style="width:40px;height:40px;object-fit:contain;border-radius:6px;background:#fff;">
                     </div>
                 </div>
                 <h1 class="text-2xl font-bold">IPINFRA NETWORKS SDN BHD</h1>

@@ -113,7 +113,7 @@ $announcements = mysqli_query($conn, "SELECT * FROM announcements WHERE is_activ
             <!-- Logo -->
             <div class="relative">
                 <div class="w-10 h-10 bg-gradient-to-br from-blue-500 via-indigo-500 to-purple-600 rounded-xl flex items-center justify-center shadow-lg shadow-indigo-500/20 animate-pulse">
-                    <span class="text-white font-bold text-sm">IN</span>
+                    <img src="../uploads/1775551018_4xzREYTcMvK7ReGODviudjeDBIofOQ78mr5DsN9g.jpg" alt="IPINFRA" style="width:28px;height:28px;object-fit:contain;border-radius:4px;background:#fff;">
                 </div>
                 <div class="absolute -top-1 -right-1 w-3 h-3 bg-green-400 rounded-full border-2 border-slate-900"></div>
             </div>
@@ -143,15 +143,25 @@ $announcements = mysqli_query($conn, "SELECT * FROM announcements WHERE is_activ
     <div class="px-4 py-6 pb-24 md:pb-6 max-w-7xl mx-auto">
         <!-- Welcome Card with Time -->
         <div class="bg-gradient-to-r from-blue-600 to-indigo-700 rounded-2xl p-5 mb-6 text-white shadow-xl">
-            <div class="flex justify-between items-start">
+            <div class="flex items-center gap-4 mb-3">
+                <img src="../uploads/1775551018_4xzREYTcMvK7ReGODviudjeDBIofOQ78mr5DsN9g.jpg" alt="IPINFRA"
+                     style="width:64px;height:64px;object-fit:contain;border-radius:12px;background:#fff;padding:4px;flex-shrink:0;">
                 <div>
-                    <p class="text-sm opacity-90">Welcome back,</p>
-                    <h1 class="text-2xl font-bold"><?php echo $_SESSION['user_name']; ?></h1>
-                    <p class="text-sm opacity-80 mt-1"><?php echo date('l, d F Y'); ?></p>
+                    <p class="text-xs font-semibold tracking-widest uppercase opacity-80">IPINFRA Networks Sdn Bhd</p>
+                    <p class="text-xs opacity-70">HR Management System</p>
                 </div>
-                <div class="text-right">
-                    <div class="text-3xl font-bold clock-number" id="liveClock">--:--:--</div>
-                    <p class="text-xs opacity-80 mt-1">Malaysia Time</p>
+            </div>
+            <div class="flex justify-between items-end">
+                <div>
+                    <p class="text-sm opacity-80">Welcome,</p>
+                    <h1 class="text-2xl font-bold"><?php echo $_SESSION['user_name']; ?></h1>
+                    <p class="text-sm opacity-70 mt-1"><?php echo date('l, d F Y'); ?></p>
+                </div>
+                <div class="text-right flex flex-col items-end justify-center">
+                    <div id="liveClock" class="font-bold leading-none" style="font-size:2rem;letter-spacing:.02em">--:--</div>
+                    <div id="liveAmPm" class="font-semibold mt-0.5" style="font-size:.75rem;letter-spacing:.12em;opacity:.8">--</div>
+                    <div id="liveSec" style="font-size:.68rem;opacity:.55;margin-top:1px">--</div>
+                    <p class="text-xs opacity-60 mt-1">Malaysia Time</p>
                 </div>
             </div>
         </div>
@@ -476,7 +486,13 @@ $announcements = mysqli_query($conn, "SELECT * FROM announcements WHERE is_activ
         
         function updateClock() {
             const now = new Date();
-            document.getElementById('liveClock').textContent = now.toLocaleTimeString('en-MY', { hour12: false });
+            let h = now.getHours(), m = now.getMinutes(), s = now.getSeconds();
+            const ampm = h >= 12 ? 'PM' : 'AM';
+            h = h % 12 || 12;
+            const pad = n => String(n).padStart(2,'0');
+            document.getElementById('liveClock').textContent = `${pad(h)}:${pad(m)}`;
+            document.getElementById('liveAmPm').textContent  = ampm;
+            document.getElementById('liveSec').textContent   = `:${pad(s)}`;
         }
         setInterval(updateClock, 1000);
         updateClock();

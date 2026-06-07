@@ -96,7 +96,7 @@ body.asb-open { overflow:hidden; }
          style="padding-top:18px;padding-bottom:16px;background:linear-gradient(135deg,#4f46e5,#6366f1);flex-shrink:0">
         <div class="flex items-center justify-center shrink-0"
              style="width:34px;height:34px;border-radius:9px;background:rgba(255,255,255,.2)">
-            <span style="color:#fff;font-weight:900;font-size:.75rem">IN</span>
+            <img src="../uploads/1775551018_4xzREYTcMvK7ReGODviudjeDBIofOQ78mr5DsN9g.jpg" alt="IPINFRA" style="width:28px;height:28px;object-fit:contain;border-radius:4px;background:#fff;">
         </div>
         <div class="flex-1 min-w-0">
             <p style="color:#fff;font-weight:700;font-size:.82rem;line-height:1">IPINFRA HRM</p>
@@ -143,18 +143,14 @@ body.asb-open { overflow:hidden; }
             <span class="flex-1"><?php echo $label ?></span>
         </a>
         <?php endforeach ?>
-    </nav>
-
-    <!-- Footer -->
-    <div class="px-2.5 pb-6 pt-2 shrink-0" style="border-top:1px solid #f3f4f6">
-        <a href="../logout.php" class="asb-link"
-           style="color:#dc2626;background:#fef2f2;border-color:#fecaca"
-           onmouseover="this.style.background='#fee2e2';this.style.borderColor='#fca5a5'"
-           onmouseout="this.style.background='#fef2f2';this.style.borderColor='#fecaca'">
+        <div class="asb-sec" style="margin-top:.85rem">
+            <span class="asb-sec-line"></span>
+        </div>
+        <a href="../logout.php" class="asb-link" style="margin-bottom:.5rem;color:#dc2626 !important;background:#fef2f2 !important;border-color:#fecaca !important">
             <span class="asb-ico" style="color:#dc2626;background:#fee2e2"><i class="fas fa-sign-out-alt"></i></span>
             <span class="flex-1">Sign Out</span>
         </a>
-    </div>
+    </nav>
 </div>
 
 <div id="asb-ov" class="fixed inset-0 z-40 hidden"

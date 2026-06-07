@@ -468,7 +468,7 @@ if (isset($_POST['login'])) {
             <!-- Logo -->
             <div class="brand-logo-wrap">
                 <div class="brand-logo-inner">
-                    <span>IN</span>
+                    <img src="uploads/1775551018_4xzREYTcMvK7ReGODviudjeDBIofOQ78mr5DsN9g.jpg" alt="IPINFRA" style="width:28px;height:28px;object-fit:contain;border-radius:4px;background:#fff;">
                 </div>
             </div>
 
@@ -507,8 +507,8 @@ if (isset($_POST['login'])) {
 
             <!-- Heading -->
             <div style="margin-bottom:2rem;">
-                <h1 class="form-heading">Welcome back</h1>
-                <p class="form-subheading">Sign in to your HRM account to continue.</p>
+                <h1 class="form-heading">Welcome to IPINFRA Networks Sdn Bhd</h1>
+                <p class="form-subheading">HR Management System — Sign in to your account to continue.</p>
             </div>
 
             <!-- Error message -->

@@ -87,38 +87,23 @@ body.esb-open { overflow:hidden; }
 </style>
 
 <div id="esb" class="fixed top-0 left-0 h-full z-50 -translate-x-full transition-[transform] duration-300 ease-out flex flex-col overflow-hidden"
-     style="width:min(260px,78vw);font-family:'Inter',sans-serif;box-shadow:4px 0 24px rgba(0,0,0,.13)">
+     style="width:min(220px,72vw);font-family:'Inter',sans-serif;box-shadow:4px 0 24px rgba(0,0,0,.13)">
 
-    <!-- Brand strip -->
+    <!-- User header -->
     <div class="flex items-center gap-3 px-4 shrink-0"
          style="padding-top:18px;padding-bottom:16px;background:linear-gradient(135deg,#0284c7,#0ea5e9);flex-shrink:0">
         <div class="flex items-center justify-center shrink-0"
-             style="width:34px;height:34px;border-radius:9px;background:rgba(255,255,255,.2)">
-            <span style="color:#fff;font-weight:900;font-size:.75rem">IN</span>
+             style="width:38px;height:38px;border-radius:9px;background:rgba(255,255,255,.2);color:#fff;font-weight:700;font-size:.9rem">
+            <?php echo strtoupper(substr($_SESSION['user_name'],0,1)); ?>
         </div>
         <div class="flex-1 min-w-0">
-            <p style="color:#fff;font-weight:700;font-size:.82rem;line-height:1">IPINFRA HRM</p>
-            <p style="font-size:.6rem;color:rgba(255,255,255,.7);font-weight:600;letter-spacing:.15em;text-transform:uppercase;margin-top:3px">Employee Portal</p>
+            <p style="color:#fff;font-weight:700;font-size:.88rem;line-height:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap"><?php echo htmlspecialchars($_SESSION['user_name']); ?></p>
+            <p style="font-size:.68rem;color:rgba(255,255,255,.8);font-weight:500;margin-top:4px"><?php echo htmlspecialchars($_SESSION['employee_id'] ?? 'Employee'); ?></p>
         </div>
+        <span style="width:8px;height:8px;border-radius:50%;background:#4ade80;flex-shrink:0;margin-right:4px"></span>
         <button class="esb-close" onclick="esbToggle()">
             <i class="fas fa-times" style="font-size:.8rem"></i>
         </button>
-    </div>
-
-    <!-- User card -->
-    <div class="mx-3 mt-3 mb-1 px-3 shrink-0"
-         style="padding-top:10px;padding-bottom:10px;border-radius:10px;background:#e0f2fe;border:1px solid #bae6fd">
-        <div class="flex items-center gap-2.5">
-            <div class="flex items-center justify-center shrink-0"
-                 style="width:38px;height:38px;border-radius:9px;background:linear-gradient(135deg,#0284c7,#0ea5e9);color:#fff;font-weight:700;font-size:.85rem">
-                <?php echo strtoupper(substr($_SESSION['user_name'],0,1)); ?>
-            </div>
-            <div class="flex-1 min-w-0">
-                <p style="color:#0c4a6e;font-weight:600;font-size:.82rem;line-height:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap"><?php echo htmlspecialchars($_SESSION['user_name']); ?></p>
-                <p style="font-size:.68rem;color:#0369a1;margin-top:3px"><?php echo htmlspecialchars($_SESSION['employee_id'] ?? 'Employee'); ?></p>
-            </div>
-            <span style="width:8px;height:8px;border-radius:50%;background:#22c55e;flex-shrink:0"></span>
-        </div>
     </div>
 
     <!-- Nav -->
@@ -140,18 +125,14 @@ body.esb-open { overflow:hidden; }
             <span class="flex-1"><?php echo $label ?></span>
         </a>
         <?php endforeach ?>
-    </nav>
-
-    <!-- Footer -->
-    <div class="px-2.5 pb-6 pt-2 shrink-0" style="border-top:1px solid #f3f4f6">
-        <a href="../logout.php" class="esb-link"
-           style="color:#dc2626;background:#fef2f2;border-color:#fecaca"
-           onmouseover="this.style.background='#fee2e2';this.style.borderColor='#fca5a5'"
-           onmouseout="this.style.background='#fef2f2';this.style.borderColor='#fecaca'">
+        <div class="esb-sec" style="margin-top:.85rem">
+            <span class="esb-sec-line"></span>
+        </div>
+        <a href="../logout.php" class="esb-link" style="margin-bottom:.5rem;color:#dc2626 !important;background:#fef2f2 !important;border-color:#fecaca !important">
             <span class="esb-ico" style="color:#dc2626;background:#fee2e2"><i class="fas fa-sign-out-alt"></i></span>
             <span class="flex-1">Sign Out</span>
         </a>
-    </div>
+    </nav>
 </div>
 
 <div id="esb-ov" class="fixed inset-0 z-40 hidden"

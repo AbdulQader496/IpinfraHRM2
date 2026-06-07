@@ -263,7 +263,7 @@ $announcements = mysqli_query($conn, "SELECT * FROM announcements WHERE is_activ
                 <i class="fas fa-bars text-xl"></i>
             </button>
             <div class="w-10 h-10 bg-gradient-to-br from-blue-500 to-indigo-600 rounded-xl flex items-center justify-center shadow-lg">
-                <span class="text-white font-bold text-sm">IN</span>
+                <img src="../uploads/1775551018_4xzREYTcMvK7ReGODviudjeDBIofOQ78mr5DsN9g.jpg" alt="IPINFRA" style="width:28px;height:28px;object-fit:contain;border-radius:4px;background:#fff;">
             </div>
             <div>
                 <p class="text-xs text-blue-200 font-medium">IPINFRA NETWORKS</p>
@@ -332,12 +332,17 @@ $announcements = mysqli_query($conn, "SELECT * FROM announcements WHERE is_activ
     <div class="welcome-card rounded-2xl p-6 mb-8 text-white shadow-2xl animate-slideLeft">
         <div class="relative z-10">
             <div class="flex items-center justify-between flex-wrap gap-4">
-                <div>
-                    <p class="text-sm text-blue-200">Welcome back,</p>
-                    <h1 class="text-3xl font-bold mt-1"><?php echo $_SESSION['user_name']; ?></h1>
-                    <p class="text-sm text-blue-200 mt-2">
-                        <i class="fas fa-calendar-alt mr-2"></i><?php echo date('l, d F Y'); ?>
-                    </p>
+                <div class="flex items-center gap-4">
+                    <img src="../uploads/1775551018_4xzREYTcMvK7ReGODviudjeDBIofOQ78mr5DsN9g.jpg" alt="IPINFRA"
+                         style="width:72px;height:72px;object-fit:contain;border-radius:14px;background:#fff;padding:5px;flex-shrink:0;">
+                    <div>
+                        <p class="text-xs font-semibold tracking-widest uppercase text-blue-200">IPINFRA Networks Sdn Bhd</p>
+                        <p class="text-xs text-blue-200 mb-1">HR Management System</p>
+                        <h1 class="text-3xl font-bold"><?php echo $_SESSION['user_name']; ?></h1>
+                        <p class="text-sm text-blue-200 mt-1">
+                            <i class="fas fa-calendar-alt mr-2"></i><?php echo date('l, d F Y'); ?>
+                        </p>
+                    </div>
                 </div>
                 <div class="text-right">
                     <div class="w-16 h-16 bg-white/20 rounded-2xl flex items-center justify-center backdrop-blur-sm">

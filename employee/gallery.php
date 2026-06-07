@@ -101,8 +101,6 @@ while ($r = mysqli_fetch_assoc($gallery)) $photos[] = $r;
 * { font-family: 'Inter', sans-serif; }
 .gallery-card { transition: transform .2s, box-shadow .2s; }
 .gallery-card:hover { transform: translateY(-3px); box-shadow: 0 12px 32px -8px rgba(0,0,0,.18); }
-.owner-actions { opacity: 0; transition: opacity .2s; }
-.gallery-card:hover .owner-actions { opacity: 1; }
 </style>
 </head>
 <body class="bg-slate-50 min-h-screen pb-24">
@@ -201,9 +199,9 @@ while ($r = mysqli_fetch_assoc($gallery)) $photos[] = $r;
     <?php else: ?>
     <div class="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
         <?php foreach ($photos as $photo):
-            $img_path  = "../uploads/gallery/" . $photo['image_path'];
-            $is_owner  = (int)$photo['employee_id'] === $user_id;
-            $initials  = strtoupper(substr($photo['name'],0,1));
+            $img_path = "../uploads/gallery/" . $photo['image_path'];
+            $is_owner = (int)$photo['employee_id'] === (int)$user_id;
+            $initials = strtoupper(substr($photo['name'], 0, 1));
         ?>
         <div class="gallery-card bg-white rounded-2xl overflow-hidden border border-gray-100 shadow-sm">
             <!-- Image -->
@@ -218,25 +216,7 @@ while ($r = mysqli_fetch_assoc($gallery)) $photos[] = $r;
                     <i class="fas fa-image text-4xl text-gray-300"></i>
                 </div>
                 <?php endif; ?>
-
                 <?php if ($is_owner): ?>
-                <!-- Owner action buttons — visible on hover -->
-                <div class="owner-actions absolute top-2 right-2 flex gap-1.5">
-                    <button onclick='openEditModal(<?php echo json_encode([
-                        "id"            => $photo["id"],
-                        "caption"       => $photo["caption"],
-                        "activity_date" => $photo["activity_date"],
-                    ]); ?>)'
-                            class="w-8 h-8 bg-white/90 hover:bg-white rounded-lg shadow flex items-center justify-center text-indigo-600 hover:text-indigo-700 transition" title="Edit">
-                        <i class="fas fa-pencil-alt text-xs"></i>
-                    </button>
-                    <a href="?delete=<?php echo $photo['id']; ?>"
-                       data-confirm="Delete this photo permanently?" data-confirm-title="Delete Photo"
-                       class="w-8 h-8 bg-white/90 hover:bg-white rounded-lg shadow flex items-center justify-center text-red-500 hover:text-red-600 transition" title="Delete">
-                        <i class="fas fa-trash text-xs"></i>
-                    </a>
-                </div>
-                <!-- Mine badge -->
                 <span class="absolute top-2 left-2 bg-indigo-600/80 backdrop-blur-sm text-white text-[10px] font-bold px-2 py-0.5 rounded-full">Mine</span>
                 <?php endif; ?>
             </div>
@@ -253,6 +233,23 @@ while ($r = mysqli_fetch_assoc($gallery)) $photos[] = $r;
                     </span>
                     <span><?php echo date('d M Y', strtotime($photo['activity_date'])); ?></span>
                 </div>
+                <?php if ($is_owner): ?>
+                <div class="flex gap-2 mt-3 pt-3 border-t border-gray-100">
+                    <button onclick='openEditModal(<?php echo json_encode([
+                        "id"            => $photo["id"],
+                        "caption"       => $photo["caption"],
+                        "activity_date" => $photo["activity_date"],
+                    ]); ?>)'
+                            class="flex-1 flex items-center justify-center gap-1.5 py-1.5 rounded-lg bg-indigo-50 hover:bg-indigo-100 text-indigo-600 text-xs font-semibold transition">
+                        <i class="fas fa-pencil-alt text-[11px]"></i>Edit
+                    </button>
+                    <a href="?delete=<?php echo $photo['id']; ?>"
+                       data-confirm="Delete this photo permanently? This cannot be undone." data-confirm-title="Delete Photo"
+                       class="flex-1 flex items-center justify-center gap-1.5 py-1.5 rounded-lg bg-red-50 hover:bg-red-100 text-red-500 text-xs font-semibold transition">
+                        <i class="fas fa-trash text-[11px]"></i>Delete
+                    </a>
+                </div>
+                <?php endif; ?>
             </div>
         </div>
         <?php endforeach; ?>

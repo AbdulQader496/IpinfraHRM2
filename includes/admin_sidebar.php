@@ -11,7 +11,7 @@ $_admin_nav = [
     ['manage_gallery.php','fa-images',              'Gallery',    'resources'],
     ['management.php',    'fa-briefcase',           'Management', 'ops'],
     ['payroll.php',       'fa-file-invoice-dollar', 'Payroll',    'ops'],
-    ['holidays.php',      'fa-calendar-alt',        'Holidays',   'ops'],
+    ['calendar.php',      'fa-calendar-alt',        'Calendar',   'ops'],
     ['audit_log.php',     'fa-shield-alt',          'Audit Log',  'system'],
 ];
 

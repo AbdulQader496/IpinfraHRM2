@@ -30,6 +30,18 @@ $_ic = [
     'fa-user-circle'         => ['#7c3aed','#ede9fe'],
 ];
 $_ps = '';
+
+// Fetch profile picture
+$_esb_pic = null;
+if (!empty($_SESSION['user_id'])) {
+    $_esb_row = mysqli_fetch_assoc(mysqli_query($conn, "SELECT profile_pic FROM employees WHERE id=" . intval($_SESSION['user_id'])));
+    if (!empty($_esb_row['profile_pic'])) {
+        $_esb_pic_path = dirname(__DIR__) . '/uploads/profiles/' . $_esb_row['profile_pic'];
+        if (file_exists($_esb_pic_path)) {
+            $_esb_pic = '../uploads/profiles/' . $_esb_row['profile_pic'];
+        }
+    }
+}
 ?>
 <style>
 /* ── Page background ─────────────────────────────────── */
@@ -92,10 +104,15 @@ body.esb-open { overflow:hidden; }
     <!-- User header -->
     <div class="flex items-center gap-3 px-4 shrink-0"
          style="padding-top:18px;padding-bottom:16px;background:linear-gradient(135deg,#0284c7,#0ea5e9);flex-shrink:0">
+        <?php if ($_esb_pic): ?>
+        <img src="<?php echo $_esb_pic ?>" alt="Profile"
+             style="width:40px;height:40px;border-radius:50%;object-fit:cover;border:2px solid rgba(255,255,255,.6);flex-shrink:0;">
+        <?php else: ?>
         <div class="flex items-center justify-center shrink-0"
-             style="width:38px;height:38px;border-radius:9px;background:rgba(255,255,255,.2);color:#fff;font-weight:700;font-size:.9rem">
+             style="width:40px;height:40px;border-radius:50%;background:rgba(255,255,255,.25);color:#fff;font-weight:700;font-size:.9rem;border:2px solid rgba(255,255,255,.4)">
             <?php echo strtoupper(substr($_SESSION['user_name'],0,1)); ?>
         </div>
+        <?php endif; ?>
         <div class="flex-1 min-w-0">
             <p style="color:#fff;font-weight:700;font-size:.88rem;line-height:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap"><?php echo htmlspecialchars($_SESSION['user_name']); ?></p>
             <p style="font-size:.68rem;color:rgba(255,255,255,.8);font-weight:500;margin-top:4px"><?php echo htmlspecialchars($_SESSION['employee_id'] ?? 'Employee'); ?></p>

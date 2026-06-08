@@ -1,7 +1,8 @@
-<?php
+﻿<?php
 require_once '../includes/auth.php';
 redirectIfNotLoggedIn();
 require_once '../includes/db.php';
+require_once '../includes/toast_fn.php';
 $user_id = $_SESSION['user_id'];
 
 $today = date('Y-m-d');
@@ -21,6 +22,9 @@ if (isset($_POST['clock_out'])) {
     exit();
 }
 
+// Weekend check
+$is_weekend_dash = in_array(date('l'), ['Saturday', 'Sunday']);
+
 // Get today's attendance
 $attendance_query = mysqli_query($conn, "SELECT * FROM attendance WHERE employee_id = $user_id AND date = '$today'");
 $attendance = mysqli_fetch_assoc($attendance_query);
@@ -28,21 +32,34 @@ $has_clocked_in = $attendance ? true : false;
 $clocked_out = $attendance && $attendance['clock_out'] ? true : false;
 $is_late = $attendance && $attendance['status'] == 'late';
 
-// Get leave balance
-$balance = mysqli_fetch_assoc(mysqli_query($conn, "SELECT 
-    annual_leave_entitlement, 
+// Get leave balance and employee type
+$balance = mysqli_fetch_assoc(mysqli_query($conn, "SELECT
+    annual_leave_entitlement,
     used_annual_leave,
     (annual_leave_entitlement - used_annual_leave) as annual_remaining,
     medical_leave_entitlement,
     used_medical_leave,
-    (medical_leave_entitlement - used_medical_leave) as medical_remaining 
+    (medical_leave_entitlement - used_medical_leave) as medical_remaining,
+    employee_type
     FROM employees WHERE id = $user_id"));
+$is_intern_dash = isset($balance['employee_type']) && $balance['employee_type'] == 'intern';
 
 // Get recent leaves
 $recent_leaves = mysqli_query($conn, "SELECT * FROM leaves WHERE employee_id = $user_id ORDER BY applied_at DESC LIMIT 3");
 
 // Get recent claims
 $recent_claims = mysqli_query($conn, "SELECT * FROM claims WHERE employee_id = $user_id ORDER BY applied_at DESC LIMIT 3");
+
+// Employee of the Month (read-only)
+$eom_emp = null;
+try {
+    $eom_emp = mysqli_fetch_assoc(mysqli_query($conn,
+        "SELECT m.note, e.name, e.department, e.profile_pic
+         FROM employee_of_month m
+         JOIN employees e ON m.employee_id = e.id
+         WHERE m.month_year = DATE_FORMAT(CURDATE(),'%Y-%m')
+         LIMIT 1"));
+} catch (Exception $ex) { }
 
 // Get announcements for employees
 $announcements = mysqli_query($conn, "SELECT * FROM announcements WHERE is_active = 1 AND (target_role = 'all' OR target_role = 'employee') AND (end_date IS NULL OR end_date >= CURDATE()) ORDER BY 
@@ -79,8 +96,11 @@ $announcements = mysqli_query($conn, "SELECT * FROM announcements WHERE is_activ
     </style>
 </head>
 <body class="bg-gradient-to-br from-gray-50 to-gray-100 min-h-screen">
+<?php require_once '../includes/global_ui.php'; ?>
+<?php require_once '../includes/toast.php'; ?>
+<?php require_once '../includes/confirm_modal.php'; ?>
 <!-- Premium Header -->
-<div class="bg-gradient-to-r from-slate-900 via-indigo-900 to-slate-900 text-white sticky top-0 z-40 shadow-2xl backdrop-blur-sm">
+<div class="bg-[#060912] text-white sticky top-0 z-40 shadow-2xl backdrop-blur-sm">
     <div class="flex items-center justify-between px-5 py-4">
         <div class="flex items-center gap-3">
             <!-- Menu Button -->
@@ -93,7 +113,7 @@ $announcements = mysqli_query($conn, "SELECT * FROM announcements WHERE is_activ
             <!-- Logo -->
             <div class="relative">
                 <div class="w-10 h-10 bg-gradient-to-br from-blue-500 via-indigo-500 to-purple-600 rounded-xl flex items-center justify-center shadow-lg shadow-indigo-500/20 animate-pulse">
-                    <span class="text-white font-bold text-sm">IN</span>
+                    <img src="../uploads/1775551018_4xzREYTcMvK7ReGODviudjeDBIofOQ78mr5DsN9g.jpg" alt="IPINFRA" style="width:28px;height:28px;object-fit:contain;border-radius:4px;background:#fff;">
                 </div>
                 <div class="absolute -top-1 -right-1 w-3 h-3 bg-green-400 rounded-full border-2 border-slate-900"></div>
             </div>
@@ -117,75 +137,31 @@ $announcements = mysqli_query($conn, "SELECT * FROM announcements WHERE is_activ
     <div class="h-0.5 bg-gradient-to-r from-transparent via-indigo-400 to-transparent"></div>
 </div>
 
-<!-- SIDEBAR -->
-<div id="sidebar" class="fixed top-0 left-0 h-full w-72 bg-gradient-to-b from-blue-900 to-blue-950 text-white z-50 transform -translate-x-full transition-transform duration-300 shadow-2xl overflow-y-auto">
-    <div class="p-6 border-b border-blue-800">
-        <div class="flex items-center gap-3 mb-4">
-            <div class="w-12 h-12 bg-white rounded-xl flex items-center justify-center">
-                <span class="text-blue-900 font-bold text-xl">IN</span>
-            </div>
-            <div>
-                <h2 class="font-bold"><?php echo $_SESSION['user_name']; ?></h2>
-                <p class="text-xs text-blue-300"><?php echo $_SESSION['employee_id']; ?></p>
-            </div>
-        </div>
-        <button onclick="toggleSidebar()" class="absolute top-4 right-4 text-white/60 hover:text-white">
-            <i class="fas fa-times text-xl"></i>
-        </button>
-    </div>
-    <nav class="p-4">
-        <a href="dashboard.php" class="flex items-center gap-3 py-3 px-4 rounded-xl hover:bg-blue-800/30 transition mb-1">
-            <i class="fas fa-tachometer-alt w-5"></i> Dashboard
-        </a>
-        <a href="clock.php" class="flex items-center gap-3 py-3 px-4 rounded-xl hover:bg-blue-800/30 transition mb-1">
-            <i class="fas fa-clock w-5"></i> Clock In/Out
-        </a>
-        <a href="leave.php" class="flex items-center gap-3 py-3 px-4 rounded-xl hover:bg-blue-800/30 transition mb-1">
-            <i class="fas fa-calendar-alt w-5"></i> Apply Leave
-        </a>
-        <a href="claim.php" class="flex items-center gap-3 py-3 px-4 rounded-xl hover:bg-blue-800/30 transition mb-1">
-            <i class="fas fa-receipt w-5"></i> Apply Claim
-        </a>
-        <a href="gallery.php" class="flex items-center gap-3 py-3 px-4 rounded-xl hover:bg-blue-800/30 transition mb-1">
-            <i class="fas fa-images w-5"></i> Company Gallery
-        </a>
-        <a href="assets.php" class="flex items-center gap-3 py-3 px-4 rounded-xl hover:bg-blue-800/30 transition mb-1">
-            <i class="fas fa-boxes w-5"></i> Asset Tracker
-        </a>
-        <a href="management.php" class="flex items-center gap-3 py-3 px-4 rounded-xl bg-blue-800/50 mb-1">
-            <i class="fas fa-briefcase w-5"></i> My Management
-        </a>
-        <a href="payslip.php" class="flex items-center gap-3 py-3 px-4 rounded-xl hover:bg-blue-800/30 transition mb-1">
-            <i class="fas fa-file-invoice-dollar w-5"></i> Payslip
-        </a>
-        <a href="calendar.php" class="flex items-center gap-3 py-3 px-4 rounded-xl hover:bg-blue-800/30 transition mb-1">
-            <i class="fas fa-calendar w-5"></i> Calendar
-        </a>
-        <a href="profile.php" class="flex items-center gap-3 py-3 px-4 rounded-xl hover:bg-blue-800/30 transition mb-1">
-            <i class="fas fa-user-circle w-5"></i> My Profile
-        </a>
-        <div class="border-t border-blue-800 my-4"></div>
-        <a href="../logout.php" class="flex items-center gap-3 py-3 px-4 rounded-xl bg-red-600/20 text-red-300 hover:bg-red-600/30 transition">
-            <i class="fas fa-sign-out-alt w-5"></i> Logout
-        </a>
-    </nav>
-</div>
-
-<div id="overlay" class="fixed inset-0 bg-black/50 z-40 hidden" onclick="toggleSidebar()"></div>
+<?php require_once '../includes/employee_sidebar.php'; ?>
 
     <!-- Main Content -->
     <div class="px-4 py-6 pb-24 md:pb-6 max-w-7xl mx-auto">
         <!-- Welcome Card with Time -->
         <div class="bg-gradient-to-r from-blue-600 to-indigo-700 rounded-2xl p-5 mb-6 text-white shadow-xl">
-            <div class="flex justify-between items-start">
+            <div class="flex items-center gap-4 mb-3">
+                <img src="../uploads/1775551018_4xzREYTcMvK7ReGODviudjeDBIofOQ78mr5DsN9g.jpg" alt="IPINFRA"
+                     style="width:64px;height:64px;object-fit:contain;border-radius:12px;background:#fff;padding:4px;flex-shrink:0;">
                 <div>
-                    <p class="text-sm opacity-90">Welcome back,</p>
-                    <h1 class="text-2xl font-bold"><?php echo $_SESSION['user_name']; ?></h1>
-                    <p class="text-sm opacity-80 mt-1"><?php echo date('l, d F Y'); ?></p>
+                    <p class="text-xs font-semibold tracking-widest uppercase opacity-80">IPINFRA Networks Sdn Bhd</p>
+                    <p class="text-xs opacity-70">HR Management System</p>
                 </div>
-                <div class="text-right">
-                    <div class="text-3xl font-bold clock-number" id="liveClock">--:--:--</div>
-                    <p class="text-xs opacity-80 mt-1">Malaysia Time</p>
+            </div>
+            <div class="flex justify-between items-end">
+                <div>
+                    <p class="text-sm opacity-80">Welcome,</p>
+                    <h1 class="text-2xl font-bold"><?php echo $_SESSION['user_name']; ?></h1>
+                    <p class="text-sm opacity-70 mt-1"><?php echo date('l, d F Y'); ?></p>
+                </div>
+                <div class="text-right flex flex-col items-end justify-center">
+                    <div id="liveClock" class="font-bold leading-none" style="font-size:2rem;letter-spacing:.02em">--:--</div>
+                    <div id="liveAmPm" class="font-semibold mt-0.5" style="font-size:.75rem;letter-spacing:.12em;opacity:.8">--</div>
+                    <div id="liveSec" style="font-size:.68rem;opacity:.55;margin-top:1px">--</div>
+                    <p class="text-xs opacity-60 mt-1">Malaysia Time</p>
                 </div>
             </div>
         </div>
@@ -194,7 +170,11 @@ $announcements = mysqli_query($conn, "SELECT * FROM announcements WHERE is_activ
         <div class="bg-white rounded-2xl shadow-xl p-5 mb-6">
             <div class="flex flex-col items-center text-center">
                 <div class="mb-3">
-                    <?php if (!$has_clocked_in): ?>
+                    <?php if ($is_weekend_dash): ?>
+                        <div class="w-24 h-24 mx-auto bg-purple-100 rounded-full flex items-center justify-center">
+                            <i class="fas fa-umbrella-beach text-4xl text-purple-500"></i>
+                        </div>
+                    <?php elseif (!$has_clocked_in): ?>
                         <div class="w-24 h-24 mx-auto bg-green-100 rounded-full flex items-center justify-center pulse">
                             <i class="fas fa-fingerprint text-4xl text-green-600"></i>
                         </div>
@@ -208,8 +188,15 @@ $announcements = mysqli_query($conn, "SELECT * FROM announcements WHERE is_activ
                         </div>
                     <?php endif; ?>
                 </div>
-                
-                <?php if (!$has_clocked_in): ?>
+
+                <?php if ($is_weekend_dash): ?>
+                    <h3 class="text-xl font-bold text-purple-600">It's the Weekend!</h3>
+                    <p class="text-sm text-gray-500 mb-1"><?php echo date('l, d F Y'); ?></p>
+                    <p class="text-xs text-gray-400 mb-4">No attendance required — enjoy your rest day.</p>
+                    <a href="clock.php" class="inline-block bg-purple-100 text-purple-700 hover:bg-purple-200 px-6 py-2 rounded-xl text-sm font-medium transition">
+                        <i class="fas fa-history mr-1"></i> View Attendance History
+                    </a>
+                <?php elseif (!$has_clocked_in): ?>
                     <h3 class="text-xl font-bold text-gray-800">Not Clocked In Yet</h3>
                     <p class="text-sm text-gray-500 mb-4">Office hours: 9:30 AM - 6:00 PM</p>
                     <form method="POST">
@@ -245,6 +232,17 @@ $announcements = mysqli_query($conn, "SELECT * FROM announcements WHERE is_activ
 
         <!-- Stats Grid -->
         <div class="grid grid-cols-2 gap-4 mb-6">
+            <?php if($is_intern_dash): ?>
+            <div class="col-span-2 bg-gradient-to-br from-blue-50 to-indigo-50 border border-blue-100 rounded-xl p-4 flex items-center gap-3">
+                <div class="w-10 h-10 bg-blue-100 rounded-full flex items-center justify-center flex-shrink-0">
+                    <i class="fas fa-graduation-cap text-blue-500"></i>
+                </div>
+                <div>
+                    <p class="text-sm font-semibold text-blue-700">Intern — No Leave Entitlement</p>
+                    <p class="text-xs text-blue-500 mt-0.5">You may apply for <strong>Unpaid Leave</strong> only. It will be deducted from your salary.</p>
+                </div>
+            </div>
+            <?php else: ?>
             <div class="bg-gradient-to-br from-blue-50 to-blue-100 rounded-xl p-4">
                 <div class="flex items-center justify-between mb-2">
                     <i class="fas fa-umbrella-beach text-2xl text-blue-600"></i>
@@ -263,6 +261,7 @@ $announcements = mysqli_query($conn, "SELECT * FROM announcements WHERE is_activ
                 <p class="text-xs text-green-600 mt-1">Medical Leave</p>
                 <p class="text-xs text-gray-500">Used: <?php echo $balance['used_medical_leave']; ?>/<?php echo $balance['medical_leave_entitlement']; ?></p>
             </div>
+            <?php endif; ?>
         </div>
 
         <!-- ANNOUNCEMENTS SECTION (Replaces This Week's Attendance) -->
@@ -327,6 +326,36 @@ $announcements = mysqli_query($conn, "SELECT * FROM announcements WHERE is_activ
                 <?php endif; ?>
             </div>
         </div>
+
+        <!-- Employee of the Month -->
+        <?php if($eom_emp): ?>
+        <div class="bg-gradient-to-r from-indigo-600 via-purple-600 to-pink-600 rounded-2xl shadow-xl p-5 mb-6 text-white relative overflow-hidden">
+            <div class="absolute top-0 right-0 w-32 h-32 bg-white/10 rounded-full -translate-y-1/2 translate-x-1/2 pointer-events-none"></div>
+            <div class="flex items-center gap-3 mb-3">
+                <i class="fas fa-trophy text-yellow-300 text-lg"></i>
+                <div>
+                    <p class="font-bold text-sm uppercase tracking-widest">Employee of the Month</p>
+                    <p class="text-white/60 text-xs"><?php echo date('F Y'); ?></p>
+                </div>
+            </div>
+            <div class="flex items-center gap-4">
+                <div class="w-14 h-14 rounded-xl bg-white/20 flex items-center justify-center overflow-hidden border-2 border-white/40 flex-shrink-0">
+                    <?php if(!empty($eom_emp['profile_pic']) && file_exists('../uploads/profiles/'.$eom_emp['profile_pic'])): ?>
+                        <img src="../uploads/profiles/<?php echo htmlspecialchars($eom_emp['profile_pic']); ?>" class="w-full h-full object-cover">
+                    <?php else: ?>
+                        <span class="text-2xl font-bold"><?php echo strtoupper(substr($eom_emp['name'],0,1)); ?></span>
+                    <?php endif; ?>
+                </div>
+                <div>
+                    <p class="text-lg font-bold"><?php echo htmlspecialchars($eom_emp['name']); ?></p>
+                    <p class="text-white/80 text-sm"><?php echo htmlspecialchars($eom_emp['department'] ?: ''); ?></p>
+                    <?php if(!empty($eom_emp['note'])): ?>
+                        <p class="text-white/70 text-xs mt-1 italic">"<?php echo htmlspecialchars($eom_emp['note']); ?>"</p>
+                    <?php endif; ?>
+                </div>
+            </div>
+        </div>
+        <?php endif; ?>
 
         <!-- Quick Actions -->
         <div class="mb-6">
@@ -413,7 +442,7 @@ $announcements = mysqli_query($conn, "SELECT * FROM announcements WHERE is_activ
     </div>
 
     <!-- Mobile Bottom Navigation -->
-    <div class="fixed bottom-0 left-0 right-0 bg-white border-t border-gray-200 md:hidden shadow-lg z-20">
+    <div class="bottom-nav fixed bottom-0 left-0 right-0 bg-white border-t border-gray-200 md:hidden shadow-lg z-20">
         <div class="flex justify-around py-2">
             <a href="dashboard.php" class="flex flex-col items-center py-1 px-3 text-blue-600">
                 <i class="fas fa-home text-xl"></i>
@@ -435,12 +464,6 @@ $announcements = mysqli_query($conn, "SELECT * FROM announcements WHERE is_activ
     </div>
 
     <script>
-        function toggleSidebar() {
-            const sidebar = document.getElementById('sidebar');
-            const overlay = document.getElementById('overlay');
-            sidebar.classList.toggle('-translate-x-full');
-            overlay.classList.toggle('hidden');
-        }
         
         function showTab(tab) {
             const leavesTab = document.getElementById('leavesTab');
@@ -463,7 +486,13 @@ $announcements = mysqli_query($conn, "SELECT * FROM announcements WHERE is_activ
         
         function updateClock() {
             const now = new Date();
-            document.getElementById('liveClock').textContent = now.toLocaleTimeString('en-MY', { hour12: false });
+            let h = now.getHours(), m = now.getMinutes(), s = now.getSeconds();
+            const ampm = h >= 12 ? 'PM' : 'AM';
+            h = h % 12 || 12;
+            const pad = n => String(n).padStart(2,'0');
+            document.getElementById('liveClock').textContent = `${pad(h)}:${pad(m)}`;
+            document.getElementById('liveAmPm').textContent  = ampm;
+            document.getElementById('liveSec').textContent   = `:${pad(s)}`;
         }
         setInterval(updateClock, 1000);
         updateClock();

@@ -1,4 +1,4 @@
-<?php
+﻿<?php
 require_once '../includes/auth.php';
 redirectIfNotAdmin();
 require_once '../includes/db.php';
@@ -73,7 +73,7 @@ $completed = mysqli_fetch_assoc(mysqli_query($conn, "SELECT COUNT(*) as count FR
 <body class="bg-gradient-to-br from-gray-50 to-gray-100 min-h-screen pb-20">
 
 <!-- Premium Mobile Header -->
-<div class="bg-gradient-to-r from-slate-900 via-indigo-900 to-slate-900 text-white sticky top-0 z-40 shadow-2xl">
+<div class="bg-[#060912] text-white sticky top-0 z-40 shadow-2xl">
     <div class="flex justify-between items-center px-4 py-4">
         <div class="flex items-center gap-3">
             <!-- MENU BUTTON - Left side -->
@@ -81,7 +81,7 @@ $completed = mysqli_fetch_assoc(mysqli_query($conn, "SELECT COUNT(*) as count FR
                 <i class="fas fa-bars text-xl"></i>
             </button>
             <div class="w-10 h-10 bg-gradient-to-br from-blue-500 to-indigo-600 rounded-xl flex items-center justify-center shadow-lg">
-                <span class="text-white font-bold text-sm">IN</span>
+                <img src="../uploads/1775551018_4xzREYTcMvK7ReGODviudjeDBIofOQ78mr5DsN9g.jpg" alt="IPINFRA" style="width:28px;height:28px;object-fit:contain;border-radius:4px;background:#fff;">
             </div>
             <div>
                 <p class="text-xs text-blue-200 font-medium">IPINFRA NETWORKS</p>
@@ -92,65 +92,7 @@ $completed = mysqli_fetch_assoc(mysqli_query($conn, "SELECT COUNT(*) as count FR
     </div>
 </div>
 
-<!-- Sidebar -->
-<div id="sidebar" class="fixed top-0 left-0 h-full w-72 bg-gradient-to-b from-gray-900 to-gray-950 text-white z-50 transform -translate-x-full transition-transform duration-300 shadow-2xl overflow-y-auto">
-    <div class="p-6 border-b border-gray-800">
-        <div class="flex items-center gap-3 mb-4">
-            <div class="w-12 h-12 bg-white rounded-xl flex items-center justify-center">
-                <span class="text-gray-900 font-bold text-xl">IN</span>
-            </div>
-            <div>
-                <h2 class="font-bold"><?php echo $_SESSION['user_name']; ?></h2>
-                <p class="text-xs text-gray-400">Administrator</p>
-            </div>
-        </div>
-        <button onclick="toggleSidebar()" class="absolute top-4 right-4 text-white/60 hover:text-white">
-            <i class="fas fa-times text-xl"></i>
-        </button>
-    </div>
-    <nav class="p-4">
-        <a href="dashboard.php" class="flex items-center gap-3 py-3 px-4 rounded-xl hover:bg-gray-800/30 transition mb-1">
-            <i class="fas fa-tachometer-alt w-5"></i> Dashboard
-        </a>
-        <a href="employees.php" class="flex items-center gap-3 py-3 px-4 rounded-xl hover:bg-gray-800/30 transition mb-1">
-            <i class="fas fa-users w-5"></i> Employees
-        </a>
-        <a href="manage_leave.php" class="flex items-center gap-3 py-3 px-4 rounded-xl hover:bg-gray-800/30 transition mb-1">
-            <i class="fas fa-calendar-check w-5"></i> Leave Management
-        </a>
-        <a href="manage_claim.php" class="flex items-center gap-3 py-3 px-4 rounded-xl hover:bg-gray-800/30 transition mb-1">
-            <i class="fas fa-receipt w-5"></i> Claim Management
-        </a>
-        <a href="attendance.php" class="flex items-center gap-3 py-3 px-4 rounded-xl hover:bg-gray-800/30 transition mb-1">
-            <i class="fas fa-fingerprint w-5"></i> Attendance
-        </a>
-        <a href="manage_assets.php" class="flex items-center gap-3 py-3 px-4 rounded-xl hover:bg-gray-800/30 transition mb-1">
-            <i class="fas fa-boxes w-5"></i> Asset Management
-        </a>
-        <a href="manage_gallery.php" class="flex items-center gap-3 py-3 px-4 rounded-xl hover:bg-gray-800/30 transition mb-1">
-            <i class="fas fa-images w-5"></i> Gallery Management
-        </a>
-        <a href="resignations.php" class="flex items-center gap-3 py-3 px-4 rounded-xl bg-gray-800/50 mb-1">
-            <i class="fas fa-user-minus w-5"></i> Resignations
-        </a>
-       
-        <a href="employee_documents.php" class="flex items-center gap-3 py-3 px-4 rounded-xl hover:bg-gray-800/30 transition mb-1">
-            <i class="fas fa-folder-open w-5"></i> Employee Documents
-        </a>
-        <a href="payroll.php" class="flex items-center gap-3 py-3 px-4 rounded-xl hover:bg-gray-800/30 transition mb-1">
-            <i class="fas fa-file-invoice-dollar w-5"></i> Payroll
-        </a>
-        <a href="holidays.php" class="flex items-center gap-3 py-3 px-4 rounded-xl hover:bg-gray-800/30 transition mb-1">
-            <i class="fas fa-calendar-alt w-5"></i> Holidays
-        </a>
-        <div class="border-t border-gray-800 my-4"></div>
-        <a href="../logout.php" class="flex items-center gap-3 py-3 px-4 rounded-xl bg-red-600/20 text-red-300 hover:bg-red-600/30 transition">
-            <i class="fas fa-sign-out-alt w-5"></i> Logout
-        </a>
-    </nav>
-</div>
-
-<div id="overlay" class="fixed inset-0 bg-black/50 z-40 hidden" onclick="toggleSidebar()"></div>
+<?php require_once '../includes/admin_sidebar.php'; ?>
 
 <!-- Main Content -->
 <div class="px-4 py-6 pb-24 max-w-7xl mx-auto">
@@ -303,10 +245,6 @@ $completed = mysqli_fetch_assoc(mysqli_query($conn, "SELECT COUNT(*) as count FR
 </div>
 
 <script>
-    function toggleSidebar() {
-        document.getElementById('sidebar').classList.toggle('-translate-x-full');
-        document.getElementById('overlay').classList.toggle('hidden');
-    }
     
     function openClearanceModal(resignation) {
         document.getElementById('clearance_resign_id').value = resignation.id;

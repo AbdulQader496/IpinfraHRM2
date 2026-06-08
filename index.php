@@ -1,11 +1,35 @@
 <?php
 session_start();
 require_once 'includes/db.php';
+require_once 'includes/functions.php';
+
+// Check if user has remember me cookie
+if (!isset($_SESSION['user_id']) && isset($_COOKIE['remember_token'])) {
+    $token = mysqli_real_escape_string($conn, $_COOKIE['remember_token']);
+    $query = "SELECT * FROM employees WHERE remember_token = '$token' AND status = 'active'";
+    $result = mysqli_query($conn, $query);
+    
+    if (mysqli_num_rows($result) == 1) {
+        $user = mysqli_fetch_assoc($result);
+        $_SESSION['user_id'] = $user['id'];
+        $_SESSION['user_name'] = $user['name'];
+        $_SESSION['role'] = $user['role'];
+        $_SESSION['employee_id'] = $user['employee_id'];
+        
+        if ($user['role'] == 'admin') {
+            header('Location: admin/dashboard.php');
+        } else {
+            header('Location: employee/dashboard.php');
+        }
+        exit();
+    }
+}
 
 if (isset($_POST['login'])) {
     $email = mysqli_real_escape_string($conn, $_POST['email']);
-    $password = $_POST['password'];
-    
+    $password = mysqli_real_escape_string($conn, $_POST['password']);
+    $remember = isset($_POST['remember']) ? true : false;
+
     $query = "SELECT * FROM employees WHERE email = '$email' AND password = '$password' AND status = 'active'";
     $result = mysqli_query($conn, $query);
     
@@ -16,6 +40,15 @@ if (isset($_POST['login'])) {
         $_SESSION['role'] = $user['role'];
         $_SESSION['employee_id'] = $user['employee_id'];
         
+        // Set remember me cookie (30 days)
+        if ($remember) {
+            $token = bin2hex(random_bytes(32));
+            mysqli_query($conn, "UPDATE employees SET remember_token = '$token' WHERE id = {$user['id']}");
+            $secure = isset($_SERVER['HTTPS']) && $_SERVER['HTTPS'] === 'on';
+            setcookie('remember_token', $token, time() + (86400 * 30), "/", "", $secure, true);
+        }
+        
+        logAction('login', 'User logged in: ' . $user['name'] . ' (' . $user['email'] . ')', $user['id'], 'employee');
         if ($user['role'] == 'admin') {
             header('Location: admin/dashboard.php');
         } else {
@@ -40,140 +73,513 @@ if (isset($_POST['login'])) {
         * {
             font-family: 'Inter', sans-serif;
         }
+
+        /* ── Layout ─────────────────────────────────────────────── */
         body {
-            background: linear-gradient(135deg, #0a2b3e 0%, #0f3b54 50%, #0a2b3e 100%);
-            position: relative;
+            margin: 0;
+            min-height: 100vh;
+            display: flex;
+            background: #f1f5f9;
             overflow-x: hidden;
         }
-        body::before {
+
+        /* ── Left panel — branding ───────────────────────────────── */
+        .brand-panel {
+            flex: 1;
+            min-height: 100vh;
+            background: linear-gradient(145deg, #071e2e 0%, #0a2b3e 40%, #0f3b54 70%, #0a2b3e 100%);
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            padding: 3rem 2.5rem;
+            position: relative;
+            overflow: hidden;
+        }
+
+        /* Animated geometric shapes */
+        .brand-panel::before,
+        .brand-panel::after {
             content: '';
             position: absolute;
-            top: 0;
-            left: 0;
-            right: 0;
-            bottom: 0;
-            background: url('data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100" opacity="0.05"><path fill="white" d="M20,20 L30,20 L25,30 Z M50,50 L60,50 L55,60 Z M80,30 L90,30 L85,40 Z"/></svg>') repeat;
+            border-radius: 50%;
             pointer-events: none;
         }
-        .login-container {
+        .brand-panel::before {
+            width: 420px;
+            height: 420px;
+            top: -100px;
+            right: -120px;
+            border: 1.5px solid rgba(255,255,255,0.06);
+            animation: rotateRing 28s linear infinite;
+        }
+        .brand-panel::after {
+            width: 260px;
+            height: 260px;
+            bottom: -60px;
+            left: -80px;
+            border: 1.5px solid rgba(255,255,255,0.08);
+            animation: rotateRing 18s linear infinite reverse;
+        }
+
+        @keyframes rotateRing {
+            from { transform: rotate(0deg); }
+            to   { transform: rotate(360deg); }
+        }
+
+        /* Extra decorative shapes injected via CSS */
+        .geo-shape {
+            position: absolute;
+            pointer-events: none;
+            opacity: 0.07;
+        }
+        .geo-shape-1 {
+            width: 0; height: 0;
+            border-left: 55px solid transparent;
+            border-right: 55px solid transparent;
+            border-bottom: 95px solid #ffffff;
+            top: 18%;
+            left: 10%;
+            animation: floatUp 9s ease-in-out infinite;
+        }
+        .geo-shape-2 {
+            width: 70px; height: 70px;
+            background: rgba(255,255,255,1);
+            transform: rotate(45deg);
+            bottom: 22%;
+            right: 8%;
+            animation: floatUp 12s ease-in-out infinite 2s;
+        }
+        .geo-shape-3 {
+            width: 0; height: 0;
+            border-left: 35px solid transparent;
+            border-right: 35px solid transparent;
+            border-bottom: 60px solid #ffffff;
+            top: 62%;
+            left: 6%;
+            animation: floatUp 7s ease-in-out infinite 1s;
+        }
+        .geo-shape-4 {
+            width: 50px; height: 50px;
+            background: rgba(255,255,255,1);
+            transform: rotate(45deg);
+            top: 12%;
+            right: 18%;
+            animation: floatUp 10s ease-in-out infinite 3s;
+        }
+
+        @keyframes floatUp {
+            0%,100% { transform: translateY(0)   rotate(var(--rot,0deg)); }
+            50%      { transform: translateY(-14px) rotate(var(--rot,0deg)); }
+        }
+        .geo-shape-2 { --rot: 45deg; }
+        .geo-shape-4 { --rot: 45deg; }
+
+        .brand-content {
+            position: relative;
+            z-index: 1;
+            text-align: center;
+            max-width: 380px;
+        }
+
+        .brand-logo-wrap {
+            width: 96px;
+            height: 96px;
+            background: rgba(255,255,255,0.1);
+            border-radius: 24px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            margin: 0 auto 1.5rem;
+            backdrop-filter: blur(4px);
+            box-shadow: 0 8px 32px rgba(0,0,0,0.25);
+        }
+
+        .brand-logo-inner {
+            width: 68px;
+            height: 68px;
+            background: #ffffff;
+            border-radius: 16px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+        }
+
+        .brand-logo-inner span {
+            color: #0a2b3e;
+            font-size: 1.75rem;
+            font-weight: 900;
+            letter-spacing: -0.05em;
+        }
+
+        .brand-name {
+            color: #ffffff;
+            font-size: 1.6rem;
+            font-weight: 800;
+            letter-spacing: -0.03em;
+            margin-bottom: 0.25rem;
+        }
+
+        .brand-sub {
+            color: rgba(147,197,253,0.9);
+            font-size: 0.8rem;
+            font-weight: 500;
+            letter-spacing: 0.08em;
+            text-transform: uppercase;
+            margin-bottom: 2rem;
+        }
+
+        .brand-divider {
+            width: 48px;
+            height: 3px;
+            background: linear-gradient(90deg, #3b82f6, #60a5fa);
+            border-radius: 99px;
+            margin: 0 auto 1.75rem;
+        }
+
+        .brand-tagline {
+            color: rgba(255,255,255,0.75);
+            font-size: 1.05rem;
+            font-weight: 400;
+            line-height: 1.6;
+            margin-bottom: 2.5rem;
+        }
+
+        .brand-tagline strong {
+            color: #ffffff;
+            font-weight: 600;
+        }
+
+        .brand-badges {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 0.6rem;
+            justify-content: center;
+        }
+
+        .brand-badge {
+            background: rgba(255,255,255,0.1);
+            border: 1px solid rgba(255,255,255,0.15);
+            color: rgba(255,255,255,0.8);
+            font-size: 0.72rem;
+            font-weight: 500;
+            padding: 0.35rem 0.8rem;
+            border-radius: 99px;
             backdrop-filter: blur(2px);
         }
-        .glow-effect {
-            box-shadow: 0 20px 40px -15px rgba(0,0,0,0.3), 0 0 0 1px rgba(255,255,255,0.1);
+
+        .brand-footer {
+            position: absolute;
+            bottom: 1.5rem;
+            left: 0; right: 0;
+            text-align: center;
+            color: rgba(255,255,255,0.3);
+            font-size: 0.7rem;
         }
-        .input-glow:focus {
-            box-shadow: 0 0 0 4px rgba(59,130,246,0.2);
+
+        /* ── Right panel — form ──────────────────────────────────── */
+        .form-panel {
+            width: 480px;
+            min-width: 320px;
+            min-height: 100vh;
+            background: #ffffff;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            padding: 3rem 3rem 2rem;
+            position: relative;
+            box-shadow: -8px 0 48px rgba(0,0,0,0.08);
+        }
+
+        .form-panel-inner {
+            max-width: 380px;
+            margin: 0 auto;
+            width: 100%;
+        }
+
+        .form-heading {
+            font-size: 1.5rem;
+            font-weight: 700;
+            color: #0f172a;
+            margin-bottom: 0.35rem;
+        }
+
+        .form-subheading {
+            font-size: 0.875rem;
+            color: #64748b;
+            margin-bottom: 2rem;
+        }
+
+        .form-panel-footer {
+            position: absolute;
+            bottom: 1.25rem;
+            left: 0; right: 0;
+            text-align: center;
+            font-size: 0.7rem;
+            color: #94a3b8;
+        }
+
+        /* ── Inputs ──────────────────────────────────────────────── */
+        .input-field {
+            width: 100%;
+            padding: 0.78rem 1rem 0.78rem 2.75rem;
+            border: 1.5px solid #e2e8f0;
+            border-radius: 12px;
+            font-size: 0.875rem;
+            color: #0f172a;
+            background: #f8fafc;
+            transition: border-color 0.18s, box-shadow 0.18s, background 0.18s;
+            outline: none;
+            box-sizing: border-box;
+        }
+        .input-field:focus {
             border-color: #3b82f6;
+            background: #ffffff;
+            box-shadow: 0 0 0 4px rgba(59,130,246,0.12);
         }
-        @keyframes fadeInUp {
-            from {
-                opacity: 0;
-                transform: translateY(30px);
+        .input-wrapper {
+            position: relative;
+        }
+        .input-icon {
+            position: absolute;
+            left: 0.9rem;
+            top: 50%;
+            transform: translateY(-50%);
+            color: #94a3b8;
+            font-size: 0.85rem;
+            pointer-events: none;
+        }
+        .input-action {
+            position: absolute;
+            right: 0.9rem;
+            top: 50%;
+            transform: translateY(-50%);
+            color: #94a3b8;
+            font-size: 0.85rem;
+            cursor: pointer;
+            transition: color 0.2s;
+        }
+        .input-action:hover { color: #3b82f6; }
+
+        /* ── Submit button ───────────────────────────────────────── */
+        .btn-login {
+            width: 100%;
+            padding: 0.85rem 1rem;
+            background: linear-gradient(135deg, #1d4ed8 0%, #1e40af 100%);
+            color: #ffffff;
+            font-size: 0.9rem;
+            font-weight: 600;
+            border: none;
+            border-radius: 12px;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 0.5rem;
+            transition: filter 0.2s, box-shadow 0.2s, transform 0.2s;
+            box-shadow: 0 4px 14px rgba(29,78,216,0.35);
+        }
+        .btn-login:hover {
+            filter: brightness(1.08);
+            box-shadow: 0 6px 20px rgba(29,78,216,0.45);
+        }
+
+        /* ── Checkbox ────────────────────────────────────────────── */
+        .checkbox-custom {
+            width: 18px;
+            height: 18px;
+            border-radius: 5px;
+            border: 2px solid #cbd5e1;
+            transition: all 0.2s;
+            cursor: pointer;
+            accent-color: #2563eb;
+        }
+
+        /* ── Error alert ─────────────────────────────────────────── */
+        .login-error {
+            background: #fef2f2;
+            border: 1.5px solid #fecaca;
+            color: #b91c1c;
+            padding: 0.75rem 1rem;
+            border-radius: 10px;
+            font-size: 0.84rem;
+            margin-bottom: 1.25rem;
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+        }
+
+        /* ── Responsive: mobile stacked layout ───────────────────── */
+        @media (max-width: 768px) {
+            body {
+                flex-direction: column;
             }
-            to {
-                opacity: 1;
-                transform: translateY(0);
+            .brand-panel {
+                min-height: auto;
+                padding: 2.5rem 1.5rem;
             }
+            .brand-tagline { display: none; }
+            .brand-badges  { display: none; }
+            .brand-footer  { position: static; margin-top: 1.25rem; }
+            .form-panel {
+                width: 100%;
+                min-width: 0;
+                min-height: auto;
+                padding: 2rem 1.5rem 3.5rem;
+                box-shadow: none;
+            }
+            .form-panel-footer { position: fixed; }
         }
-        .animate-fadeInUp {
-            animation: fadeInUp 0.6s ease-out;
+
+        @keyframes slideInRight {
+            from { opacity: 0; transform: translateX(24px); }
+            to   { opacity: 1; transform: translateX(0); }
         }
+        .form-panel {
+            animation: slideInRight 0.45s cubic-bezier(0.22,1,0.36,1) both;
+        }
+        @keyframes slideInLeft {
+            from { opacity: 0; transform: translateX(-24px); }
+            to   { opacity: 1; transform: translateX(0); }
+        }
+        .brand-panel .brand-content {
+            animation: slideInLeft 0.45s cubic-bezier(0.22,1,0.36,1) both;
+        }
+
         .toggle-password {
             cursor: pointer;
             transition: color 0.2s;
         }
-        .toggle-password:hover {
-            color: #3b82f6;
-        }
+        .toggle-password:hover { color: #3b82f6; }
     </style>
 </head>
-<body class="min-h-screen flex items-center justify-center p-4 login-container">
-    <div class="w-full max-w-md animate-fadeInUp">
-        <!-- Main Card -->
-        <div class="bg-white rounded-2xl shadow-2xl overflow-hidden glow-effect">
-            
-            <!-- Header with Gradient -->
-            <div class="bg-gradient-to-r from-blue-900 to-blue-800 px-8 pt-10 pb-8 text-center">
-                <div class="flex justify-center mb-4">
-                    <div class="w-20 h-20 bg-white/10 rounded-2xl flex items-center justify-center backdrop-blur-sm">
-                        <div class="w-14 h-14 bg-white rounded-xl flex items-center justify-center shadow-lg">
-                            <span class="text-blue-900 font-black text-2xl tracking-tight">IN</span>
-                        </div>
-                    </div>
-                </div>
-                <h1 class="text-white text-2xl font-bold tracking-tight">IPINFRA NETWORKS</h1>
-                <p class="text-blue-200 text-sm mt-1">SDN BHD</p>
-                <div class="w-16 h-0.5 bg-blue-400 mx-auto mt-4 rounded-full"></div>
-            </div>
-            
-            <!-- Contact Bar -->
-            <div class="px-8 pt-6">
-                <div class="flex flex-wrap justify-center gap-3 text-xs text-gray-500">
-                    <span><i class="fas fa-phone-alt text-blue-600 mr-1"></i> +603-8750 5161</span>
-                    <span class="text-gray-300">|</span>
-                    <span><i class="fas fa-phone text-blue-600 mr-1"></i> 1700-82-7530</span>
-                    <span class="text-gray-300">|</span>
-                    <span><i class="fas fa-envelope text-blue-600 mr-1"></i> sales@ipinfra.com.my</span>
+<body>
+
+    <!-- ═══════════════ LEFT — Branding panel ═══════════════ -->
+    <div class="brand-panel">
+        <!-- Decorative geometric shapes -->
+        <div class="geo-shape geo-shape-1"></div>
+        <div class="geo-shape geo-shape-2"></div>
+        <div class="geo-shape geo-shape-3"></div>
+        <div class="geo-shape geo-shape-4"></div>
+
+        <div class="brand-content">
+            <!-- Logo -->
+            <div class="brand-logo-wrap">
+                <div class="brand-logo-inner">
+                    <img src="uploads/1775551018_4xzREYTcMvK7ReGODviudjeDBIofOQ78mr5DsN9g.jpg" alt="IPINFRA" style="width:28px;height:28px;object-fit:contain;border-radius:4px;background:#fff;">
                 </div>
             </div>
-            
-            <!-- Login Form -->
-            <div class="px-8 pb-6 pt-6">
-                <?php if (isset($error)): ?>
-                    <div class="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-xl mb-5 text-sm flex items-center gap-2">
-                        <i class="fas fa-exclamation-circle"></i>
-                        <?php echo $error; ?>
-                    </div>
-                <?php endif; ?>
-                
-                <form method="POST" action="">
-                    <div class="mb-4">
-                        <label class="block text-gray-700 text-sm font-semibold mb-2">Email Address</label>
-                        <div class="relative">
-                            <i class="fas fa-envelope absolute left-4 top-1/2 -translate-y-1/2 text-gray-400 text-sm"></i>
-                            <input type="email" name="email" required 
-                                class="w-full pl-11 pr-4 py-3 border border-gray-200 rounded-xl focus:outline-none focus:border-blue-500 input-glow transition text-sm"
-                                placeholder="admin@ipinfra.com.my">
-                        </div>
-                    </div>
-                    
-                    <div class="mb-5">
-                        <label class="block text-gray-700 text-sm font-semibold mb-2">Password</label>
-                        <div class="relative">
-                            <i class="fas fa-lock absolute left-4 top-1/2 -translate-y-1/2 text-gray-400 text-sm"></i>
-                            <input type="password" name="password" id="password" required 
-                                class="w-full pl-11 pr-12 py-3 border border-gray-200 rounded-xl focus:outline-none focus:border-blue-500 input-glow transition text-sm"
-                                placeholder="Enter your password">
-                            <i class="fas fa-eye-slash toggle-password absolute right-4 top-1/2 -translate-y-1/2 text-gray-400 text-sm" id="togglePassword"></i>
-                        </div>
-                    </div>
-                    
-                    <button type="submit" name="login" 
-                        class="w-full bg-gradient-to-r from-blue-700 to-blue-800 hover:from-blue-800 hover:to-blue-900 text-white font-semibold py-3 rounded-xl transition duration-200 flex items-center justify-center gap-2 shadow-md hover:shadow-lg">
-                        <i class="fas fa-arrow-right-to-bracket"></i> Sign In to Dashboard
-                    </button>
-                </form>
+
+            <!-- Company name -->
+            <div class="brand-name">IPINFRA NETWORKS</div>
+            <div class="brand-sub">SDN BHD</div>
+            <div class="brand-divider"></div>
+
+            <!-- Tagline -->
+            <p class="brand-tagline">
+                Your <strong>Human Resource</strong> partner —<br>
+                streamlining attendance, leave &amp; claims<br>
+                for a connected workforce.
+            </p>
+
+            <!-- Feature badges -->
+            <div class="brand-badges">
+                <span class="brand-badge"><i class="fas fa-clock" style="margin-right:5px;opacity:.7"></i>Attendance</span>
+                <span class="brand-badge"><i class="fas fa-calendar-check" style="margin-right:5px;opacity:.7"></i>Leave</span>
+                <span class="brand-badge"><i class="fas fa-receipt" style="margin-right:5px;opacity:.7"></i>Claims</span>
+                <span class="brand-badge"><i class="fas fa-users" style="margin-right:5px;opacity:.7"></i>People</span>
             </div>
-            
-            <!-- Help Line -->
-            <div class="px-8 pb-4 text-center">
-                <p class="text-xs text-gray-500">
-                    <i class="fas fa-headset text-blue-600 mr-1"></i> Need assistance? 
-                    <a href="mailto:support@ipinfra.com.my" class="text-blue-600 hover:underline font-medium">support@ipinfra.com.my</a>
-                </p>
+        </div>
+
+        <!-- Brand panel footer -->
+        <div class="brand-footer">
+            <i class="fas fa-phone-alt" style="margin-right:4px"></i>+603-8750 5161 &nbsp;|&nbsp;
+            <i class="fas fa-phone" style="margin-right:4px"></i>1700-82-7530 &nbsp;|&nbsp;
+            <i class="fas fa-envelope" style="margin-right:4px"></i>sales@ipinfra.com.my
+        </div>
+    </div>
+
+    <!-- ═══════════════ RIGHT — Form panel ═══════════════════ -->
+    <div class="form-panel">
+        <div class="form-panel-inner">
+
+            <!-- Heading -->
+            <div style="margin-bottom:2rem;">
+                <h1 class="form-heading">Welcome to IPINFRA Networks Sdn Bhd</h1>
+                <p class="form-subheading">HR Management System — Sign in to your account to continue.</p>
             </div>
-            
-            <!-- Footer -->
-            <div class="bg-gray-50 px-8 py-4 border-t border-gray-100 text-center">
-                <p class="text-xs text-gray-500">
-                    © 2026 IPINFRA Networks SDN BHD. All rights reserved.
+
+            <!-- Error message -->
+            <?php if (isset($error)): ?>
+                <div class="login-error">
+                    <i class="fas fa-exclamation-circle"></i>
+                    <?php echo $error; ?>
+                </div>
+            <?php endif; ?>
+
+            <!-- Login form -->
+            <form method="POST" action="">
+
+                <!-- Email -->
+                <div style="margin-bottom:1.1rem;">
+                    <label style="display:block;font-size:.82rem;font-weight:600;color:#374151;margin-bottom:.45rem;">
+                        Email Address
+                    </label>
+                    <div class="input-wrapper">
+                        <i class="fas fa-envelope input-icon"></i>
+                        <input type="email" name="email" required
+                               class="input-field"
+                               placeholder="you@ipinfra.com.my">
+                    </div>
+                </div>
+
+                <!-- Password -->
+                <div style="margin-bottom:1.1rem;">
+                    <label style="display:block;font-size:.82rem;font-weight:600;color:#374151;margin-bottom:.45rem;">
+                        Password
+                    </label>
+                    <div class="input-wrapper">
+                        <i class="fas fa-lock input-icon"></i>
+                        <input type="password" name="password" id="password" required
+                               class="input-field"
+                               style="padding-right:2.75rem;"
+                               placeholder="Enter your password">
+                        <i class="fas fa-eye-slash input-action toggle-password" id="togglePassword"></i>
+                    </div>
+                </div>
+
+                <!-- Remember me + forgot password -->
+                <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:1.5rem;">
+                    <label style="display:flex;align-items:center;gap:.5rem;cursor:pointer;">
+                        <input type="checkbox" name="remember" id="remember" class="checkbox-custom">
+                        <span style="font-size:.84rem;color:#4b5563;user-select:none;">Remember me</span>
+                    </label>
+                    <a href="mailto:support@ipinfra.com.my?subject=Password%20Reset%20Request" style="font-size:.84rem;color:#2563eb;text-decoration:none;font-weight:500;">Forgot password?</a>
+                </div>
+
+                <!-- Submit -->
+                <button type="submit" name="login" class="btn-login">
+                    <i class="fas fa-arrow-right-to-bracket"></i>
+                    Sign In to Dashboard
+                </button>
+
+            </form>
+
+            <!-- Help line -->
+            <div style="text-align:center;margin-top:1.5rem;">
+                <p style="font-size:.78rem;color:#94a3b8;">
+                    <i class="fas fa-headset" style="color:#3b82f6;margin-right:4px;"></i>
+                    Need help?
+                    <a href="mailto:support@ipinfra.com.my" style="color:#2563eb;font-weight:500;">support@ipinfra.com.my</a>
                 </p>
             </div>
         </div>
-        
-        <!-- Demo Hint -->
-        <div class="text-center mt-6 text-white/50 text-xs">
-            <p>Demo: admin@ipinfra.com / password123 | employee@ipinfra.com / password123</p>
+
+        <!-- Powered-by footer -->
+        <div class="form-panel-footer">
+            Powered by IPINFRA Networks &nbsp;&mdash;&nbsp; &copy; 2026 All rights reserved.
         </div>
     </div>
 
@@ -183,11 +589,8 @@ if (isset($_POST['login'])) {
         const password = document.getElementById('password');
 
         togglePassword.addEventListener('click', function() {
-            // Toggle the type attribute
             const type = password.getAttribute('type') === 'password' ? 'text' : 'password';
             password.setAttribute('type', type);
-            
-            // Toggle the eye icon
             this.classList.toggle('fa-eye');
             this.classList.toggle('fa-eye-slash');
         });

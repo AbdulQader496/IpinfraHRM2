@@ -4,441 +4,614 @@ redirectIfNotLoggedIn();
 require_once '../includes/db.php';
 require_once '../includes/functions.php';
 
-$user_id = $_SESSION['user_id'];
-$success = '';
-$error = '';
-$active_tab = isset($_GET['tab']) ? $_GET['tab'] : 'documents';
+$user_id    = $_SESSION['user_id'];
+$valid_tabs = ['documents', 'upload', 'resignation', 'warnings'];
+$active_tab = in_array($_GET['tab'] ?? '', $valid_tabs) ? $_GET['tab'] : 'documents';
 
-// ========================================
-// HANDLE RESIGNATION REQUEST
-// ========================================
+// ── Resignation submit ──────────────────────────────────────────────────────
 if (isset($_POST['submit_resignation'])) {
-    $requested_date = date('Y-m-d');
-    $last_working_date = $_POST['last_working_date'];
-    $reason = mysqli_real_escape_string($conn, $_POST['reason']);
-    
-    $check = mysqli_query($conn, "SELECT id FROM employee_resignations WHERE employee_id = $user_id AND status = 'pending'");
+    $last_working_date = mysqli_real_escape_string($conn, $_POST['last_working_date'] ?? '');
+    $reason            = mysqli_real_escape_string($conn, $_POST['reason'] ?? '');
+    $check = mysqli_query($conn, "SELECT id FROM employee_resignations WHERE employee_id=$user_id AND status='pending'");
     if (mysqli_num_rows($check) > 0) {
-        $error = '<div class="bg-red-100 border border-red-200 text-red-700 px-4 py-3 rounded-xl text-sm">⚠️ You already have a pending resignation request.</div>';
-    } else {
-        $query = "INSERT INTO employee_resignations (employee_id, requested_date, last_working_date, reason, status) 
-                  VALUES ($user_id, '$requested_date', '$last_working_date', '$reason', 'pending')";
-        if (mysqli_query($conn, $query)) {
-            $admin_query = mysqli_query($conn, "SELECT id FROM employees WHERE role='admin' LIMIT 1");
-            if ($admin = mysqli_fetch_assoc($admin_query)) {
-                addNotification($admin['id'], 'New Resignation Request', $_SESSION['user_name'] . ' has submitted a resignation request.');
-            }
-            $success = '<div class="bg-green-100 border border-green-200 text-green-700 px-4 py-3 rounded-xl text-sm">✓ Resignation request submitted successfully!</div>';
-            $active_tab = 'resignation';
-        }
+        header('Location: management.php?tab=resignation&err=' . urlencode('You already have a pending resignation request.')); exit();
     }
+    mysqli_query($conn, "INSERT INTO employee_resignations (employee_id, requested_date, last_working_date, reason, status)
+        VALUES ($user_id, CURDATE(), '$last_working_date', '$reason', 'pending')");
+    $admin_q = mysqli_query($conn, "SELECT id FROM employees WHERE role='admin' LIMIT 1");
+    if ($admin = mysqli_fetch_assoc($admin_q))
+        addNotification($admin['id'], 'New Resignation Request', $_SESSION['user_name'] . ' has submitted a resignation request.');
+    header('Location: management.php?tab=resignation&msg=' . urlencode('Resignation request submitted successfully!')); exit();
 }
 
-// Cancel Resignation
+// ── Cancel resignation ──────────────────────────────────────────────────────
 if (isset($_GET['cancel_resignation'])) {
-    $id = $_GET['cancel_resignation'];
-    mysqli_query($conn, "UPDATE employee_resignations SET status = 'cancelled' WHERE id = $id AND employee_id = $user_id");
-    $success = '<div class="bg-green-100 border border-green-200 text-green-700 px-4 py-3 rounded-xl text-sm">✓ Resignation request cancelled.</div>';
-    $active_tab = 'resignation';
+    $id = intval($_GET['cancel_resignation']);
+    mysqli_query($conn, "UPDATE employee_resignations SET status='cancelled' WHERE id=$id AND employee_id=$user_id");
+    header('Location: management.php?tab=resignation&msg=' . urlencode('Resignation request cancelled.')); exit();
 }
 
-// ========================================
-// HANDLE DOCUMENT UPLOAD TO HR
-// ========================================
+// ── Document upload ─────────────────────────────────────────────────────────
 if (isset($_POST['upload_document'])) {
-    $document_title = mysqli_real_escape_string($conn, $_POST['document_title']);
-    $document_type = $_POST['document_type'];
-    $notes = mysqli_real_escape_string($conn, $_POST['notes']);
-    
+    $document_title = mysqli_real_escape_string($conn, $_POST['document_title'] ?? '');
+    $document_type  = mysqli_real_escape_string($conn, $_POST['document_type']  ?? '');
+    $notes          = mysqli_real_escape_string($conn, $_POST['notes']          ?? '');
+    $allowed_ext  = ['jpg','jpeg','png','pdf','doc','docx','xls','xlsx'];
+    $allowed_mime = ['image/jpeg','image/png','application/pdf','application/msword',
+                     'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+                     'application/vnd.ms-excel','application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'];
     $target_dir = "../uploads/employee_documents/";
     if (!is_dir($target_dir)) mkdir($target_dir, 0777, true);
-    
-    $file_name = basename($_FILES['document_file']['name']);
-    $file_size = $_FILES['document_file']['size'];
+    $file_name = basename($_FILES['document_file']['name'] ?? '');
+    $file_size = intval($_FILES['document_file']['size'] ?? 0);
+    $file_ext  = strtolower(pathinfo($file_name, PATHINFO_EXTENSION));
+    $mime      = isset($_FILES['document_file']['tmp_name']) ? mime_content_type($_FILES['document_file']['tmp_name']) : '';
     $file_path = time() . '_' . $user_id . '_' . preg_replace('/[^a-zA-Z0-9._-]/', '', $file_name);
-    
-    if (move_uploaded_file($_FILES['document_file']['tmp_name'], $target_dir . $file_path)) {
-        $query = "INSERT INTO employee_documents (employee_id, document_title, document_type, file_path, file_name, file_size, upload_date, notes, uploaded_by, status) 
-                  VALUES ($user_id, '$document_title', '$document_type', '$file_path', '$file_name', $file_size, CURDATE(), '$notes', $user_id, 'active')";
-        mysqli_query($conn, $query);
-        
-        $admin_query = mysqli_query($conn, "SELECT id FROM employees WHERE role='admin' LIMIT 1");
-        if ($admin = mysqli_fetch_assoc($admin_query)) {
-            addNotification($admin['id'], 'New Document Uploaded', $_SESSION['user_name'] . ' has uploaded: ' . $document_title);
-        }
-        
-        $success = '<div class="bg-green-100 border border-green-200 text-green-700 px-4 py-3 rounded-xl text-sm">✓ Document uploaded successfully!</div>';
-        $active_tab = 'upload';
+    if (!in_array($file_ext, $allowed_ext) || !in_array($mime, $allowed_mime)) {
+        header('Location: management.php?tab=upload&err=' . urlencode('Invalid file type. Only PDF, DOC, DOCX, JPG, PNG, XLS, XLSX are allowed.')); exit();
+    } elseif ($file_size > 5 * 1024 * 1024) {
+        header('Location: management.php?tab=upload&err=' . urlencode('File size exceeds the 5 MB limit.')); exit();
+    } elseif (move_uploaded_file($_FILES['document_file']['tmp_name'], $target_dir . $file_path)) {
+        mysqli_query($conn, "INSERT INTO employee_documents (employee_id,document_title,document_type,file_path,file_name,file_size,upload_date,notes,uploaded_by)
+            VALUES ($user_id,'$document_title','$document_type','$file_path','$file_name',$file_size,CURDATE(),'$notes',$user_id)");
+        $admin_q = mysqli_query($conn, "SELECT id FROM employees WHERE role='admin' LIMIT 1");
+        if ($admin = mysqli_fetch_assoc($admin_q))
+            addNotification($admin['id'], 'New Document Uploaded', $_SESSION['user_name'] . ' uploaded: ' . $_POST['document_title']);
+        header('Location: management.php?tab=upload&msg=' . urlencode('Document sent to HR successfully!')); exit();
     } else {
-        $error = '<div class="bg-red-100 border border-red-200 text-red-700 px-4 py-3 rounded-xl text-sm">✗ Error uploading document.</div>';
+        header('Location: management.php?tab=upload&err=' . urlencode('Upload failed. Please try again.')); exit();
     }
 }
 
-// ========================================
-// GET EMPLOYEE DATA
-// ========================================
-$resignation_query = mysqli_query($conn, "SELECT * FROM employee_resignations WHERE employee_id = $user_id ORDER BY created_at DESC LIMIT 1");
-$resignation = mysqli_fetch_assoc($resignation_query);
+// ── Flash messages from redirect ────────────────────────────────────────────
+$success    = isset($_GET['msg']) ? htmlspecialchars($_GET['msg']) : '';
+$error      = isset($_GET['err']) ? htmlspecialchars($_GET['err']) : '';
+$active_tab = in_array($_GET['tab'] ?? '', $valid_tabs) ? $_GET['tab'] : $active_tab;
 
-$termination_query = mysqli_query($conn, "SELECT t.*, e.name as created_by_name 
-    FROM terminations t 
-    LEFT JOIN employees e ON t.created_by = e.id 
-    WHERE t.employee_id = $user_id 
-    ORDER BY t.created_at DESC LIMIT 1");
-$termination = mysqli_fetch_assoc($termination_query);
+// ── Data ────────────────────────────────────────────────────────────────────
+$resignation = mysqli_fetch_assoc(mysqli_query($conn,
+    "SELECT * FROM employee_resignations WHERE employee_id=$user_id ORDER BY created_at DESC LIMIT 1"));
 
-// Documents FROM Admin only
-$documents = mysqli_query($conn, "SELECT d.* 
-    FROM employee_documents d 
-    WHERE d.employee_id = $user_id 
-    AND d.uploaded_by != $user_id
-    AND d.status = 'active'
-    ORDER BY d.created_at DESC");
+$termination = mysqli_fetch_assoc(mysqli_query($conn,
+    "SELECT t.*, e.name as created_by_name FROM terminations t
+     LEFT JOIN employees e ON t.created_by=e.id
+     WHERE t.employee_id=$user_id ORDER BY t.created_at DESC LIMIT 1"));
+
+$documents_result = mysqli_query($conn,
+    "SELECT d.* FROM employee_documents d
+     WHERE d.employee_id=$user_id AND d.uploaded_by != $user_id
+     ORDER BY d.created_at DESC");
+
+$hr_docs = [];
+while ($d = mysqli_fetch_assoc($documents_result)) $hr_docs[] = $d;
+
+$my_warnings = [];
+try {
+    $warn_res = mysqli_query($conn,
+        "SELECT w.*, a.name as issued_by_name FROM employee_warnings w
+         LEFT JOIN employees a ON w.issued_by=a.id
+         WHERE w.employee_id=$user_id ORDER BY w.issued_date DESC");
+    if ($warn_res) while ($wr = mysqli_fetch_assoc($warn_res)) $my_warnings[] = $wr;
+} catch (Exception $e) {}
+$warnings_count = count($my_warnings);
+
+// Employee profile
+$me = mysqli_fetch_assoc(mysqli_query($conn, "SELECT name, employee_id, department, position, profile_pic FROM employees WHERE id=$user_id"));
+$initials = strtoupper(substr($me['name'],0,1) . (strpos($me['name'],' ')!==false ? substr(strrchr($me['name'],' '),1,1) : ''));
 ?>
 <!DOCTYPE html>
 <html lang="en">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=yes">
-    <title>My Management - IPINFRA HRM</title>
-    <script src="https://cdn.tailwindcss.com"></script>
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
-    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=yes">
+<title>My Management — IPINFRA HRM</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+<style>
+* { font-family: 'Inter', sans-serif; }
+@keyframes fadeUp { from{opacity:0;transform:translateY(14px)} to{opacity:1;transform:translateY(0)} }
+.fade-up { animation: fadeUp .35s ease-out both; }
+.tab-active   { background:linear-gradient(135deg,#4f46e5,#2563eb); color:#fff; box-shadow:0 4px 14px rgba(79,70,229,.35); }
+.tab-inactive { background:#f1f5f9; color:#64748b; }
+.tab-inactive:hover { background:#e2e8f0; color:#334155; }
+.card { background:#fff; border-radius:1rem; border:1px solid #f1f5f9; box-shadow:0 1px 6px rgba(0,0,0,.05); }
+.form-input { width:100%; padding:.625rem 1rem; border:1.5px solid #e2e8f0; border-radius:.75rem; font-size:.875rem; outline:none; transition:border-color .15s; }
+.form-input:focus { border-color:#6366f1; }
+.avatar { display:inline-flex; align-items:center; justify-content:center; border-radius:50%; font-weight:700; flex-shrink:0; }
+::-webkit-scrollbar { width:5px; height:5px; }
+::-webkit-scrollbar-track { background:#f8fafc; }
+::-webkit-scrollbar-thumb { background:#cbd5e1; border-radius:10px; }
+</style>
 </head>
-<body class="bg-gradient-to-br from-gray-50 to-gray-100 min-h-screen pb-20">
+<body class="bg-slate-50 min-h-screen pb-24">
 
-<!-- Premium Header -->
-<div class="bg-gradient-to-r from-slate-900 via-indigo-900 to-slate-900 text-white sticky top-0 z-40 shadow-2xl backdrop-blur-sm">
-    <div class="flex items-center justify-between px-5 py-4">
+<?php require_once '../includes/global_ui.php'; ?>
+<?php require_once '../includes/toast.php'; ?>
+<?php require_once '../includes/confirm_modal.php'; ?>
+
+<!-- Sticky Header -->
+<div class="sticky top-0 z-40 bg-[#060912] text-white shadow-2xl">
+    <div class="flex items-center justify-between px-4 py-3.5">
         <div class="flex items-center gap-3">
-            <!-- Menu Button -->
-            <button onclick="toggleSidebar()" class="relative group">
-                <div class="w-10 h-10 rounded-xl bg-white/10 backdrop-blur-sm flex items-center justify-center group-hover:bg-white/20 transition-all duration-300 group-hover:scale-105">
-                    <i class="fas fa-bars text-lg"></i>
-                </div>
+            <button onclick="toggleSidebar()" class="w-9 h-9 rounded-xl bg-white/10 hover:bg-white/20 flex items-center justify-center transition">
+                <i class="fas fa-bars"></i>
             </button>
-            
-            <!-- Logo -->
-            <div class="relative">
-                <div class="w-10 h-10 bg-gradient-to-br from-blue-500 via-indigo-500 to-purple-600 rounded-xl flex items-center justify-center shadow-lg shadow-indigo-500/20 animate-pulse">
-                    <span class="text-white font-bold text-sm">IN</span>
-                </div>
-                <div class="absolute -top-1 -right-1 w-3 h-3 bg-green-400 rounded-full border-2 border-slate-900"></div>
-            </div>
-            
-            <!-- Brand -->
+            <div class="w-9 h-9 bg-gradient-to-br from-blue-400 to-indigo-600 rounded-xl flex items-center justify-center text-sm font-bold shadow-lg"><img src="../uploads/1775551018_4xzREYTcMvK7ReGODviudjeDBIofOQ78mr5DsN9g.jpg" alt="IPINFRA" style="width:28px;height:28px;object-fit:contain;border-radius:4px;background:#fff;"></div>
             <div class="hidden sm:block">
-                <p class="text-xs text-blue-200 font-medium tracking-wide">IPINFRA NETWORKS</p>
-                <p class="text-sm font-bold tracking-tight">Employee Portal</p>
-            </div>
-        </div>
-        
-        <!-- Right side - Empty for now, can add profile/user later -->
-        <div class="flex items-center gap-2">
-            <div class="w-8 h-8 rounded-full bg-gradient-to-br from-blue-500 to-indigo-500 flex items-center justify-center shadow-lg">
-                <span class="text-white text-xs font-bold"><?php echo substr($_SESSION['user_name'], 0, 1); ?></span>
+                <p class="text-[10px] text-blue-300 font-medium tracking-widest uppercase">IPINFRA Networks</p>
+                <p class="text-sm font-bold leading-tight">Employee Portal</p>
             </div>
         </div>
     </div>
-    
-    <!-- Subtle bottom border glow -->
-    <div class="h-0.5 bg-gradient-to-r from-transparent via-indigo-400 to-transparent"></div>
 </div>
 
-<!-- SIDEBAR -->
-<div id="sidebar" class="fixed top-0 left-0 h-full w-72 bg-gradient-to-b from-blue-900 to-blue-950 text-white z-50 transform -translate-x-full transition-transform duration-300 shadow-2xl overflow-y-auto">
-    <div class="p-6 border-b border-blue-800">
-        <div class="flex items-center gap-3 mb-4">
-            <div class="w-12 h-12 bg-white rounded-xl flex items-center justify-center">
-                <span class="text-blue-900 font-bold text-xl">IN</span>
-            </div>
-            <div>
-                <h2 class="font-bold"><?php echo $_SESSION['user_name']; ?></h2>
-                <p class="text-xs text-blue-300"><?php echo $_SESSION['employee_id']; ?></p>
-            </div>
-        </div>
-        <button onclick="toggleSidebar()" class="absolute top-4 right-4 text-white/60 hover:text-white">
-            <i class="fas fa-times text-xl"></i>
-        </button>
-    </div>
-    <nav class="p-4">
-        <a href="dashboard.php" class="flex items-center gap-3 py-3 px-4 rounded-xl hover:bg-blue-800/30 transition mb-1">
-            <i class="fas fa-tachometer-alt w-5"></i> Dashboard
-        </a>
-        <a href="clock.php" class="flex items-center gap-3 py-3 px-4 rounded-xl hover:bg-blue-800/30 transition mb-1">
-            <i class="fas fa-clock w-5"></i> Clock In/Out
-        </a>
-        <a href="leave.php" class="flex items-center gap-3 py-3 px-4 rounded-xl hover:bg-blue-800/30 transition mb-1">
-            <i class="fas fa-calendar-alt w-5"></i> Apply Leave
-        </a>
-        <a href="claim.php" class="flex items-center gap-3 py-3 px-4 rounded-xl hover:bg-blue-800/30 transition mb-1">
-            <i class="fas fa-receipt w-5"></i> Apply Claim
-        </a>
-        <a href="gallery.php" class="flex items-center gap-3 py-3 px-4 rounded-xl hover:bg-blue-800/30 transition mb-1">
-            <i class="fas fa-images w-5"></i> Company Gallery
-        </a>
-        <a href="assets.php" class="flex items-center gap-3 py-3 px-4 rounded-xl hover:bg-blue-800/30 transition mb-1">
-            <i class="fas fa-boxes w-5"></i> Asset Tracker
-        </a>
-        <a href="management.php" class="flex items-center gap-3 py-3 px-4 rounded-xl bg-blue-800/50 mb-1">
-            <i class="fas fa-briefcase w-5"></i> My Management
-        </a>
-        <a href="payslip.php" class="flex items-center gap-3 py-3 px-4 rounded-xl hover:bg-blue-800/30 transition mb-1">
-            <i class="fas fa-file-invoice-dollar w-5"></i> Payslip
-        </a>
-        <a href="calendar.php" class="flex items-center gap-3 py-3 px-4 rounded-xl hover:bg-blue-800/30 transition mb-1">
-            <i class="fas fa-calendar w-5"></i> Calendar
-        </a>
-        <a href="profile.php" class="flex items-center gap-3 py-3 px-4 rounded-xl hover:bg-blue-800/30 transition mb-1">
-            <i class="fas fa-user-circle w-5"></i> My Profile
-        </a>
-        <div class="border-t border-blue-800 my-4"></div>
-        <a href="../logout.php" class="flex items-center gap-3 py-3 px-4 rounded-xl bg-red-600/20 text-red-300 hover:bg-red-600/30 transition">
-            <i class="fas fa-sign-out-alt w-5"></i> Logout
-        </a>
-    </nav>
-</div>
+<?php require_once '../includes/employee_sidebar.php'; ?>
 
-<div id="overlay" class="fixed inset-0 bg-black/50 z-40 hidden" onclick="toggleSidebar()"></div>
+<!-- Page Content -->
+<div class="max-w-4xl mx-auto px-4 py-6 space-y-5">
 
-<!-- MAIN CONTENT -->
-<div class="px-4 py-6 max-w-6xl mx-auto">
-    
-    <!-- Page Header -->
-    <div class="text-center mb-8">
-        <h1 class="text-2xl font-bold text-gray-800">My Management</h1>
-        <p class="text-sm text-gray-500 mt-1">Manage your documents, resignation, and communicate with HR</p>
-    </div>
-
-    <?php echo $success; ?>
-    <?php echo $error; ?>
-
-    <!-- Tabs Navigation -->
-    <div class="flex flex-wrap gap-2 mb-6 border-b border-gray-200 pb-2">
-        <a href="?tab=documents" class="px-5 py-2 rounded-t-xl text-sm font-medium transition <?php echo $active_tab == 'documents' ? 'bg-blue-600 text-white shadow-md' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'; ?>">
-            <i class="fas fa-folder-open mr-2"></i> Company Documents
-        </a>
-        <a href="?tab=upload" class="px-5 py-2 rounded-t-xl text-sm font-medium transition <?php echo $active_tab == 'upload' ? 'bg-blue-600 text-white shadow-md' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'; ?>">
-            <i class="fas fa-upload mr-2"></i> Send to HR
-        </a>
-        <a href="?tab=resignation" class="px-5 py-2 rounded-t-xl text-sm font-medium transition <?php echo $active_tab == 'resignation' ? 'bg-blue-600 text-white shadow-md' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'; ?>">
-            <i class="fas fa-user-minus mr-2"></i> Resignation
-        </a>
-    </div>
-
-    <!-- ======================================== -->
-    <!-- TAB 1: COMPANY DOCUMENTS -->
-    <!-- ======================================== -->
-    <?php if($active_tab == 'documents'): ?>
-    <div class="bg-white rounded-2xl shadow-xl overflow-hidden">
-        <div class="bg-gradient-to-r from-gray-50 to-white px-6 py-4 border-b">
-            <div class="flex items-center gap-3">
-                <div class="w-10 h-10 bg-blue-100 rounded-xl flex items-center justify-center">
-                    <i class="fas fa-folder-open text-blue-600 text-lg"></i>
-                </div>
-                <div>
-                    <h2 class="font-semibold text-gray-800">Company Documents</h2>
-                    <p class="text-xs text-gray-500">Important documents shared by HR</p>
-                </div>
-            </div>
-        </div>
-        
-        <div class="p-5">
-            <?php if(mysqli_num_rows($documents) > 0): ?>
-                <div class="space-y-3">
-                    <?php while($doc = mysqli_fetch_assoc($documents)): 
-                        $file_path = "../uploads/documents/" . $doc['file_path'];
-                        if (!file_exists($file_path)) $file_path = "../uploads/employee_documents/" . $doc['file_path'];
-                        $file_icon = 'fa-file-pdf';
-                        if (strpos($doc['file_name'], '.doc') !== false) $file_icon = 'fa-file-word';
-                        if (strpos($doc['file_name'], '.jpg') !== false || strpos($doc['file_name'], '.png') !== false) $file_icon = 'fa-file-image';
-                        if (strpos($doc['file_name'], '.xls') !== false) $file_icon = 'fa-file-excel';
-                    ?>
-                    <div class="border border-gray-100 rounded-xl p-4 hover:shadow-md transition">
-                        <div class="flex items-center justify-between flex-wrap gap-3">
-                            <div class="flex items-center gap-3">
-                                <div class="w-10 h-10 rounded-lg bg-blue-100 flex items-center justify-center">
-                                    <i class="fas <?php echo $file_icon; ?> text-blue-600 text-lg"></i>
-                                </div>
-                                <div>
-                                    <p class="font-medium text-gray-800"><?php echo htmlspecialchars($doc['document_title']); ?></p>
-                                    <div class="flex flex-wrap gap-3 text-xs text-gray-400 mt-1">
-                                        <span><i class="fas fa-tag mr-1"></i> <?php echo ucfirst(str_replace('_', ' ', $doc['document_type'])); ?></span>
-                                        <span><i class="fas fa-calendar mr-1"></i> <?php echo date('d M Y', strtotime($doc['upload_date'])); ?></span>
-                                    </div>
-                                </div>
-                            </div>
-                            <div class="flex gap-2">
-                                <a href="<?php echo $file_path; ?>" download class="bg-green-500 text-white px-3 py-2 rounded-lg text-sm hover:bg-green-600 transition">
-                                    <i class="fas fa-download"></i> Download
-                                </a>
-                                <a href="<?php echo $file_path; ?>" target="_blank" class="bg-blue-500 text-white px-3 py-2 rounded-lg text-sm hover:bg-blue-600 transition">
-                                    <i class="fas fa-eye"></i> View
-                                </a>
-                            </div>
-                        </div>
-                    </div>
-                    <?php endwhile; ?>
-                </div>
+    <!-- Profile Banner -->
+    <div class="fade-up relative overflow-hidden rounded-2xl bg-gradient-to-br from-indigo-600 via-blue-600 to-purple-700 text-white shadow-xl">
+        <div class="absolute inset-0 opacity-10" style="background-image:radial-gradient(circle at 80% 20%,#fff 0%,transparent 50%)"></div>
+        <div class="relative px-6 py-6 flex items-center gap-5 flex-wrap">
+            <?php if (!empty($me['profile_pic']) && file_exists('../uploads/profile_pics/' . $me['profile_pic'])): ?>
+                <img src="../uploads/profile_pics/<?php echo htmlspecialchars($me['profile_pic']); ?>" class="w-16 h-16 rounded-2xl object-cover ring-4 ring-white/30 shadow-lg">
             <?php else: ?>
-                <div class="text-center py-12">
-                    <div class="w-20 h-20 bg-gray-100 rounded-full flex items-center justify-center mx-auto mb-4">
-                        <i class="fas fa-folder-open text-gray-400 text-3xl"></i>
-                    </div>
-                    <p class="text-gray-500">No company documents available</p>
-                    <p class="text-xs text-gray-400 mt-1">Documents shared by HR will appear here</p>
-                </div>
+                <div class="avatar w-16 h-16 bg-white/20 backdrop-blur text-white text-2xl ring-4 ring-white/20 rounded-2xl shadow-lg"><?php echo $initials; ?></div>
             <?php endif; ?>
+            <div class="flex-1 min-w-0">
+                <p class="text-xs font-medium text-blue-200 uppercase tracking-widest mb-0.5">My Management Hub</p>
+                <h1 class="text-xl font-bold leading-tight"><?php echo htmlspecialchars($me['name']); ?></h1>
+                <div class="flex flex-wrap gap-3 mt-1.5 text-xs text-blue-200">
+                    <span><i class="fas fa-id-badge mr-1"></i><?php echo htmlspecialchars($me['employee_id']); ?></span>
+                    <?php if ($me['department']): ?><span><i class="fas fa-building mr-1"></i><?php echo htmlspecialchars($me['department']); ?></span><?php endif; ?>
+                    <?php if ($me['position']): ?><span><i class="fas fa-briefcase mr-1"></i><?php echo htmlspecialchars($me['position']); ?></span><?php endif; ?>
+                </div>
+            </div>
+            <!-- Quick badges -->
+            <div class="flex flex-col gap-1.5 shrink-0 text-right">
+                <span class="text-xs font-semibold bg-white/20 backdrop-blur-sm px-3 py-1 rounded-full flex items-center gap-1.5">
+                    <span class="w-2 h-2 rounded-full bg-green-400 inline-block"></span>
+                    <?php echo $resignation && $resignation['status']==='pending' ? 'Resignation Pending' : 'Active Employee'; ?>
+                </span>
+                <?php if ($warnings_count > 0): ?>
+                <span class="text-xs font-semibold bg-amber-400/30 backdrop-blur-sm px-3 py-1 rounded-full">
+                    <i class="fas fa-exclamation-triangle mr-1 text-amber-300"></i><?php echo $warnings_count; ?> Warning<?php echo $warnings_count>1?'s':''; ?>
+                </span>
+                <?php endif; ?>
+            </div>
+        </div>
+    </div>
+
+    <?php if ($success): ?>
+    <div class="fade-up bg-green-50 border border-green-200 rounded-2xl px-5 py-3.5 flex items-center gap-3">
+        <div class="w-8 h-8 rounded-full bg-green-100 flex items-center justify-center shrink-0"><i class="fas fa-check text-green-600 text-sm"></i></div>
+        <p class="text-sm font-medium text-green-700"><?php echo htmlspecialchars($success); ?></p>
+    </div>
+    <?php endif; ?>
+    <?php if ($error): ?>
+    <div class="fade-up bg-red-50 border border-red-200 rounded-2xl px-5 py-3.5 flex items-center gap-3">
+        <div class="w-8 h-8 rounded-full bg-red-100 flex items-center justify-center shrink-0"><i class="fas fa-exclamation text-red-500 text-sm"></i></div>
+        <p class="text-sm font-medium text-red-600"><?php echo htmlspecialchars($error); ?></p>
+    </div>
+    <?php endif; ?>
+
+    <?php if ($termination): ?>
+    <div class="fade-up bg-red-50 border border-red-200 rounded-2xl px-5 py-4">
+        <div class="flex items-start gap-3">
+            <div class="w-9 h-9 rounded-xl bg-red-100 flex items-center justify-center shrink-0"><i class="fas fa-gavel text-red-500"></i></div>
+            <div>
+                <p class="font-bold text-red-800 text-sm">Employment Termination Notice</p>
+                <p class="text-xs text-red-600 mt-0.5">Your employment has been terminated
+                    (<?php echo ucfirst(str_replace('_',' ',$termination['termination_type'])); ?>).
+                    Effective date: <strong><?php echo date('d M Y', strtotime($termination['effective_date'])); ?></strong>.</p>
+                <?php if ($termination['reason']): ?>
+                <p class="text-xs text-red-500 mt-1"><?php echo htmlspecialchars($termination['reason']); ?></p>
+                <?php endif; ?>
+            </div>
         </div>
     </div>
     <?php endif; ?>
 
-    <!-- ======================================== -->
-    <!-- TAB 2: SEND TO HR (UPLOAD) -->
-    <!-- ======================================== -->
-    <?php if($active_tab == 'upload'): ?>
-    <div class="bg-white rounded-2xl shadow-xl overflow-hidden">
-        <div class="bg-gradient-to-r from-gray-50 to-white px-6 py-4 border-b">
-            <div class="flex items-center gap-3">
-                <div class="w-10 h-10 bg-green-100 rounded-xl flex items-center justify-center">
-                    <i class="fas fa-upload text-green-600 text-lg"></i>
+    <!-- Tabs -->
+    <div class="fade-up flex gap-2 overflow-x-auto pb-1">
+        <?php
+        $tabs = [
+            ['documents',   'fa-folder-open',         'HR Documents',  count($hr_docs)],
+            ['upload',      'fa-cloud-upload-alt',     'Send to HR',    0],
+            ['resignation', 'fa-user-minus',           'Resignation',   0],
+            ['warnings',    'fa-exclamation-triangle', 'My Warnings',   $warnings_count],
+        ];
+        foreach ($tabs as [$key, $icon, $label, $badge]):
+        ?>
+        <button onclick="showTab('<?php echo $key; ?>')" id="tab-<?php echo $key; ?>"
+                class="tab-btn tab-inactive shrink-0 flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-semibold transition-all whitespace-nowrap">
+            <i class="fas <?php echo $icon; ?> text-[13px]"></i><?php echo $label; ?>
+            <?php if ($badge > 0): ?>
+                <span class="bg-indigo-500 text-white text-[10px] font-bold px-1.5 py-0.5 rounded-full leading-none"><?php echo $badge; ?></span>
+            <?php endif; ?>
+        </button>
+        <?php endforeach; ?>
+    </div>
+
+    <!-- ═══════════════════════════════════════════════
+         DOCUMENTS TAB (HR → Employee)
+    ═══════════════════════════════════════════════ -->
+    <div id="pane-documents" class="tab-pane fade-up">
+        <div class="card overflow-hidden">
+            <div class="px-5 py-4 border-b border-gray-100 flex items-center justify-between">
+                <div class="flex items-center gap-2">
+                    <i class="fas fa-folder-open text-indigo-500"></i>
+                    <p class="font-semibold text-gray-800">Documents from HR</p>
+                </div>
+                <span class="text-xs text-gray-400"><?php echo count($hr_docs); ?> file<?php echo count($hr_docs)!=1?'s':''; ?></span>
+            </div>
+            <?php if (empty($hr_docs)): ?>
+            <div class="p-12 text-center">
+                <div class="w-16 h-16 bg-indigo-50 rounded-2xl flex items-center justify-center mx-auto mb-3">
+                    <i class="fas fa-folder-open text-indigo-200 text-3xl"></i>
+                </div>
+                <p class="text-gray-500 font-medium text-sm">No documents from HR yet</p>
+                <p class="text-gray-400 text-xs mt-1">HR will share contracts and letters here</p>
+            </div>
+            <?php else: ?>
+            <div class="divide-y divide-gray-50">
+                <?php foreach ($hr_docs as $d):
+                    $ext      = strtolower(pathinfo($d['file_name'] ?? '', PATHINFO_EXTENSION));
+                    $fileIcon = match(true) {
+                        in_array($ext,['doc','docx']) => 'fa-file-word text-blue-500',
+                        in_array($ext,['xls','xlsx']) => 'fa-file-excel text-green-500',
+                        in_array($ext,['jpg','jpeg','png']) => 'fa-file-image text-pink-500',
+                        default => 'fa-file-pdf text-red-500'
+                    };
+                    $fp1 = "../uploads/documents/" . $d['file_path'];
+                    $fp2 = "../uploads/employee_documents/" . $d['file_path'];
+                    $fp  = file_exists($fp1) ? $fp1 : (file_exists($fp2) ? $fp2 : null);
+                    $typeLabel = ['offer_letter'=>'Offer Letter','contract'=>'Contract','id_copy'=>'IC/Passport','academic_certificate'=>'Certificate','performance_review'=>'Performance','disciplinary'=>'Disciplinary','other'=>'Other'][$d['document_type'] ?? ''] ?? ucfirst($d['document_type'] ?? '');
+                ?>
+                <div class="flex items-center gap-4 px-5 py-4 hover:bg-slate-50 transition flex-wrap">
+                    <div class="w-11 h-11 rounded-xl bg-gray-100 flex items-center justify-center shrink-0 shadow-sm">
+                        <i class="fas <?php echo $fileIcon; ?> text-lg"></i>
+                    </div>
+                    <div class="flex-1 min-w-0">
+                        <p class="font-semibold text-gray-800 text-sm truncate"><?php echo htmlspecialchars($d['document_title']); ?></p>
+                        <div class="flex flex-wrap items-center gap-2 mt-0.5">
+                            <span class="text-[10px] bg-purple-100 text-purple-700 px-2 py-0.5 rounded-full font-semibold"><?php echo $typeLabel; ?></span>
+                            <span class="text-xs text-gray-400"><?php echo date('d M Y', strtotime($d['upload_date'])); ?></span>
+                        </div>
+                        <?php if ($d['notes']): ?>
+                        <p class="text-xs text-gray-400 mt-1 italic"><?php echo htmlspecialchars(substr($d['notes'],0,80)); ?></p>
+                        <?php endif; ?>
+                    </div>
+                    <?php if ($fp): ?>
+                    <div class="flex gap-1.5 shrink-0">
+                        <a href="<?php echo htmlspecialchars($fp); ?>" target="_blank"
+                           class="w-9 h-9 flex items-center justify-center rounded-xl bg-blue-50 hover:bg-blue-100 text-blue-500 transition" title="View">
+                            <i class="fas fa-eye text-sm"></i>
+                        </a>
+                        <a href="<?php echo htmlspecialchars($fp); ?>" download
+                           class="w-9 h-9 flex items-center justify-center rounded-xl bg-indigo-50 hover:bg-indigo-100 text-indigo-600 transition" title="Download">
+                            <i class="fas fa-download text-sm"></i>
+                        </a>
+                    </div>
+                    <?php endif; ?>
+                </div>
+                <?php endforeach; ?>
+            </div>
+            <?php endif; ?>
+        </div>
+    </div>
+
+    <!-- ═══════════════════════════════════════════════
+         UPLOAD TAB (Employee → HR)
+    ═══════════════════════════════════════════════ -->
+    <div id="pane-upload" class="tab-pane hidden fade-up">
+        <div class="card p-6">
+            <div class="flex items-center gap-3 mb-6 pb-4 border-b border-gray-100">
+                <div class="w-10 h-10 rounded-xl bg-gradient-to-br from-green-500 to-emerald-600 flex items-center justify-center shadow-md">
+                    <i class="fas fa-cloud-upload-alt text-white text-sm"></i>
                 </div>
                 <div>
-                    <h2 class="font-semibold text-gray-800">Send Document to HR</h2>
-                    <p class="text-xs text-gray-500">Upload invoices, delivery orders, or other documents</p>
+                    <h2 class="font-bold text-gray-800">Send Document to HR</h2>
+                    <p class="text-xs text-gray-400">Upload files — HR will be notified automatically</p>
                 </div>
             </div>
-        </div>
-        
-        <div class="p-6 max-w-lg mx-auto">
-            <form method="POST" enctype="multipart/form-data" class="space-y-5">
+            <form method="POST" enctype="multipart/form-data" class="space-y-4">
                 <div>
-                    <label class="block text-gray-700 text-sm font-semibold mb-2">Document Type</label>
-                    <select name="document_type" required class="w-full px-4 py-2.5 border-2 border-gray-200 rounded-xl focus:border-green-500 focus:outline-none">
-                        <option value="invoice">🧾 Invoice</option>
-                        <option value="delivery_order">📦 Delivery Order</option>
-                        <option value="purchase_order">📋 Purchase Order</option>
-                        <option value="quotation">📊 Quotation</option>
-                        <option value="receipt">📎 Receipt</option>
-                        <option value="complaint">⚠️ Complaint / Issue</option>
-                        <option value="request_letter">✉️ Request Letter</option>
-                        <option value="other">📁 Other</option>
+                    <label class="block text-xs font-semibold text-gray-600 uppercase tracking-wide mb-1.5">Document Type</label>
+                    <select name="document_type" required class="form-input">
+                        <option value="id_copy">IC / Passport Copy</option>
+                        <option value="academic_certificate">Academic Certificate</option>
+                        <option value="medical_certificate">Medical Certificate</option>
+                        <option value="bank_statement">Bank Statement</option>
+                        <option value="tax_form">Tax Form (EA/BE)</option>
+                        <option value="other">Other</option>
                     </select>
                 </div>
                 <div>
-                    <label class="block text-gray-700 text-sm font-semibold mb-2">Document Title</label>
-                    <input type="text" name="document_title" required class="w-full px-4 py-2.5 border-2 border-gray-200 rounded-xl focus:border-green-500 focus:outline-none" placeholder="e.g., Invoice #INV-001 - ABC Company">
+                    <label class="block text-xs font-semibold text-gray-600 uppercase tracking-wide mb-1.5">Document Title</label>
+                    <input type="text" name="document_title" required class="form-input" placeholder="e.g. Medical Certificate — 5 Jun 2025">
                 </div>
                 <div>
-                    <label class="block text-gray-700 text-sm font-semibold mb-2">Select File</label>
-                    <input type="file" name="document_file" required class="w-full px-4 py-2.5 border-2 border-gray-200 rounded-xl focus:border-green-500">
-                    <p class="text-xs text-gray-400 mt-1">PDF, DOC, DOCX, JPG, PNG (Max 5MB)</p>
+                    <label class="block text-xs font-semibold text-gray-600 uppercase tracking-wide mb-1.5">File</label>
+                    <label class="flex flex-col items-center justify-center gap-2 border-2 border-dashed border-gray-200 hover:border-indigo-400 rounded-xl p-6 cursor-pointer transition group" for="uploadFile">
+                        <div class="w-12 h-12 bg-indigo-50 group-hover:bg-indigo-100 rounded-xl flex items-center justify-center transition">
+                            <i class="fas fa-cloud-upload-alt text-indigo-400 text-xl group-hover:text-indigo-600 transition"></i>
+                        </div>
+                        <p class="text-sm text-gray-400 group-hover:text-indigo-500 transition font-medium" id="fileLabel">Click to select or drag file here</p>
+                        <p class="text-[11px] text-gray-300">PDF, DOC, DOCX, JPG, PNG, XLS — max 5 MB</p>
+                    </label>
+                    <input type="file" id="uploadFile" name="document_file" required class="hidden"
+                           accept=".pdf,.doc,.docx,.jpg,.jpeg,.png,.xls,.xlsx"
+                           onchange="document.getElementById('fileLabel').textContent=this.files[0]?.name||'Click to select file'">
                 </div>
                 <div>
-                    <label class="block text-gray-700 text-sm font-semibold mb-2">Notes (Optional)</label>
-                    <textarea name="notes" rows="2" class="w-full px-4 py-2.5 border-2 border-gray-200 rounded-xl focus:border-green-500" placeholder="Any additional information..."></textarea>
+                    <label class="block text-xs font-semibold text-gray-600 uppercase tracking-wide mb-1.5">Notes (Optional)</label>
+                    <textarea name="notes" rows="2" class="form-input resize-none" placeholder="Any notes for HR…"></textarea>
                 </div>
-                <button type="submit" name="upload_document" class="w-full bg-gradient-to-r from-green-600 to-teal-600 text-white py-3 rounded-xl font-semibold hover:shadow-lg transition">
-                    <i class="fas fa-paper-plane mr-2"></i> Send to HR
+                <button type="submit" name="upload_document"
+                        class="w-full bg-gradient-to-r from-green-600 to-emerald-600 hover:from-green-700 hover:to-emerald-700 text-white py-3 rounded-xl font-semibold text-sm shadow-md hover:shadow-lg transition flex items-center justify-center gap-2">
+                    <i class="fas fa-paper-plane"></i>Send to HR
                 </button>
             </form>
-            <div class="mt-4 bg-blue-50 rounded-xl p-3 text-xs text-blue-700">
-                <i class="fas fa-info-circle mr-1"></i>
-                Documents you upload will be sent to HR for review. HR will be notified immediately.
-            </div>
         </div>
     </div>
-    <?php endif; ?>
 
-    <!-- ======================================== -->
-    <!-- TAB 3: RESIGNATION -->
-    <!-- ======================================== -->
-    <?php if($active_tab == 'resignation'): ?>
-    <div class="bg-white rounded-2xl shadow-xl overflow-hidden">
-        <div class="bg-gradient-to-r from-gray-50 to-white px-6 py-4 border-b">
-            <div class="flex items-center gap-3">
-                <div class="w-10 h-10 bg-red-100 rounded-xl flex items-center justify-center">
-                    <i class="fas fa-user-minus text-red-600 text-lg"></i>
-                </div>
-                <div>
-                    <h2 class="font-semibold text-gray-800">Resignation Request</h2>
-                    <p class="text-xs text-gray-500">Submit your resignation to HR</p>
+    <!-- ═══════════════════════════════════════════════
+         RESIGNATION TAB
+    ═══════════════════════════════════════════════ -->
+    <div id="pane-resignation" class="tab-pane hidden fade-up space-y-4">
+
+        <!-- If terminated, block resignation -->
+        <?php if ($termination): ?>
+        <div class="card p-8 text-center">
+            <div class="w-16 h-16 bg-red-100 rounded-full flex items-center justify-center mx-auto mb-3">
+                <i class="fas fa-ban text-red-400 text-2xl"></i>
+            </div>
+            <p class="font-bold text-gray-700">Account Terminated</p>
+            <p class="text-xs text-gray-400 mt-1">Resignation is not available for terminated accounts.</p>
+        </div>
+
+        <!-- Pending resignation card -->
+        <?php elseif ($resignation && $resignation['status'] === 'pending'): ?>
+        <div class="card overflow-hidden">
+            <div class="h-1.5 bg-gradient-to-r from-amber-400 to-orange-400"></div>
+            <div class="p-6">
+                <div class="flex items-start gap-4">
+                    <div class="w-12 h-12 rounded-xl bg-amber-100 flex items-center justify-center shrink-0">
+                        <i class="fas fa-clock text-amber-600 text-xl"></i>
+                    </div>
+                    <div class="flex-1">
+                        <div class="flex items-center gap-2 mb-1 flex-wrap">
+                            <p class="font-bold text-gray-800">Resignation Under Review</p>
+                            <span class="text-xs bg-amber-100 text-amber-700 px-2.5 py-0.5 rounded-full font-semibold">Pending</span>
+                        </div>
+                        <p class="text-xs text-gray-500">Submitted on <?php echo date('d M Y', strtotime($resignation['requested_date'])); ?></p>
+                        <div class="mt-3 grid grid-cols-2 gap-3 text-sm">
+                            <div class="bg-gray-50 rounded-xl p-3">
+                                <p class="text-xs text-gray-400 mb-0.5">Last Working Day</p>
+                                <p class="font-semibold text-gray-800"><?php echo date('d M Y', strtotime($resignation['last_working_date'])); ?></p>
+                            </div>
+                            <div class="bg-gray-50 rounded-xl p-3">
+                                <p class="text-xs text-gray-400 mb-0.5">Status</p>
+                                <p class="font-semibold text-amber-700">Awaiting HR</p>
+                            </div>
+                        </div>
+                        <?php if ($resignation['reason']): ?>
+                        <div class="mt-3 bg-gray-50 rounded-xl p-3">
+                            <p class="text-xs text-gray-400 mb-1">Your reason</p>
+                            <p class="text-sm text-gray-600 italic">"<?php echo htmlspecialchars($resignation['reason']); ?>"</p>
+                        </div>
+                        <?php endif; ?>
+                        <div class="mt-4">
+                            <a href="?cancel_resignation=<?php echo $resignation['id']; ?>&tab=resignation"
+                               data-confirm="Cancel your resignation request? You will remain active." data-confirm-title="Cancel Resignation"
+                               class="inline-flex items-center gap-2 px-4 py-2 bg-red-50 hover:bg-red-100 text-red-600 rounded-xl text-sm font-semibold transition">
+                                <i class="fas fa-times-circle"></i>Cancel Resignation
+                            </a>
+                        </div>
+                    </div>
                 </div>
             </div>
         </div>
-        
-        <div class="p-6 max-w-lg mx-auto">
-            <?php if ($termination && $termination['status'] != 'cancelled'): ?>
-                <div class="bg-red-50 border border-red-200 rounded-xl p-4 text-center">
-                    <i class="fas fa-ban text-red-600 text-3xl mb-2 block"></i>
-                    <p class="font-semibold text-red-800">Employment Terminated</p>
-                    <p class="text-sm text-red-600">You cannot submit resignation as your employment has been terminated.</p>
-                </div>
-            <?php elseif ($resignation && $resignation['status'] == 'pending'): ?>
-                <div class="bg-yellow-50 border border-yellow-200 rounded-xl p-4">
-                    <div class="flex items-center gap-3">
-                        <div class="w-10 h-10 bg-yellow-100 rounded-full flex items-center justify-center">
-                            <i class="fas fa-hourglass-half text-yellow-600"></i>
-                        </div>
-                        <div>
-                            <p class="font-semibold text-yellow-800">Resignation Pending</p>
-                            <p class="text-xs text-yellow-600">HR is reviewing your request</p>
-                        </div>
+
+        <!-- Approved resignation -->
+        <?php elseif ($resignation && $resignation['status'] === 'approved'): ?>
+        <div class="card overflow-hidden">
+            <div class="h-1.5 bg-gradient-to-r from-green-400 to-emerald-500"></div>
+            <div class="p-6">
+                <div class="flex items-start gap-4">
+                    <div class="w-12 h-12 rounded-xl bg-green-100 flex items-center justify-center shrink-0">
+                        <i class="fas fa-check-circle text-green-600 text-xl"></i>
                     </div>
-                    <div class="mt-3 pt-3 border-t border-yellow-200">
-                        <p class="text-sm"><strong>Last Working Day:</strong> <?php echo date('d M Y', strtotime($resignation['last_working_date'])); ?></p>
-                        <a href="?cancel_resignation=<?php echo $resignation['id']; ?>&tab=resignation" onclick="return confirm('Cancel your resignation request?')" class="inline-block mt-3 text-red-600 text-sm">
-                            <i class="fas fa-times-circle"></i> Cancel Request
-                        </a>
-                    </div>
-                </div>
-            <?php elseif ($resignation && $resignation['status'] == 'approved'): ?>
-                <div class="bg-green-50 border border-green-200 rounded-xl p-4 text-center">
-                    <i class="fas fa-check-circle text-green-600 text-3xl mb-2 block"></i>
-                    <p class="font-semibold text-green-800">Resignation Approved</p>
-                    <p class="text-sm text-green-600">Your last working day: <?php echo date('d M Y', strtotime($resignation['last_working_date'])); ?></p>
-                </div>
-            <?php elseif ($resignation && $resignation['status'] == 'rejected'): ?>
-                <div class="bg-red-50 border border-red-200 rounded-xl p-4">
-                    <div class="text-center">
-                        <i class="fas fa-times-circle text-red-600 text-3xl mb-2 block"></i>
-                        <p class="font-semibold text-red-800">Resignation Rejected</p>
-                        <?php if($resignation['admin_notes']): ?>
-                            <p class="text-sm text-red-600 mt-2">Reason: <?php echo nl2br(htmlspecialchars($resignation['admin_notes'])); ?></p>
+                    <div class="flex-1">
+                        <div class="flex items-center gap-2 flex-wrap mb-1">
+                            <p class="font-bold text-gray-800">Resignation Approved</p>
+                            <span class="text-xs bg-green-100 text-green-700 px-2.5 py-0.5 rounded-full font-semibold">Approved</span>
+                        </div>
+                        <p class="text-xs text-gray-500">Your resignation has been accepted.</p>
+                        <div class="mt-3 grid grid-cols-2 gap-3">
+                            <div class="bg-gray-50 rounded-xl p-3">
+                                <p class="text-xs text-gray-400 mb-0.5">Last Working Day</p>
+                                <p class="font-semibold text-gray-800"><?php echo date('d M Y', strtotime($resignation['last_working_date'])); ?></p>
+                            </div>
+                            <div class="bg-gray-50 rounded-xl p-3">
+                                <p class="text-xs text-gray-400 mb-0.5">Approved On</p>
+                                <p class="font-semibold text-gray-800"><?php echo $resignation['approved_date'] ? date('d M Y', strtotime($resignation['approved_date'])) : 'N/A'; ?></p>
+                            </div>
+                        </div>
+                        <?php if ($resignation['admin_notes']): ?>
+                        <div class="mt-3 bg-blue-50 rounded-xl p-3">
+                            <p class="text-xs text-blue-400 mb-0.5">HR Notes</p>
+                            <p class="text-sm text-blue-700 italic">"<?php echo htmlspecialchars($resignation['admin_notes']); ?>"</p>
+                        </div>
                         <?php endif; ?>
                     </div>
                 </div>
-            <?php else: ?>
-                <form method="POST" class="space-y-5">
-                    <div>
-                        <label class="block text-gray-700 text-sm font-semibold mb-2">Last Working Day <span class="text-red-500">*</span></label>
-                        <input type="date" name="last_working_date" required class="w-full px-4 py-2.5 border-2 border-gray-200 rounded-xl focus:border-red-500" min="<?php echo date('Y-m-d', strtotime('+14 days')); ?>">
-                        <p class="text-xs text-gray-500 mt-1">Minimum notice period: 14 days</p>
-                    </div>
-                    <div>
-                        <label class="block text-gray-700 text-sm font-semibold mb-2">Reason for Resignation <span class="text-red-500">*</span></label>
-                        <textarea name="reason" rows="4" required class="w-full px-4 py-2.5 border-2 border-gray-200 rounded-xl focus:border-red-500 focus:outline-none" placeholder="Please provide your reason..."></textarea>
-                    </div>
-                    <div class="bg-yellow-50 rounded-xl p-3 text-xs text-yellow-700">
-                        <i class="fas fa-info-circle mr-1"></i>
-                        Once submitted, your resignation will be reviewed by HR. You can cancel your request before it's approved.
-                    </div>
-                    <button type="submit" name="submit_resignation" class="w-full bg-gradient-to-r from-red-600 to-rose-600 text-white py-3 rounded-xl font-semibold hover:shadow-lg transition" onclick="return confirm('Submit resignation? This is a serious action.')">
-                        <i class="fas fa-paper-plane mr-2"></i> Submit Resignation Request
-                    </button>
-                </form>
-            <?php endif; ?>
+            </div>
         </div>
-    </div>
-    <?php endif; ?>
 
+        <!-- Rejected -->
+        <?php elseif ($resignation && $resignation['status'] === 'rejected'): ?>
+        <div class="card overflow-hidden">
+            <div class="h-1.5 bg-gradient-to-r from-red-400 to-rose-500"></div>
+            <div class="p-6">
+                <div class="flex items-start gap-4">
+                    <div class="w-12 h-12 rounded-xl bg-red-100 flex items-center justify-center shrink-0">
+                        <i class="fas fa-times-circle text-red-500 text-xl"></i>
+                    </div>
+                    <div class="flex-1">
+                        <div class="flex items-center gap-2 flex-wrap mb-1">
+                            <p class="font-bold text-gray-800">Resignation Rejected</p>
+                            <span class="text-xs bg-red-100 text-red-700 px-2.5 py-0.5 rounded-full font-semibold">Rejected</span>
+                        </div>
+                        <?php if ($resignation['admin_notes']): ?>
+                        <div class="mt-2 bg-red-50 rounded-xl p-3">
+                            <p class="text-xs text-red-400 mb-0.5">Reason from HR</p>
+                            <p class="text-sm text-red-700 italic">"<?php echo htmlspecialchars($resignation['admin_notes']); ?>"</p>
+                        </div>
+                        <?php endif; ?>
+                    </div>
+                </div>
+            </div>
+        </div>
+        <!-- Allow new submission after rejection -->
+        <?php endif; ?>
+
+        <!-- Submit form — only if no pending/approved, or after rejection/cancellation -->
+        <?php if (!$resignation || in_array($resignation['status'], ['rejected','cancelled'])): ?>
+        <div class="card p-6">
+            <div class="flex items-center gap-3 mb-6 pb-4 border-b border-gray-100">
+                <div class="w-10 h-10 rounded-xl bg-gradient-to-br from-rose-500 to-red-600 flex items-center justify-center shadow-md">
+                    <i class="fas fa-user-minus text-white text-sm"></i>
+                </div>
+                <div>
+                    <h2 class="font-bold text-gray-800">Submit Resignation</h2>
+                    <p class="text-xs text-gray-400">Your request will be reviewed by HR</p>
+                </div>
+            </div>
+            <div class="bg-amber-50 border border-amber-200 rounded-xl px-4 py-3 mb-5 text-xs text-amber-700 flex items-start gap-2">
+                <i class="fas fa-info-circle mt-0.5 shrink-0"></i>
+                <span>Please ensure you have reviewed your employment contract regarding notice period requirements before submitting.</span>
+            </div>
+            <form method="POST" id="resignForm" class="space-y-4">
+                <div>
+                    <label class="block text-xs font-semibold text-gray-600 uppercase tracking-wide mb-1.5">Last Working Day <span class="text-red-400">*</span></label>
+                    <input type="date" name="last_working_date" required class="form-input"
+                           min="<?php echo date('Y-m-d', strtotime('+1 day')); ?>">
+                    <p class="text-xs text-gray-400 mt-1">Must be at least 1 day in the future</p>
+                </div>
+                <div>
+                    <label class="block text-xs font-semibold text-gray-600 uppercase tracking-wide mb-1.5">Reason for Resignation</label>
+                    <textarea name="reason" rows="4" class="form-input resize-none" placeholder="Optional — briefly describe your reason…"></textarea>
+                </div>
+                <button type="button" onclick="submitResignation()"
+                        class="w-full bg-gradient-to-r from-red-600 to-rose-600 hover:from-red-700 hover:to-rose-700 text-white py-3 rounded-xl font-semibold text-sm shadow-md hover:shadow-lg transition flex items-center justify-center gap-2">
+                    <i class="fas fa-paper-plane"></i>Submit Resignation Request
+                </button>
+            </form>
+        </div>
+        <?php endif; ?>
+    </div>
+
+    <!-- ═══════════════════════════════════════════════
+         WARNINGS TAB
+    ═══════════════════════════════════════════════ -->
+    <div id="pane-warnings" class="tab-pane hidden fade-up">
+        <?php if (empty($my_warnings)): ?>
+        <div class="card p-12 text-center">
+            <div class="w-20 h-20 bg-green-50 rounded-full flex items-center justify-center mx-auto mb-4">
+                <i class="fas fa-shield-alt text-green-300 text-3xl"></i>
+            </div>
+            <p class="font-bold text-gray-700">Excellent Standing</p>
+            <p class="text-sm text-gray-400 mt-1">You have no disciplinary records. Keep it up!</p>
+        </div>
+        <?php else: ?>
+        <div class="card overflow-hidden">
+            <div class="px-5 py-4 border-b border-gray-100 flex items-center justify-between">
+                <div class="flex items-center gap-2">
+                    <i class="fas fa-exclamation-triangle text-orange-400"></i>
+                    <p class="font-semibold text-gray-800">My Disciplinary Records</p>
+                </div>
+                <span class="text-xs text-gray-400"><?php echo $warnings_count; ?> record<?php echo $warnings_count!=1?'s':''; ?></span>
+            </div>
+            <div class="divide-y divide-gray-50">
+                <?php
+                $wBadge = [
+                    'verbal'      => ['bg-blue-100 text-blue-700',    'Verbal Warning',    'fa-comment'],
+                    'written'     => ['bg-yellow-100 text-yellow-800','Written Warning',   'fa-file-alt'],
+                    'final'       => ['bg-red-100 text-red-700',      'Final Warning',     'fa-exclamation-circle'],
+                    'suspension'  => ['bg-purple-100 text-purple-700','Suspension',        'fa-user-slash'],
+                    'counselling' => ['bg-green-100 text-green-700',  'Counselling',       'fa-hands-helping'],
+                ];
+                foreach ($my_warnings as $w):
+                    $b = $wBadge[$w['warning_type']] ?? ['bg-gray-100 text-gray-600','Notice','fa-bell'];
+                ?>
+                <div class="p-5 hover:bg-orange-50/20 transition">
+                    <div class="flex items-start gap-3">
+                        <div class="w-9 h-9 rounded-xl bg-gray-100 flex items-center justify-center shrink-0">
+                            <i class="fas <?php echo $b[2]; ?> text-gray-500 text-sm"></i>
+                        </div>
+                        <div class="flex-1">
+                            <div class="flex items-center gap-2 flex-wrap mb-1">
+                                <span class="text-[11px] font-bold px-2.5 py-0.5 rounded-full <?php echo $b[0]; ?>"><?php echo $b[1]; ?></span>
+                                <span class="text-xs text-gray-400"><?php echo date('d M Y', strtotime($w['issued_date'])); ?></span>
+                            </div>
+                            <p class="font-semibold text-gray-800 text-sm"><?php echo htmlspecialchars($w['subject']); ?></p>
+                            <?php if ($w['description']): ?>
+                            <p class="text-xs text-gray-500 mt-1"><?php echo htmlspecialchars($w['description']); ?></p>
+                            <?php endif; ?>
+                            <?php if ($w['issued_by_name']): ?>
+                            <p class="text-[11px] text-gray-400 mt-1.5 flex items-center gap-1">
+                                <i class="fas fa-user-tie text-gray-300"></i>
+                                Issued by <?php echo htmlspecialchars($w['issued_by_name']); ?>
+                            </p>
+                            <?php endif; ?>
+                        </div>
+                    </div>
+                </div>
+                <?php endforeach; ?>
+            </div>
+        </div>
+        <?php endif; ?>
+    </div>
+
+</div><!-- /page content -->
+
+<!-- Mobile Bottom Nav -->
+<div class="fixed bottom-0 left-0 right-0 bg-white/95 backdrop-blur-lg border-t border-gray-100 md:hidden shadow-xl z-30">
+    <div class="flex justify-around py-2">
+        <a href="dashboard.php"  class="flex flex-col items-center py-2 px-3 text-gray-400 hover:text-indigo-600 transition"><i class="fas fa-home text-xl"></i><span class="text-[10px] mt-1">Home</span></a>
+        <a href="leave.php"      class="flex flex-col items-center py-2 px-3 text-gray-400 hover:text-indigo-600 transition"><i class="fas fa-calendar-check text-xl"></i><span class="text-[10px] mt-1">Leave</span></a>
+        <a href="management.php" class="flex flex-col items-center py-2 px-3 text-indigo-600"><i class="fas fa-briefcase text-xl"></i><span class="text-[10px] mt-1 font-semibold">Manage</span></a>
+        <a href="profile.php"    class="flex flex-col items-center py-2 px-3 text-gray-400 hover:text-indigo-600 transition"><i class="fas fa-user-circle text-xl"></i><span class="text-[10px] mt-1">Profile</span></a>
+    </div>
 </div>
 
 <script>
-function toggleSidebar() {
-    document.getElementById('sidebar').classList.toggle('-translate-x-full');
-    document.getElementById('overlay').classList.toggle('hidden');
+
+function showTab(tab) {
+    document.querySelectorAll('.tab-btn').forEach(b => b.className = b.className.replace('tab-active','tab-inactive'));
+    document.querySelectorAll('.tab-pane').forEach(p => p.classList.add('hidden'));
+    const btn  = document.getElementById('tab-' + tab);
+    const pane = document.getElementById('pane-' + tab);
+    if (btn)  btn.className  = btn.className.replace('tab-inactive','tab-active');
+    if (pane) pane.classList.remove('hidden');
 }
+
+function submitResignation() {
+    const date = document.querySelector('input[name="last_working_date"]').value;
+    if (!date) { alert('Please select your last working date.'); return; }
+    confirmAction('Submit Resignation Request',
+        'Once submitted, HR will review your request. You can cancel it while it is still <strong>pending</strong>.',
+        function() { document.getElementById('resignForm').submit(); });
+}
+
+// Auto-open tab
+(function() {
+    showTab('<?php echo $active_tab; ?>');
+})();
 </script>
 </body>
 </html>

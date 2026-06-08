@@ -11,7 +11,8 @@ mysqli_report(MYSQLI_REPORT_ERROR | MYSQLI_REPORT_STRICT);
 $conn = mysqli_connect($host, $username, $password, $database, $port);
 
 if (!$conn) {
-    die('Connection failed: ' . mysqli_connect_error());
+    error_log("DB connection failed: " . mysqli_connect_error());
+    die("Database connection error. Please contact the system administrator.");
 }
 
 mysqli_set_charset($conn, 'utf8');

@@ -1,10 +1,16 @@
-<?php
+﻿<?php
 require_once '../includes/auth.php';
 redirectIfNotLoggedIn();
 require_once '../includes/db.php';
+require_once '../includes/toast_fn.php';
 
 $user_id = $_SESSION['user_id'];
 $payrolls = mysqli_query($conn, "SELECT * FROM payroll WHERE employee_id = $user_id ORDER BY month_year DESC");
+
+$emp_data = mysqli_fetch_assoc(mysqli_query($conn, "SELECT nationality, employee_type FROM employees WHERE id = $user_id"));
+$is_malaysian_emp = isset($emp_data['nationality']) && $emp_data['nationality'] == 'Malaysian';
+$is_intern_emp    = isset($emp_data['employee_type']) && $emp_data['employee_type'] == 'intern';
+$show_statutory   = $is_malaysian_emp && !$is_intern_emp;
 ?>
 
 <!DOCTYPE html>
@@ -41,9 +47,12 @@ $payrolls = mysqli_query($conn, "SELECT * FROM payroll WHERE employee_id = $user
 </head>
 
 <body class="bg-gradient-to-br from-slate-50 via-blue-50 to-indigo-100 min-h-screen pb-24">
+<?php require_once '../includes/global_ui.php'; ?>
+<?php require_once '../includes/toast.php'; ?>
+<?php require_once '../includes/confirm_modal.php'; ?>
 
 <!-- Premium Header -->
-<div class="bg-gradient-to-r from-slate-900 via-indigo-900 to-slate-900 text-white sticky top-0 z-40 shadow-2xl backdrop-blur-sm">
+<div class="bg-[#060912] text-white sticky top-0 z-40 shadow-2xl backdrop-blur-sm">
     <div class="flex items-center justify-between px-5 py-4">
         <div class="flex items-center gap-3">
             <!-- Menu Button -->
@@ -56,7 +65,7 @@ $payrolls = mysqli_query($conn, "SELECT * FROM payroll WHERE employee_id = $user
             <!-- Logo -->
             <div class="relative">
                 <div class="w-10 h-10 bg-gradient-to-br from-blue-500 via-indigo-500 to-purple-600 rounded-xl flex items-center justify-center shadow-lg shadow-indigo-500/20 animate-pulse">
-                    <span class="text-white font-bold text-sm">IN</span>
+                    <img src="../uploads/1775551018_4xzREYTcMvK7ReGODviudjeDBIofOQ78mr5DsN9g.jpg" alt="IPINFRA" style="width:28px;height:28px;object-fit:contain;border-radius:4px;background:#fff;">
                 </div>
                 <div class="absolute -top-1 -right-1 w-3 h-3 bg-green-400 rounded-full border-2 border-slate-900"></div>
             </div>
@@ -80,60 +89,7 @@ $payrolls = mysqli_query($conn, "SELECT * FROM payroll WHERE employee_id = $user
     <div class="h-0.5 bg-gradient-to-r from-transparent via-indigo-400 to-transparent"></div>
 </div>
 
-<div id="sidebar" class="fixed top-0 left-0 h-full w-72 bg-gradient-to-b from-blue-900 to-blue-950 text-white z-50 transform -translate-x-full transition-transform duration-300 shadow-2xl overflow-y-auto">
-    <div class="p-6 border-b border-blue-800">
-        <div class="flex items-center gap-3 mb-4">
-            <div class="w-12 h-12 bg-white rounded-xl flex items-center justify-center">
-                <span class="text-blue-900 font-bold text-xl">IN</span>
-            </div>
-            <div>
-                <h2 class="font-bold"><?php echo $_SESSION['user_name']; ?></h2>
-                <p class="text-xs text-blue-300"><?php echo $_SESSION['employee_id']; ?></p>
-            </div>
-        </div>
-        <button onclick="toggleSidebar()" class="absolute top-4 right-4 text-white/60 hover:text-white">
-            <i class="fas fa-times text-xl"></i>
-        </button>
-    </div>
-    <nav class="p-4">
-        <a href="dashboard.php" class="flex items-center gap-3 py-3 px-4 rounded-xl hover:bg-blue-800/30 transition mb-1">
-            <i class="fas fa-tachometer-alt w-5"></i> Dashboard
-        </a>
-        <a href="clock.php" class="flex items-center gap-3 py-3 px-4 rounded-xl hover:bg-blue-800/30 transition mb-1">
-            <i class="fas fa-clock w-5"></i> Clock In/Out
-        </a>
-        <a href="leave.php" class="flex items-center gap-3 py-3 px-4 rounded-xl hover:bg-blue-800/30 transition mb-1">
-            <i class="fas fa-calendar-alt w-5"></i> Apply Leave
-        </a>
-        <a href="claim.php" class="flex items-center gap-3 py-3 px-4 rounded-xl hover:bg-blue-800/30 transition mb-1">
-            <i class="fas fa-receipt w-5"></i> Apply Claim
-        </a>
-        <a href="gallery.php" class="flex items-center gap-3 py-3 px-4 rounded-xl hover:bg-blue-800/30 transition mb-1">
-            <i class="fas fa-images w-5"></i> Company Gallery
-        </a>
-        <a href="assets.php" class="flex items-center gap-3 py-3 px-4 rounded-xl hover:bg-blue-800/30 transition mb-1">
-            <i class="fas fa-boxes w-5"></i> Asset Tracker
-        </a>
-        <a href="management.php" class="flex items-center gap-3 py-3 px-4 rounded-xl bg-blue-800/50 mb-1">
-            <i class="fas fa-briefcase w-5"></i> My Management
-        </a>
-        <a href="payslip.php" class="flex items-center gap-3 py-3 px-4 rounded-xl hover:bg-blue-800/30 transition mb-1">
-            <i class="fas fa-file-invoice-dollar w-5"></i> Payslip
-        </a>
-        <a href="calendar.php" class="flex items-center gap-3 py-3 px-4 rounded-xl hover:bg-blue-800/30 transition mb-1">
-            <i class="fas fa-calendar w-5"></i> Calendar
-        </a>
-        <a href="profile.php" class="flex items-center gap-3 py-3 px-4 rounded-xl hover:bg-blue-800/30 transition mb-1">
-            <i class="fas fa-user-circle w-5"></i> My Profile
-        </a>
-        <div class="border-t border-blue-800 my-4"></div>
-        <a href="../logout.php" class="flex items-center gap-3 py-3 px-4 rounded-xl bg-red-600/20 text-red-300 hover:bg-red-600/30 transition">
-            <i class="fas fa-sign-out-alt w-5"></i> Logout
-        </a>
-    </nav>
-</div>
-
-<div id="overlay" class="fixed inset-0 bg-black/50 z-40 hidden" onclick="toggleSidebar()"></div>
+<?php require_once '../includes/employee_sidebar.php'; ?>
 
 <!-- MAIN CONTENT -->
 <div class="px-4 py-6 max-w-xl mx-auto">
@@ -164,12 +120,16 @@ $payrolls = mysqli_query($conn, "SELECT * FROM payroll WHERE employee_id = $user
                     </p>
                 </div>
                 
-                <div class="flex gap-2">
-                    <button onclick="printPayslip(<?php echo $row['id']; ?>)" 
+                <div class="flex gap-2 flex-wrap">
+                    <button onclick="printPayslip(<?php echo $row['id']; ?>)"
                         class="bg-gradient-to-r from-blue-600 to-indigo-600 text-white px-4 py-2 rounded-xl text-sm font-semibold shadow-md hover:shadow-xl transition-all transform hover:scale-105 flex items-center gap-1">
                         <i class="fas fa-eye"></i> View
                     </button>
-                    <button onclick="viewCalculation('<?php echo $row['month_year']; ?>')" 
+                    <button onclick="downloadPayslip(<?php echo $row['id']; ?>)"
+                        class="bg-gradient-to-r from-emerald-500 to-green-600 text-white px-4 py-2 rounded-xl text-sm font-semibold shadow-md hover:shadow-xl transition-all transform hover:scale-105 flex items-center gap-1">
+                        <i class="fas fa-download"></i> Download
+                    </button>
+                    <button onclick="viewCalculation('<?php echo $row['month_year']; ?>')"
                         class="bg-gradient-to-r from-purple-600 to-pink-600 text-white px-4 py-2 rounded-xl text-sm font-semibold shadow-md hover:shadow-xl transition-all transform hover:scale-105 flex items-center gap-1">
                         <i class="fas fa-calculator"></i> Details
                     </button>
@@ -184,32 +144,54 @@ $payrolls = mysqli_query($conn, "SELECT * FROM payroll WHERE employee_id = $user
                         <p class="text-xs text-gray-500">Basic Salary</p>
                         <p class="text-base font-bold text-gray-800">RM <?php echo number_format($row['basic_salary'], 2); ?></p>
                     </div>
+                    <?php if(isset($row['approved_claims']) && $row['approved_claims'] > 0): ?>
+                    <div class="bg-gradient-to-r from-green-50 to-emerald-50 p-3 rounded-xl">
+                        <p class="text-xs text-gray-500">Approved Claims</p>
+                        <p class="text-base font-semibold text-green-600">+RM <?php echo number_format($row['approved_claims'], 2); ?></p>
+                    </div>
+                    <?php endif; ?>
+                    <?php if(isset($row['unpaid_deduction']) && $row['unpaid_deduction'] > 0): ?>
+                    <div class="bg-gradient-to-r from-red-50 to-rose-50 p-3 rounded-xl">
+                        <p class="text-xs text-gray-500">Unpaid Leave Deduction</p>
+                        <p class="text-base font-semibold text-red-600">-RM <?php echo number_format($row['unpaid_deduction'], 2); ?></p>
+                    </div>
+                    <?php endif; ?>
+                    <?php if($show_statutory): ?>
                     <div class="bg-gradient-to-r from-gray-50 to-white p-3 rounded-xl">
-                        <p class="text-xs text-gray-500">EPF (Employee)</p>
+                        <p class="text-xs text-gray-500">EPF (Employee 11%)</p>
                         <p class="text-base font-semibold text-blue-600">RM <?php echo number_format($row['epf_employee'], 2); ?></p>
                     </div>
                     <div class="bg-gradient-to-r from-gray-50 to-white p-3 rounded-xl">
-                        <p class="text-xs text-gray-500">SOCSO</p>
+                        <p class="text-xs text-gray-500">SOCSO (0.5%)</p>
                         <p class="text-base font-semibold text-orange-600">RM <?php echo number_format($row['socso_employee'], 2); ?></p>
                     </div>
                     <div class="bg-gradient-to-r from-gray-50 to-white p-3 rounded-xl">
-                        <p class="text-xs text-gray-500">EIS</p>
+                        <p class="text-xs text-gray-500">EIS (0.2%)</p>
                         <p class="text-base font-semibold text-purple-600">RM <?php echo number_format($row['eis_employee'], 2); ?></p>
                     </div>
                     <div class="bg-gradient-to-r from-gray-50 to-white p-3 rounded-xl">
                         <p class="text-xs text-gray-500">PCB</p>
                         <p class="text-base font-semibold text-red-600">RM <?php echo number_format($row['pcb'], 2); ?></p>
                     </div>
-                    <div class="bg-gradient-to-r from-green-50 to-emerald-50 p-3 rounded-xl border border-green-200">
-                        <p class="text-xs text-green-600 font-semibold">Total Deductions</p>
-                        <p class="text-base font-bold text-green-700">
+                    <div class="bg-gradient-to-r from-orange-50 to-amber-50 p-3 rounded-xl border border-orange-200">
+                        <p class="text-xs text-orange-600 font-semibold">Total Statutory Deductions</p>
+                        <p class="text-base font-bold text-orange-700">
                             RM <?php echo number_format($row['epf_employee'] + $row['socso_employee'] + $row['eis_employee'] + $row['pcb'], 2); ?>
                         </p>
                     </div>
+                    <?php else: ?>
+                    <div class="bg-gradient-to-r from-gray-50 to-white p-3 rounded-xl col-span-2 text-center">
+                        <p class="text-xs text-gray-400">
+                            <?php echo $is_intern_emp ? '<i class="fas fa-graduation-cap mr-1"></i> Intern' : '<i class="fas fa-globe mr-1"></i> Non-Malaysian'; ?>
+                            — No statutory deductions (EPF/SOCSO/EIS/PCB)
+                        </p>
+                    </div>
+                    <?php endif; ?>
                 </div>
             </div>
 
-            <!-- Employer Contributions -->
+            <!-- Employer Contributions (only for Malaysian regular employees) -->
+            <?php if($show_statutory): ?>
             <div class="mt-4 pt-3 border-t border-gray-100">
                 <p class="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-2">Employer Contributions</p>
                 <div class="grid grid-cols-3 gap-2 text-center text-xs">
@@ -227,6 +209,7 @@ $payrolls = mysqli_query($conn, "SELECT * FROM payroll WHERE employee_id = $user
                     </div>
                 </div>
             </div>
+            <?php endif; ?>
         </div>
         <?php endwhile; ?>
     <?php else: ?>
@@ -242,7 +225,7 @@ $payrolls = mysqli_query($conn, "SELECT * FROM payroll WHERE employee_id = $user
 </div>
 
 <!-- Mobile Bottom Navigation -->
-<div class="fixed bottom-0 left-0 right-0 bg-white border-t border-gray-200 md:hidden shadow-lg z-20">
+<div class="bottom-nav fixed bottom-0 left-0 right-0 bg-white border-t border-gray-200 md:hidden shadow-lg z-20">
     <div class="flex justify-around py-2">
         <a href="dashboard.php" class="flex flex-col items-center py-1 px-3 text-gray-500">
             <i class="fas fa-home text-xl"></i>
@@ -268,13 +251,13 @@ $payrolls = mysqli_query($conn, "SELECT * FROM payroll WHERE employee_id = $user
 </div>
 
 <script>
-function toggleSidebar() {
-    document.getElementById('sidebar').classList.toggle('-translate-x-full');
-    document.getElementById('overlay').classList.toggle('hidden');
-}
 
 function printPayslip(id) {
-    window.open('print_payslip.php?id=' + id, '_blank', 'width=500,height=700');
+    window.open('print_payslip.php?id=' + id + '&action=print', '_blank', 'width=850,height=900');
+}
+
+function downloadPayslip(id) {
+    window.open('print_payslip.php?id=' + id + '&action=download', '_blank', 'width=850,height=900');
 }
 
 function viewCalculation(monthYear) {

@@ -1,24 +1,19 @@
 <?php
-// MySQL connection settings
-$host = 'localhost';
-$username = 'root';
-$password = '';
-$database = 'hrmmanagement';
+$host = getenv('DB_HOST') ?: 'db';
+$port = (int) (getenv('DB_PORT') ?: 3306);
+$username = getenv('DB_USER') ?: 'hrm_user';
+$password = getenv('DB_PASSWORD') ?: 'hrm_password';
+$database = getenv('DB_NAME') ?: 'hrmmanagement';
+$timezone = getenv('APP_TIMEZONE') ?: 'Asia/Kuala_Lumpur';
 
-// Create connection
-$conn = mysqli_connect($host, $username, $password, $database);
+mysqli_report(MYSQLI_REPORT_ERROR | MYSQLI_REPORT_STRICT);
 
-// Check connection
+$conn = mysqli_connect($host, $username, $password, $database, $port);
+
 if (!$conn) {
-    die("Connection failed: " . mysqli_connect_error());
+    die('Connection failed: ' . mysqli_connect_error());
 }
 
-// Set charset to UTF-8
-mysqli_set_charset($conn, "utf8");
-
-// Set timezone to Malaysia
-date_default_timezone_set('Asia/Kuala_Lumpur');
-
-// Optional: Set error reporting
-mysqli_report(MYSQLI_REPORT_ERROR | MYSQLI_REPORT_STRICT);
+mysqli_set_charset($conn, 'utf8');
+date_default_timezone_set($timezone);
 ?>

@@ -97,6 +97,13 @@ jobs:
             -v "${PWD}/.cache/dependency-check:/usr/share/dependency-check/data" \
             owasp/dependency-check:12.1.8 \
             --scan /src \
+            --exclude /src/vendor \
+            --exclude /src/.git \
+            --exclude /src/uploads \
+            --exclude /src/reports \
+            --exclude /src/dist \
+            --exclude /src/.cache \
+            --disableAssembly \
             --out /report \
             --format HTML \
             --format JSON \

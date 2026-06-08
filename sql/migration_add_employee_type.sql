@@ -8,12 +8,12 @@ UPDATE employees SET employee_type = 'regular' WHERE employee_type IS NULL;
 -- Department management table
 CREATE TABLE IF NOT EXISTS departments (
     id INT PRIMARY KEY AUTO_INCREMENT,
-    name VARCHAR(100) NOT NULL UNIQUE,
+    dept_name VARCHAR(100) NOT NULL UNIQUE,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
 -- Seed from existing employee data
-INSERT IGNORE INTO departments (name)
+INSERT IGNORE INTO departments (dept_name)
     SELECT DISTINCT department FROM employees
     WHERE department IS NOT NULL AND department != '';
 

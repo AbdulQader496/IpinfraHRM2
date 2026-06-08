@@ -1,0 +1,123 @@
+name: CI/CD Security
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  security-events: write
+
+jobs:
+  gitleaks:
+    name: Gitleaks
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Run Gitleaks
+        uses: gitleaks/gitleaks-action@v3
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITLEAKS_LICENSE: ${{ secrets.GITLEAKS_LICENSE }}
+
+  sonarcloud:
+    name: SonarCloud
+    runs-on: ubuntu-latest
+    env:
+      SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+      SONAR_PROJECT_KEY: ${{ vars.SONAR_PROJECT_KEY }}
+      SONAR_ORGANIZATION: ${{ vars.SONAR_ORGANIZATION }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Validate SonarCloud configuration
+        run: |
+          if [ -z "${SONAR_TOKEN}" ] || [ -z "${SONAR_PROJECT_KEY}" ] || [ -z "${SONAR_ORGANIZATION}" ]; then
+            echo "Missing SonarCloud configuration."
+            echo "Set SONAR_TOKEN as a secret and SONAR_PROJECT_KEY / SONAR_ORGANIZATION as repository variables."
+            exit 1
+          fi
+
+      - name: Run SonarCloud scan
+        uses: SonarSource/sonarqube-scan-action@v7
+        env:
+          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+          SONAR_HOST_URL: https://sonarcloud.io
+        with:
+          args: >
+            -Dsonar.organization=${{ vars.SONAR_ORGANIZATION }}
+            -Dsonar.projectKey=${{ vars.SONAR_PROJECT_KEY }}
+            -Dsonar.sources=.
+            -Dsonar.exclusions=uploads/**,.github/**
+            -Dsonar.qualitygate.wait=true
+
+  dependency-check:
+    name: OWASP Dependency-Check
+    runs-on: ubuntu-latest
+    env:
+      NVD_API_KEY: ${{ secrets.NVD_API_KEY }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Run OWASP Dependency-Check
+        run: |
+          mkdir -p reports/dependency-check
+          EXTRA_ARGS=""
+          if [ -n "${NVD_API_KEY}" ]; then
+            EXTRA_ARGS="--nvdApiKey ${NVD_API_KEY}"
+          fi
+
+          docker run --rm \
+            -v "${PWD}:/src" \
+            -v "${PWD}/reports/dependency-check:/report" \
+            -v "${RUNNER_TEMP}/dependency-check-data:/usr/share/dependency-check/data" \
+            owasp/dependency-check:latest \
+            --scan /src \
+            --out /report \
+            --format HTML \
+            --format JSON \
+            --project hrm2 \
+            --failOnCVSS 7 \
+            ${EXTRA_ARGS}
+
+      - name: Upload Dependency-Check report
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: dependency-check-report
+          path: reports/dependency-check
+
+  trivy:
+    name: Trivy
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Run Trivy filesystem scan
+        run: |
+          mkdir -p reports/trivy
+          docker run --rm \
+            -v "${PWD}:/src" \
+            -v "${PWD}/reports/trivy:/report" \
+            aquasec/trivy:latest \
+            fs /src \
+            --scanners vuln,misconfig \
+            --severity HIGH,CRITICAL \
+            --format sarif \
+            --output /report/trivy-results.sarif \
+            --exit-code 1
+
+      - name: Upload Trivy report
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: trivy-report
+          path: reports/trivy

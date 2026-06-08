@@ -134,9 +134,9 @@ if (isset($_GET['delete'])) {
 if (isset($_POST['add_department'])) {
     $dept_name = trim(mysqli_real_escape_string($conn, $_POST['dept_name']));
     if ($dept_name !== '') {
-        mysqli_query($conn, "CREATE TABLE IF NOT EXISTS departments (id INT PRIMARY KEY AUTO_INCREMENT, name VARCHAR(100) NOT NULL UNIQUE, created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP)");
+        mysqli_query($conn, "CREATE TABLE IF NOT EXISTS departments (id INT PRIMARY KEY AUTO_INCREMENT, dept_name VARCHAR(100) NOT NULL UNIQUE, created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP)");
         try {
-            mysqli_query($conn, "INSERT IGNORE INTO departments (name) VALUES ('$dept_name')");
+            mysqli_query($conn, "INSERT IGNORE INTO departments (dept_name) VALUES ('$dept_name')");
         } catch (Exception $e) { /* ignore */ }
     }
     header('Location: employees.php');
@@ -146,9 +146,9 @@ if (isset($_POST['add_department'])) {
 // Fetch managed department list (falls back to distinct values from employees if table missing)
 $departments = [];
 try {
-    $dept_result = mysqli_query($conn, "SELECT name FROM departments ORDER BY name ASC");
+    $dept_result = mysqli_query($conn, "SELECT dept_name FROM departments ORDER BY dept_name ASC");
     while ($row = mysqli_fetch_assoc($dept_result)) {
-        $departments[] = $row['name'];
+        $departments[] = $row['dept_name'];
     }
 } catch (Exception $e) {
     // departments table not yet created — seed from existing employee data

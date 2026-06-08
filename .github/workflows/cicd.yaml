@@ -1,12 +1,6 @@
 name: CI/CD Security And Image Pipeline
 
 on:
-  push:
-    branches:
-      - main
-  pull_request:
-    branches:
-      - main
   workflow_dispatch:
 
 permissions:
@@ -79,10 +73,19 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
+      - name: Cache Dependency-Check data
+        uses: actions/cache@v4
+        with:
+          path: .cache/dependency-check
+          key: dependency-check-${{ runner.os }}
+          restore-keys: |
+            dependency-check-${{ runner.os }}
+
       - name: Run OWASP Dependency-Check
         continue-on-error: true
         run: |
           mkdir -p reports/dependency-check
+          mkdir -p .cache/dependency-check
           EXTRA_ARGS=""
           if [ -n "${NVD_API_KEY}" ]; then
             EXTRA_ARGS="--nvdApiKey ${NVD_API_KEY}"
@@ -91,8 +94,8 @@ jobs:
           docker run --rm \
             -v "${PWD}:/src" \
             -v "${PWD}/reports/dependency-check:/report" \
-            -v "${RUNNER_TEMP}/dependency-check-data:/usr/share/dependency-check/data" \
-            owasp/dependency-check:latest \
+            -v "${PWD}/.cache/dependency-check:/usr/share/dependency-check/data" \
+            owasp/dependency-check:12.1.8 \
             --scan /src \
             --out /report \
             --format HTML \

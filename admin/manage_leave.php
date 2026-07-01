@@ -469,7 +469,7 @@ $leave_type_options = mysqli_query($conn, "SELECT DISTINCT leave_type FROM leave
                                     <span class="text-xs px-2 py-0.5 rounded-full bg-gray-100 text-gray-600"><?php echo $row['department']; ?></span>
                                 </div>
                                 <div class="grid grid-cols-2 md:grid-cols-4 gap-2 text-sm">
-                                    <p><span class="text-gray-500">Type:</span> <span class="font-medium"><?php echo ucfirst($row['leave_type']); ?></span></p>
+                                    <p><span class="text-gray-500">Type:</span> <span class="font-medium"><?php echo !empty($row['leave_type']) ? ucfirst($row['leave_type']) : '<span class="text-red-500 text-xs">Not specified</span>'; ?></span></p>
                                     <p><span class="text-gray-500">Duration:</span> 
                                         <?php 
                                         $days = (strtotime($row['end_date']) - strtotime($row['start_date'])) / 86400 + 1;

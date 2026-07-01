@@ -143,7 +143,9 @@ $leave_types = mysqli_query($conn, "SELECT * FROM leave_types WHERE status = 'ac
 // Handle new leave submission
 if (isset($_POST['apply_leave']) && !$edit_mode) {
     $leave_type = mysqli_real_escape_string($conn, $_POST['leave_type']);
-    if ($is_intern && !in_array($leave_type, ['medical', 'unpaid'])) {
+    if (empty($leave_type)) {
+        $error = '<div class="bg-red-100 border border-red-200 text-red-700 px-4 py-3 rounded-xl text-sm">✗ Please select a leave type.</div>';
+    } elseif ($is_intern && !in_array($leave_type, ['medical', 'unpaid'])) {
         $error = '<div class="bg-red-100 border border-red-200 text-red-700 px-4 py-3 rounded-xl text-sm">✗ Interns can only apply for Medical or Unpaid Leave.</div>';
     } else {
         $half_day   = mysqli_real_escape_string($conn, $_POST['half_day']);

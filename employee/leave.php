@@ -45,42 +45,51 @@ if (isset($_POST['update_leave'])) {
     } else {
         $total_days = (strtotime($end_date) - strtotime($start_date)) / 86400 + 1;
     }
-    
+
+    if (strtotime($end_date) < strtotime($start_date)) {
+        $error = '<div class="bg-red-100 border border-red-200 text-red-700 px-4 py-3 rounded-xl text-sm">✗ End date must be on or after start date.</div>';
+    } else {
+    // Interns can only update to unpaid leave
+    if ($is_intern && $leave_type != 'unpaid') {
+        $error = '<div class="bg-red-100 border border-red-200 text-red-700 px-4 py-3 rounded-xl text-sm">✗ Interns can only apply for Unpaid Leave.</div>';
+    } else {
     // Check if leave is still pending
     $check_query = mysqli_query($conn, "SELECT id FROM leaves WHERE id = $leave_id AND employee_id = $user_id AND status = 'pending'");
     if (mysqli_num_rows($check_query) > 0) {
-        $update_query = "UPDATE leaves SET 
-                            leave_type = '$leave_type', 
+        $update_query = "UPDATE leaves SET
+                            leave_type = '$leave_type',
                             half_day = '$half_day',
-                            start_date = '$start_date', 
-                            end_date = '$end_date', 
+                            start_date = '$start_date',
+                            end_date = '$end_date',
                             total_days = $total_days,
                             reason = '$reason'
                          WHERE id = $leave_id";
-        
+
         if (mysqli_query($conn, $update_query)) {
             // Handle new attachment if uploaded
             if (isset($_FILES['attachment']) && $_FILES['attachment']['error'] == 0) {
                 $target_dir = "../uploads/";
                 if (!is_dir($target_dir)) mkdir($target_dir, 0777, true);
-                
+
                 // Delete old attachment
                 $old_attach = mysqli_fetch_assoc(mysqli_query($conn, "SELECT attachment FROM leaves WHERE id = $leave_id"));
                 if (!empty($old_attach['attachment']) && file_exists($target_dir . $old_attach['attachment'])) {
                     unlink($target_dir . $old_attach['attachment']);
                 }
-                
+
                 $attachment = time() . '_' . basename($_FILES['attachment']['name']);
                 move_uploaded_file($_FILES['attachment']['tmp_name'], $target_dir . $attachment);
                 mysqli_query($conn, "UPDATE leaves SET attachment = '$attachment' WHERE id = $leave_id");
             }
-            
+
             $message = '<div class="bg-green-100 border border-green-200 text-green-700 px-4 py-3 rounded-xl text-sm">✓ Leave application updated successfully!</div>';
             $edit_mode = false;
         } else {
             $error = '<div class="bg-red-100 border border-red-200 text-red-700 px-4 py-3 rounded-xl text-sm">✗ Error updating leave application.</div>';
         }
     }
+    } // end intern check
+    } // end date validation check
 }
 
 // ========================================
@@ -112,7 +121,8 @@ if (isset($_GET['delete'])) {
 // ========================================
 $page = isset($_GET['page']) ? (int)$_GET['page'] : 1;
 $per_page = isset($_GET['per_page']) ? (int)$_GET['per_page'] : 10;
-$status_filter = isset($_GET['status']) ? $_GET['status'] : '';
+$allowed_statuses = ['pending', 'approved', 'rejected'];
+$status_filter = isset($_GET['status']) && in_array($_GET['status'], $allowed_statuses) ? $_GET['status'] : '';
 
 $where = "WHERE employee_id = $user_id";
 if (!empty($status_filter)) {

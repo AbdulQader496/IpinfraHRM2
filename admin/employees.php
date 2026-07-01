@@ -109,6 +109,13 @@ if (isset($_POST['update_employee'])) {
 // Handle Delete
 if (isset($_GET['delete'])) {
     $id = intval($_GET['delete']);
+    // Remove related records first to avoid FK constraint failures
+    $related = ['attendance', 'leaves', 'payroll', 'claims', 'notifications', 'employee_of_month', 'asset_requests'];
+    foreach ($related as $tbl) {
+        try {
+            mysqli_query($conn, "DELETE FROM `$tbl` WHERE employee_id = $id");
+        } catch (Exception $e) { /* table may not exist in this environment */ }
+    }
     mysqli_query($conn, "DELETE FROM employees WHERE id = $id");
     header('Location: employees.php');
     exit();

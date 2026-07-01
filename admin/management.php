@@ -8,7 +8,7 @@ require_once '../includes/functions.php';
 // DELETE RESIGNATION RECORD
 // ========================================
 if (isset($_GET['delete_resignation'])) {
-    $id = $_GET['delete_resignation'];
+    $id = intval($_GET['delete_resignation']);
     
     $res = mysqli_fetch_assoc(mysqli_query($conn, "SELECT employee_id, status FROM employee_resignations WHERE id=$id"));
     if ($res) {
@@ -25,7 +25,7 @@ if (isset($_GET['delete_resignation'])) {
 // DELETE TERMINATION RECORD
 // ========================================
 if (isset($_GET['delete_termination'])) {
-    $id = $_GET['delete_termination'];
+    $id = intval($_GET['delete_termination']);
     
     $term = mysqli_fetch_assoc(mysqli_query($conn, "SELECT employee_id FROM terminations WHERE id=$id"));
     if ($term) {
@@ -40,7 +40,7 @@ if (isset($_GET['delete_termination'])) {
 // DELETE DOCUMENT
 // ========================================
 if (isset($_GET['delete_doc'])) {
-    $id = $_GET['delete_doc'];
+    $id = intval($_GET['delete_doc']);
     $doc = mysqli_fetch_assoc(mysqli_query($conn, "SELECT file_path FROM employee_documents WHERE id=$id"));
     // Check both possible directories
     if ($doc) {
@@ -64,8 +64,8 @@ if (isset($_GET['delete_doc'])) {
 // HANDLE RESIGNATION APPROVAL/REJECTION
 // ========================================
 if (isset($_GET['approve_resignation'])) {
-    $id = $_GET['approve_resignation'];
-    $status = $_GET['status'];
+    $id = intval($_GET['approve_resignation']);
+    $status = in_array($_GET['status'] ?? '', ['approved', 'rejected']) ? $_GET['status'] : 'rejected';
     $admin_notes = isset($_POST['admin_notes']) ? mysqli_real_escape_string($conn, $_POST['admin_notes']) : '';
     
     mysqli_query($conn, "UPDATE employee_resignations SET status='$status', admin_notes='$admin_notes', approved_by={$_SESSION['user_id']}, approved_date=CURDATE() WHERE id=$id");
@@ -85,13 +85,13 @@ if (isset($_GET['approve_resignation'])) {
 // HANDLE TERMINATION
 // ========================================
 if (isset($_POST['send_termination'])) {
-    $employee_id = $_POST['termination_employee_id'];
+    $employee_id = intval($_POST['termination_employee_id']);
     $termination_date = $_POST['termination_date'];
     $effective_date = $_POST['effective_date'];
     $reason = mysqli_real_escape_string($conn, $_POST['reason']);
     $termination_type = $_POST['termination_type'];
-    $notice_period_days = $_POST['notice_period_days'];
-    $severance_pay = $_POST['severance_pay'];
+    $notice_period_days = intval($_POST['notice_period_days'] ?? 0);
+    $severance_pay = floatval($_POST['severance_pay'] ?? 0);
     $notes = mysqli_real_escape_string($conn, $_POST['notes']);
     
     $query = "INSERT INTO terminations (employee_id, termination_date, effective_date, reason, termination_type, notice_period_days, severance_pay, notes, status, created_by) 
@@ -119,13 +119,14 @@ if (isset($_POST['upload_document'])) {
     if (!is_dir($target_dir)) mkdir($target_dir, 0777, true);
     
     $file_name = basename($_FILES['document_file']['name']);
+    $file_name_escaped = mysqli_real_escape_string($conn, $file_name);
     $file_size = $_FILES['document_file']['size'];
     $file_extension = pathinfo($file_name, PATHINFO_EXTENSION);
     $file_path = time() . '_' . $employee_id . '.' . $file_extension;
-    
+
     if (move_uploaded_file($_FILES['document_file']['tmp_name'], $target_dir . $file_path)) {
-        $query = "INSERT INTO employee_documents (employee_id, document_title, document_type, file_path, file_name, file_size, upload_date, notes, uploaded_by) 
-                  VALUES ($employee_id, '$document_title', '$document_type', '$file_path', '$file_name', $file_size, CURDATE(), '$notes', {$_SESSION['user_id']})";
+        $query = "INSERT INTO employee_documents (employee_id, document_title, document_type, file_path, file_name, file_size, upload_date, notes, uploaded_by)
+                  VALUES ($employee_id, '$document_title', '$document_type', '$file_path', '$file_name_escaped', $file_size, CURDATE(), '$notes', {$_SESSION['user_id']})";
         mysqli_query($conn, $query);
         addNotification($employee_id, 'New Document', 'A new document "' . $document_title . '" has been uploaded.');
         $success = "Document uploaded successfully!";

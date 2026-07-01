@@ -42,13 +42,16 @@ if (isset($_GET['regenerate'])) {
         }
 
         $per_day = $basic / $wdays;
-        $uq = mysqli_fetch_assoc(mysqli_query($conn, "SELECT COALESCE(SUM(total_days),0) as ud FROM leaves WHERE employee_id={$regen_row['id']} AND status='approved' AND leave_type='unpaid' AND start_date BETWEEN '$month_start' AND '$month_end'"));
+        $uq = mysqli_fetch_assoc(mysqli_query($conn, "SELECT COALESCE(SUM(
+    DATEDIFF(LEAST(end_date, '$month_end'), GREATEST(start_date, '$month_start')) + 1
+), 0) as ud FROM leaves WHERE employee_id={$regen_row['id']} AND status='approved' AND leave_type='unpaid' AND start_date <= '$month_end' AND end_date >= '$month_start'"));
         $unpaid_deduction = round($per_day * (float)$uq['ud'], 2);
 
         $cq = mysqli_fetch_assoc(mysqli_query($conn, "SELECT COALESCE(SUM(amount),0) as ca FROM claims WHERE employee_id={$regen_row['id']} AND status='approved' AND DATE_FORMAT(applied_at,'%Y-%m')='$month_year'"));
         $approved_claims = (float)$cq['ca'];
 
         $net = $basic - $epf_emp - $socso_emp - $eis - $pcb - $unpaid_deduction + $approved_claims;
+        $net = max(0, $net);
         mysqli_query($conn, "INSERT INTO payroll (employee_id,month_year,basic_salary,epf_employee,epf_employer,socso_employee,socso_employer,eis_employee,eis_employer,pcb,unpaid_deduction,approved_claims,net_salary) VALUES ({$regen_row['id']},'$month_year',$basic,$epf_emp,$epf_er,$socso_emp,$socso_er,$eis,$eis_er,$pcb,$unpaid_deduction,$approved_claims,$net)");
         showToast('Payroll regenerated for ' . $regen_row['name'] . ' (' . $month_year . ').', 'success');
     }
@@ -242,17 +245,6 @@ if (isset($_GET['email'])) {
     header('Location: payroll.php'); exit();
 }
 
-// Get statistics
-$stats_query = mysqli_query($conn, "SELECT
-    COUNT(DISTINCT month_year) as total_months,
-    SUM(net_salary) as total_paid,
-    COUNT(*) as total_records,
-    SUM(epf_employee) as total_epf,
-    SUM(socso_employee) as total_socso,
-    SUM(pcb) as total_pcb
-    FROM payroll");
-$stats = mysqli_fetch_assoc($stats_query);
-
 if (isset($_POST['generate_payroll'])) {
     $month_year = mysqli_real_escape_string($conn, $_POST['month_year']);
     $employees = mysqli_query($conn, "SELECT * FROM employees WHERE role='employee' AND status='active'");
@@ -285,10 +277,12 @@ if (isset($_POST['generate_payroll'])) {
 
             // Unpaid leave deduction for the month
             $per_day = $basic / $working_days_in_month;
-            $unpaid_q = mysqli_query($conn, "SELECT COALESCE(SUM(total_days),0) as ud FROM leaves
+            $unpaid_q = mysqli_query($conn, "SELECT COALESCE(SUM(
+                DATEDIFF(LEAST(end_date, '$month_end'), GREATEST(start_date, '$month_start')) + 1
+            ), 0) as ud FROM leaves
                 WHERE employee_id = {$emp['id']} AND status = 'approved'
                 AND leave_type = 'unpaid'
-                AND start_date BETWEEN '$month_start' AND '$month_end'");
+                AND start_date <= '$month_end' AND end_date >= '$month_start'");
             $unpaid_days = (float)mysqli_fetch_assoc($unpaid_q)['ud'];
             $unpaid_deduction = round($per_day * $unpaid_days, 2);
 
@@ -302,6 +296,7 @@ if (isset($_POST['generate_payroll'])) {
             $eis_er = $eis;
 
             $net = $basic - $epf_emp - $socso_emp - $eis - $pcb - $unpaid_deduction + $approved_claims;
+            $net = max(0, $net);
 
             $insert = "INSERT INTO payroll (employee_id, month_year, basic_salary, epf_employee, epf_employer, socso_employee, socso_employer, eis_employee, eis_employer, pcb, unpaid_deduction, approved_claims, net_salary)
                        VALUES ({$emp['id']}, '$month_year', $basic, $epf_emp, $epf_er, $socso_emp, $socso_er, $eis, $eis_er, $pcb, $unpaid_deduction, $approved_claims, $net)";
@@ -313,6 +308,17 @@ if (isset($_POST['generate_payroll'])) {
                     <i class="fas fa-check-circle mr-2"></i> ✓ Payroll generated for ' . htmlspecialchars($month_year) . ' (' . $generated_count . ' employees)
                 </div>';
 }
+
+// Get statistics (runs after any generate_payroll insert so stats are up to date)
+$stats_query = mysqli_query($conn, "SELECT
+    COUNT(DISTINCT month_year) as total_months,
+    SUM(net_salary) as total_paid,
+    COUNT(*) as total_records,
+    SUM(epf_employee) as total_epf,
+    SUM(socso_employee) as total_socso,
+    SUM(pcb) as total_pcb
+    FROM payroll");
+$stats = mysqli_fetch_assoc($stats_query);
 
 $payrolls = mysqli_query($conn, "SELECT p.*, e.name, e.employee_id, e.nationality, e.department, e.employee_type, e.email
     FROM payroll p

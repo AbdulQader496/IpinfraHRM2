@@ -4,15 +4,19 @@ redirectIfNotAdmin();
 require_once '../includes/db.php';
 
 if (isset($_POST['add_holiday'])) {
-    $date = $_POST['holiday_date'];
-    $name = $_POST['holiday_name'];
-    mysqli_query($conn, "INSERT INTO holidays (holiday_date, holiday_name) VALUES ('$date', '$name')");
-    header('Location: holidays.php');
-    exit();
+    $date = mysqli_real_escape_string($conn, $_POST['holiday_date']);
+    $name = mysqli_real_escape_string($conn, $_POST['holiday_name']);
+    if (!preg_match('/^\d{4}-\d{2}-\d{2}$/', $date)) {
+        $error = 'Invalid date format.';
+    } else {
+        mysqli_query($conn, "INSERT INTO holidays (holiday_date, holiday_name) VALUES ('$date', '$name')");
+        header('Location: holidays.php');
+        exit();
+    }
 }
 
 if (isset($_GET['delete'])) {
-    $id = $_GET['delete'];
+    $id = intval($_GET['delete']);
     mysqli_query($conn, "DELETE FROM holidays WHERE id = $id");
     header('Location: holidays.php');
     exit();
@@ -137,7 +141,7 @@ $holidays = mysqli_query($conn, "SELECT * FROM holidays ORDER BY holiday_date DE
                 <?php while ($row = mysqli_fetch_assoc($holidays)): ?>
                 <div class="flex justify-between items-center p-4">
                     <div>
-                        <p class="font-medium text-gray-800"><?php echo $row['holiday_name']; ?></p>
+                        <p class="font-medium text-gray-800"><?php echo htmlspecialchars($row['holiday_name']); ?></p>
                         <p class="text-xs text-gray-500"><?php echo date('l, d F Y', strtotime($row['holiday_date'])); ?></p>
                     </div>
                     <a href="?delete=<?php echo $row['id']; ?>" data-confirm="Delete this holiday from the calendar?" data-confirm-title="Delete Holiday" class="text-red-500">

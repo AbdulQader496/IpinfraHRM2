@@ -6,6 +6,9 @@ require_once '../includes/functions.php';
 
 $user_id = $_SESSION['user_id'];
 $selected_month = isset($_GET['month']) ? $_GET['month'] : date('Y-m');
+if (!preg_match('/^\d{4}-\d{2}$/', $selected_month)) {
+    $selected_month = date('Y-m');
+}
 
 // Admin can view any employee's calculation by passing emp_id (employee_id string)
 if (isAdmin() && isset($_GET['emp_id'])) {
@@ -23,6 +26,7 @@ $month_start = date('Y-m-01', strtotime($selected_month . '-01'));
 $month_end = date('Y-m-t', strtotime($selected_month . '-01'));
 $month_name = date('F Y', strtotime($selected_month . '-01'));
 $working_days_in_month = date('t', strtotime($selected_month . '-01'));
+if ($working_days_in_month <= 0) $working_days_in_month = 30;
 
 // Get all approved leave dates for this month to avoid double-counting absences
 $leave_dates = [];
@@ -54,7 +58,11 @@ while ($att = mysqli_fetch_assoc($attendance_query)) {
     $attendance_records[] = $att;
 
     if ($att['clock_in']) {
-        $present_days++;
+        if ($att['status'] == 'half_day') {
+            $half_days++;
+        } else {
+            $present_days++;
+        }
         if ($att['status'] == 'late') $late_days++;
 
         if ($att['clock_in'] && $att['clock_out']) {
@@ -75,17 +83,15 @@ while ($att = mysqli_fetch_assoc($attendance_query)) {
 $leaves_query = mysqli_query($conn, "SELECT * FROM leaves
     WHERE employee_id = $view_user_id
     AND status = 'approved'
-    AND ((start_date BETWEEN '$month_start' AND '$month_end')
-    OR (end_date BETWEEN '$month_start' AND '$month_end'))");
+    AND start_date <= '$month_end' AND end_date >= '$month_start'");
 
 $paid_leave_days = 0;
 $unpaid_leave_days = 0;
 
 while ($leave = mysqli_fetch_assoc($leaves_query)) {
-    $leave_start = max(strtotime($leave['start_date']), strtotime($month_start));
-    $leave_end = min(strtotime($leave['end_date']), strtotime($month_end));
-    $days = ($leave_end - $leave_start) / 86400 + 1;
-    
+    // Use stored total_days to match what was actually saved in payroll
+    $days = (float)$leave['total_days'];
+
     if ($leave['leave_type'] == 'unpaid') {
         $unpaid_leave_days += $days;
     } else {

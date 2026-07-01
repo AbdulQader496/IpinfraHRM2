@@ -10,8 +10,11 @@ $current_time = date('H:i:s');
 
 // Handle Clock In/Out directly from dashboard
 if (isset($_POST['clock_in'])) {
-    $status = ($current_time > '10:00:00') ? 'late' : 'present';
-    mysqli_query($conn, "INSERT INTO attendance (employee_id, date, clock_in, status) VALUES ($user_id, '$today', '$current_time', '$status')");
+    $existing = mysqli_fetch_assoc(mysqli_query($conn, "SELECT id FROM attendance WHERE employee_id = $user_id AND date = '$today'"));
+    if (!$existing) {
+        $status = ($current_time > '10:00:00') ? 'late' : 'present';
+        mysqli_query($conn, "INSERT INTO attendance (employee_id, date, clock_in, status) VALUES ($user_id, '$today', '$current_time', '$status')");
+    }
     header('Location: dashboard.php');
     exit();
 }

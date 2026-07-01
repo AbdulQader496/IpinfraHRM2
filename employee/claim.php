@@ -78,7 +78,9 @@ if (isset($_GET['delete_attachment'])) {
     $claim_id = (int)$_GET['claim_id'];
     
     // Get file path to delete
-    $file_query = mysqli_query($conn, "SELECT file_path FROM claim_attachments WHERE id = $attach_id AND claim_id = $claim_id");
+    $file_query = mysqli_query($conn, "SELECT ca.file_path FROM claim_attachments ca
+ JOIN claims c ON ca.claim_id = c.id
+ WHERE ca.id = $attach_id AND ca.claim_id = $claim_id AND c.employee_id = $user_id");
     if ($file = mysqli_fetch_assoc($file_query)) {
         $file_path = "../uploads/claims/" . $file['file_path'];
         if (file_exists($file_path)) {
@@ -130,8 +132,8 @@ if (isset($_POST['apply_claim'])) {
     $amount = floatval($_POST['amount']);
     $description = mysqli_real_escape_string($conn, $_POST['description']);
     
-    $query = "INSERT INTO claims (employee_id, claim_type, amount, description) 
-              VALUES ($user_id, '$claim_type', '$amount', '$description')";
+    $query = "INSERT INTO claims (employee_id, claim_type, amount, description)
+              VALUES ($user_id, '$claim_type', $amount, '$description')";
     
     if (mysqli_query($conn, $query)) {
         $claim_id = mysqli_insert_id($conn);
@@ -175,7 +177,8 @@ if (isset($_POST['apply_claim'])) {
 // ========================================
 $page = isset($_GET['page']) ? (int)$_GET['page'] : 1;
 $per_page = isset($_GET['per_page']) ? (int)$_GET['per_page'] : 10;
-$status_filter = isset($_GET['status']) ? $_GET['status'] : '';
+$allowed_statuses = ['pending', 'approved', 'rejected'];
+$status_filter = isset($_GET['status']) && in_array($_GET['status'], $allowed_statuses) ? $_GET['status'] : '';
 
 $where = "WHERE employee_id = $user_id";
 if (!empty($status_filter)) {
@@ -528,7 +531,7 @@ $pending_total = mysqli_fetch_assoc(mysqli_query($conn, "SELECT SUM(amount) as t
                             </div>
                             <p class="text-lg font-bold text-purple-600">RM <?php echo number_format($row['amount'], 2); ?></p>
                             <?php if($row['description']): ?>
-                                <p class="text-xs text-gray-500 mt-1"><?php echo substr($row['description'], 0, 80); ?></p>
+                                <p class="text-xs text-gray-500 mt-1"><?php echo htmlspecialchars(substr($row['description'], 0, 80), ENT_QUOTES, 'UTF-8'); ?></p>
                             <?php endif; ?>
                         </div>
                         <div class="text-right">

@@ -15,6 +15,7 @@ if (!isset($_SESSION['user_id']) && isset($_COOKIE['remember_token'])) {
         $_SESSION['role'] = $user['role'];
         $_SESSION['employee_id'] = $user['employee_id'];
         
+        session_regenerate_id(true);
         if ($user['role'] == 'admin') {
             header('Location: admin/dashboard.php');
         } else {
@@ -26,7 +27,7 @@ if (!isset($_SESSION['user_id']) && isset($_COOKIE['remember_token'])) {
 
 if (isset($_POST['login'])) {
     $email = mysqli_real_escape_string($conn, $_POST['email']);
-    $password = $_POST['password'];
+    $password = mysqli_real_escape_string($conn, $_POST['password']);
     $remember = isset($_POST['remember']) ? true : false;
     
     $query = "SELECT * FROM employees WHERE email = '$email' AND password = '$password' AND status = 'active'";
@@ -46,6 +47,7 @@ if (isset($_POST['login'])) {
             setcookie('remember_token', $token, time() + (86400 * 30), "/", "", false, true);
         }
         
+        session_regenerate_id(true);
         if ($user['role'] == 'admin') {
             header('Location: admin/dashboard.php');
         } else {

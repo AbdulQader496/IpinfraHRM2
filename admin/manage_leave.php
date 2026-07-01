@@ -11,10 +11,11 @@ require_once '../includes/toast_fn.php';
 $page = isset($_GET['page']) ? (int)$_GET['page'] : 1;
 $per_page = isset($_GET['per_page']) ? (int)$_GET['per_page'] : 10;
 $search = isset($_GET['search']) ? mysqli_real_escape_string($conn, $_GET['search']) : '';
-$status_filter = isset($_GET['status']) ? $_GET['status'] : 'pending';
-$type_filter = isset($_GET['type']) ? $_GET['type'] : '';
-$date_from = isset($_GET['date_from']) ? $_GET['date_from'] : '';
-$date_to = isset($_GET['date_to']) ? $_GET['date_to'] : '';
+$allowed_statuses = ['pending', 'approved', 'rejected'];
+$status_filter = isset($_GET['status']) && in_array($_GET['status'], $allowed_statuses) ? $_GET['status'] : '';
+$type_filter = isset($_GET['type']) ? mysqli_real_escape_string($conn, $_GET['type']) : '';
+$date_from = isset($_GET['date_from']) && preg_match('/^\d{4}-\d{2}-\d{2}$/', $_GET['date_from']) ? $_GET['date_from'] : '';
+$date_to = isset($_GET['date_to']) && preg_match('/^\d{4}-\d{2}-\d{2}$/', $_GET['date_to']) ? $_GET['date_to'] : '';
 
 // Build WHERE clause
 $where = "WHERE 1=1";
@@ -149,6 +150,10 @@ if (isset($_POST['bulk_leave_action']) && !empty($_POST['ids'])) {
     $bulk_rows = mysqli_query($conn, "SELECT * FROM leaves WHERE id IN ($ids_safe) AND status='pending'");
     $affected = 0;
     while ($br = mysqli_fetch_assoc($bulk_rows)) {
+        $emp_check = mysqli_fetch_assoc(mysqli_query($conn, "SELECT employee_type FROM employees WHERE id = {$br['employee_id']}"));
+        if (isset($emp_check['employee_type']) && $emp_check['employee_type'] == 'intern' && $br['leave_type'] != 'unpaid') {
+            continue; // interns can only have unpaid leave approved
+        }
         $days = (isset($br['half_day']) && $br['half_day'] != 'none') ? 0.5
               : (strtotime($br['end_date']) - strtotime($br['start_date'])) / 86400 + 1;
 
@@ -187,8 +192,14 @@ if (isset($_GET['action']) && isset($_GET['id'])) {
     $action = $_GET['action'];
     $status = ($action == 'approve') ? 'approved' : 'rejected';
 
-    $leave = mysqli_fetch_assoc(mysqli_query($conn, "SELECT * FROM leaves WHERE id=$id"));
+    $leave = mysqli_fetch_assoc(mysqli_query($conn, "SELECT * FROM leaves WHERE id=$id AND status='pending'"));
     if ($leave) {
+        $emp_type = mysqli_fetch_assoc(mysqli_query($conn, "SELECT employee_type FROM employees WHERE id = {$leave['employee_id']}"));
+        if (isset($emp_type['employee_type']) && $emp_type['employee_type'] == 'intern' && $leave['leave_type'] != 'unpaid' && $action == 'approve') {
+            // redirect back with error - interns can only have unpaid leave
+            showToast('Interns can only be approved for Unpaid Leave.', 'error');
+            header('Location: manage_leave.php'); exit();
+        }
         $days = (isset($leave['half_day']) && $leave['half_day'] != 'none') ? 0.5
               : (strtotime($leave['end_date']) - strtotime($leave['start_date'])) / 86400 + 1;
 

@@ -9,7 +9,7 @@ require_once '../includes/db.php';
 $page = isset($_GET['page']) ? (int)$_GET['page'] : 1;
 $per_page = isset($_GET['per_page']) ? (int)$_GET['per_page'] : 10;
 $search = isset($_GET['search']) ? mysqli_real_escape_string($conn, $_GET['search']) : '';
-$category_filter = isset($_GET['category']) ? (int)$_GET['category'] : '';
+$category_filter = isset($_GET['category']) ? intval($_GET['category']) : 0;
 $status_filter = isset($_GET['status']) ? $_GET['status'] : '';
 
 // Build WHERE clause for assets
@@ -95,7 +95,11 @@ if (isset($_GET['action']) && isset($_GET['request_id'])) {
     $request = mysqli_fetch_assoc($req_query);
     
     if ($status == 'approved') {
-        mysqli_query($conn, "UPDATE assets SET available_quantity = available_quantity - {$request['quantity']} WHERE id = {$request['asset_id']}");
+        mysqli_query($conn, "UPDATE assets SET available_quantity = available_quantity - {$request['quantity']} WHERE id = {$request['asset_id']} AND available_quantity >= {$request['quantity']}");
+        if (mysqli_affected_rows($conn) == 0) {
+            showToast('Insufficient stock to approve this request.', 'error');
+            header('Location: manage_assets.php'); exit();
+        }
         $asset_check = mysqli_query($conn, "SELECT available_quantity FROM assets WHERE id = {$request['asset_id']}");
         $asset = mysqli_fetch_assoc($asset_check);
         if ($asset['available_quantity'] == 0) {
@@ -425,7 +429,11 @@ $categories = mysqli_query($conn, "SELECT * FROM asset_categories ORDER BY categ
         <!-- Results Summary & Per Page -->
         <div class="flex justify-between items-center mb-4">
             <p class="text-sm text-gray-500">
-                Showing <?php echo $offset + 1; ?> to <?php echo min($offset + $per_page, $total_rows); ?> of <?php echo $total_rows; ?> assets
+                <?php if ($total_rows > 0) {
+                    echo 'Showing ' . ($offset + 1) . ' to ' . min($offset + $per_page, $total_rows) . ' of ' . $total_rows . ' assets';
+                } else {
+                    echo 'No assets found';
+                } ?>
             </p>
             <div class="flex items-center gap-2">
                 <span class="text-xs text-gray-500">Show:</span>
@@ -472,7 +480,7 @@ $categories = mysqli_query($conn, "SELECT * FROM asset_categories ORDER BY categ
                                     </span>
                                 </td>
                                 <td class="p-3 text-center">
-                                    <button onclick="openQuantityModal(<?php echo $asset['id']; ?>, <?php echo $asset['quantity']; ?>)" class="text-blue-600 hover:text-blue-800 text-sm mr-2">
+                                    <button onclick="openQuantityModal(<?php echo $asset['id']; ?>, <?php echo $asset['quantity']; ?>, <?php echo json_encode($asset['asset_name']); ?>)" class="text-blue-600 hover:text-blue-800 text-sm mr-2">
                                         <i class="fas fa-edit"></i> Qty
                                     </button>
                                     <a href="?delete=<?php echo $asset['id']; ?>" data-confirm="Delete this asset record permanently?" data-confirm-title="Delete Asset" class="text-red-600 hover:text-red-800 text-sm">

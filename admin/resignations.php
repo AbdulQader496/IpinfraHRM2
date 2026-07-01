@@ -5,27 +5,28 @@ require_once '../includes/db.php';
 
 // Handle resignation request
 if (isset($_POST['add_resignation'])) {
-    $employee_id = $_POST['employee_id'];
-    $resignation_date = $_POST['resignation_date'];
-    $last_working_date = $_POST['last_working_date'];
+    $employee_id = intval($_POST['employee_id']);
+    $resignation_date = mysqli_real_escape_string($conn, $_POST['resignation_date']);
+    $last_working_date = mysqli_real_escape_string($conn, $_POST['last_working_date']);
     $reason = mysqli_real_escape_string($conn, $_POST['reason']);
-    $type = $_POST['type'];
-    
-    $query = "INSERT INTO resignations (employee_id, resignation_date, last_working_date, reason, type, status) 
+    $allowed_types = ['resignation', 'termination', 'contract_end'];
+    $type = in_array($_POST['type'] ?? '', $allowed_types) ? $_POST['type'] : 'resignation';
+
+    $query = "INSERT INTO resignations (employee_id, resignation_date, last_working_date, reason, type, status)
               VALUES ($employee_id, '$resignation_date', '$last_working_date', '$reason', '$type', 'pending')";
     mysqli_query($conn, $query);
     $resign_id = mysqli_insert_id($conn);
-    
-    mysqli_query($conn, "UPDATE employees SET resignation_id = $resign_id, employment_status = 'on_leave' WHERE id = $employee_id");
-    
+
+    mysqli_query($conn, "UPDATE employees SET resignation_id = $resign_id WHERE id = $employee_id");
+
     header('Location: resignations.php');
     exit();
 }
 
 // Approve/Reject
 if (isset($_GET['approve'])) {
-    $id = $_GET['approve'];
-    $status = $_GET['status'];
+    $id = intval($_GET['approve']);
+    $status = in_array($_GET['status'] ?? '', ['approved', 'rejected']) ? $_GET['status'] : 'rejected';
     
     mysqli_query($conn, "UPDATE resignations SET status='$status', approved_by={$_SESSION['user_id']}, approved_date=CURDATE() WHERE id=$id");
     

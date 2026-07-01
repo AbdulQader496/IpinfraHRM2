@@ -70,9 +70,9 @@ if (isset($_POST['edit_attendance'])) {
                      clock_out = " . ($clock_out ? "'$clock_out'" : "NULL") . ",
                      status = '$status'
                      WHERE id = $attendance_id";
-    $safe_date = preg_replace('/[^0-9\-]/', '', $_GET['date'] ?? date('Y-m-d'));
+    $redirect_date = isset($_POST['date']) ? preg_replace('/[^0-9\-]/', '', $_POST['date']) : date('Y-m-d');
     mysqli_query($conn, $update_query);
-    header("Location: attendance.php?date=" . $safe_date);
+    header("Location: attendance.php?date=" . $redirect_date);
     exit();
 }
 
@@ -149,7 +149,8 @@ if (isset($_GET['export']) && $_GET['export'] === 'csv') {
 // ========================================
 // PAGINATION WITH LOAD MORE
 // ========================================
-$date = isset($_GET['date']) ? $_GET['date'] : date('Y-m-d');
+$date = isset($_GET['date']) ? preg_replace('/[^0-9\-]/', '', $_GET['date']) : date('Y-m-d');
+if (!preg_match('/^\d{4}-\d{2}-\d{2}$/', $date)) $date = date('Y-m-d');
 $search = isset($_GET['search']) ? mysqli_real_escape_string($conn, $_GET['search']) : '';
 $page = isset($_GET['page']) ? (int)$_GET['page'] : 1;
 $per_page = 10; // 10 employees per page

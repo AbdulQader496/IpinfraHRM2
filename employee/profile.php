@@ -229,9 +229,9 @@ $has_profile_pic = !empty($employee['profile_pic']) && file_exists($profile_pic_
                 <input type="file" id="profile_pic_input" class="hidden" accept="image/*" onchange="uploadProfilePic(this)">
             </label>
         </div>
-        <h2 class="text-xl font-bold mt-3"><?php echo $employee['name']; ?></h2>
-        <p class="text-sm opacity-90"><?php echo $employee['employee_id']; ?></p>
-        <p class="text-xs opacity-75 mt-1"><?php echo $employee['department']; ?> • <?php echo $employee['position']; ?></p>
+        <h2 class="text-xl font-bold mt-3"><?php echo htmlspecialchars($employee['name'], ENT_QUOTES, 'UTF-8'); ?></h2>
+        <p class="text-sm opacity-90"><?php echo htmlspecialchars($employee['employee_id'], ENT_QUOTES, 'UTF-8'); ?></p>
+        <p class="text-xs opacity-75 mt-1"><?php echo htmlspecialchars($employee['department'], ENT_QUOTES, 'UTF-8'); ?> • <?php echo htmlspecialchars($employee['position'], ENT_QUOTES, 'UTF-8'); ?></p>
     </div>
 
     <!-- Employee Details -->
@@ -242,11 +242,11 @@ $has_profile_pic = !empty($employee['profile_pic']) && file_exists($profile_pic_
         <div class="space-y-3">
             <div class="flex justify-between py-2 border-b">
                 <span class="text-gray-500 text-sm">IC Number</span>
-                <span class="text-gray-800 text-sm font-medium"><?php echo $employee['ic_number']; ?></span>
+                <span class="text-gray-800 text-sm font-medium"><?php echo htmlspecialchars($employee['ic_number'], ENT_QUOTES, 'UTF-8'); ?></span>
             </div>
             <div class="flex justify-between py-2 border-b">
                 <span class="text-gray-500 text-sm">Email</span>
-                <span class="text-gray-800 text-sm font-medium"><?php echo $employee['email']; ?></span>
+                <span class="text-gray-800 text-sm font-medium"><?php echo htmlspecialchars($employee['email'], ENT_QUOTES, 'UTF-8'); ?></span>
             </div>
             <div class="flex justify-between py-2 border-b">
                 <span class="text-gray-500 text-sm">Join Date</span>
@@ -254,7 +254,7 @@ $has_profile_pic = !empty($employee['profile_pic']) && file_exists($profile_pic_
             </div>
             <div class="flex justify-between py-2 border-b">
                 <span class="text-gray-500 text-sm">Nationality</span>
-                <span class="text-gray-800 text-sm font-medium"><?php echo $employee['nationality']; ?></span>
+                <span class="text-gray-800 text-sm font-medium"><?php echo htmlspecialchars($employee['nationality'], ENT_QUOTES, 'UTF-8'); ?></span>
             </div>
             <div class="flex justify-between py-2">
                 <span class="text-gray-500 text-sm">Basic Salary</span>
@@ -278,7 +278,7 @@ $has_profile_pic = !empty($employee['profile_pic']) && file_exists($profile_pic_
                 <label class="block text-gray-700 text-sm font-medium mb-1">New Password</label>
                 <input type="password" name="new_password" id="new_password" required class="w-full px-4 py-3 border border-gray-200 rounded-xl bg-gray-50 pr-12">
                 <i class="fas fa-eye-slash toggle-password text-gray-400" onclick="togglePassword('new_password')"></i>
-                <p class="text-xs text-gray-400 mt-1">Minimum 4 characters</p>
+                <p class="text-xs text-gray-400 mt-1">Minimum 6 characters</p>
             </div>
             <div class="password-field">
                 <label class="block text-gray-700 text-sm font-medium mb-1">Confirm New Password</label>

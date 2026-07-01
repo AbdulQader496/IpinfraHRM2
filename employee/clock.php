@@ -58,8 +58,10 @@ if (isset($_POST['clock_out']) && $attendance && !$attendance['clock_out']) {
 // PAGINATION FOR ATTENDANCE HISTORY
 // ========================================
 $page = isset($_GET['page']) ? (int)$_GET['page'] : 1;
-$per_page = isset($_GET['per_page']) ? (int)$_GET['per_page'] : 10;
+$per_page = isset($_GET['per_page']) ? intval($_GET['per_page']) : 10;
+$per_page = in_array($per_page, [10, 25, 50]) ? $per_page : 10;
 $month_filter = isset($_GET['month']) ? preg_replace('/[^0-9\-]/', '', $_GET['month']) : '';
+if (!empty($month_filter) && !preg_match('/^\d{4}-\d{2}$/', $month_filter)) $month_filter = '';
 
 // Build WHERE clause for history
 $history_where = "WHERE employee_id = $user_id";

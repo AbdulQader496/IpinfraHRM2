@@ -9,25 +9,29 @@ function calculateEPF($salary, $is_employee = true, $is_malaysian = true) {
 
 function calculateSOCSO($salary, $is_employee = true, $is_malaysian = true) {
     if (!$is_malaysian) return 0;
+    $insurable = min($salary, 5000);
     if ($is_employee) {
-        return min(round($salary * 0.005, 2), 19.75);
+        return min(round($insurable * 0.005, 2), 19.75);
     } else {
-        return min(round($salary * 0.0175, 2), 69.13);
+        return min(round($insurable * 0.0175, 2), 69.13);
     }
 }
 
 function calculateEIS($salary, $is_malaysian = true) {
     if (!$is_malaysian) return 0;
-    return round($salary * 0.002, 2);
+    $insurable = min($salary, 4000);
+    return round($insurable * 0.002, 2);
 }
 
 function calculatePCB($salary, $is_malaysian = true) {
     if (!$is_malaysian) return 0;
-    if ($salary <= 5000)  return 0;
-    if ($salary <= 10000) return round($salary * 0.01, 2);
-    if ($salary <= 20000) return round($salary * 0.03, 2);
-    if ($salary <= 35000) return round($salary * 0.08, 2);
-    return round($salary * 0.11, 2);
+    $annual = $salary * 12;
+    if ($annual <= 5000)   return 0;
+    if ($annual <= 35000)  return round(($annual * 0.01) / 12, 2);
+    if ($annual <= 50000)  return round(($annual * 0.03) / 12, 2);
+    if ($annual <= 70000)  return round(($annual * 0.08) / 12, 2);
+    if ($annual <= 100000) return round(($annual * 0.13) / 12, 2);
+    return round(($annual * 0.21) / 12, 2);
 }
 
 function isMalaysian($employee_id) {
@@ -52,8 +56,8 @@ function getLeaveBalance($employee_id) {
         'used_annual_leave'         => $balance['used_annual_leave'],
         'medical_leave_entitlement' => $balance['medical_leave_entitlement'],
         'used_medical_leave'        => $balance['used_medical_leave'],
-        'annual_remaining'          => $balance['annual_leave_entitlement'] - $balance['used_annual_leave'],
-        'medical_remaining'         => $balance['medical_leave_entitlement'] - $balance['used_medical_leave'],
+        'annual_remaining'          => max(0, $balance['annual_leave_entitlement'] - $balance['used_annual_leave']),
+        'medical_remaining'         => max(0, $balance['medical_leave_entitlement'] - $balance['used_medical_leave']),
     ];
 }
 
@@ -111,7 +115,9 @@ function logAction($action, $description, $target_id = null, $target_type = null
     $target_type = mysqli_real_escape_string($conn, $target_type ?? '');
     $target_id   = intval($target_id ?? 0);
     $ip          = mysqli_real_escape_string($conn, $_SERVER['REMOTE_ADDR'] ?? '');
-    mysqli_query($conn, "INSERT INTO audit_log (user_id, action, description, target_type, target_id, ip_address)
-        VALUES ($user_id, '$action', '$description', '$target_type', $target_id, '$ip')");
+    try {
+        mysqli_query($conn, "INSERT INTO audit_log (user_id, action, description, target_type, target_id, ip_address)
+            VALUES ($user_id, '$action', '$description', '$target_type', $target_id, '$ip')");
+    } catch (Exception $e) { /* audit_log table may not exist yet */ }
 }
 ?>

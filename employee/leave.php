@@ -46,7 +46,9 @@ if (isset($_POST['update_leave'])) {
         $total_days = (strtotime($end_date) - strtotime($start_date)) / 86400 + 1;
     }
 
-    if (strtotime($end_date) < strtotime($start_date)) {
+    if (empty($leave_type)) {
+        $error = '<div class="bg-red-100 border border-red-200 text-red-700 px-4 py-3 rounded-xl text-sm">✗ Please select a leave type.</div>';
+    } elseif (strtotime($end_date) < strtotime($start_date)) {
         $error = '<div class="bg-red-100 border border-red-200 text-red-700 px-4 py-3 rounded-xl text-sm">✗ End date must be on or after start date.</div>';
     } else {
     // Interns can only apply for Medical or Unpaid leave

@@ -42,9 +42,10 @@ if (isset($_GET['regenerate'])) {
         }
 
         $per_day = $basic / $wdays;
+        $regen_leave_filter = $is_intern ? "IN ('unpaid', 'annual')" : "= 'unpaid'";
         $uq = mysqli_fetch_assoc(mysqli_query($conn, "SELECT COALESCE(SUM(
     DATEDIFF(LEAST(end_date, '$month_end'), GREATEST(start_date, '$month_start')) + 1
-), 0) as ud FROM leaves WHERE employee_id={$regen_row['id']} AND status='approved' AND leave_type='unpaid' AND start_date <= '$month_end' AND end_date >= '$month_start'"));
+), 0) as ud FROM leaves WHERE employee_id={$regen_row['id']} AND status='approved' AND leave_type $regen_leave_filter AND start_date <= '$month_end' AND end_date >= '$month_start'"));
         $unpaid_deduction = round($per_day * (float)$uq['ud'], 2);
 
         $cq = mysqli_fetch_assoc(mysqli_query($conn, "SELECT COALESCE(SUM(amount),0) as ca FROM claims WHERE employee_id={$regen_row['id']} AND status='approved' AND DATE_FORMAT(applied_at,'%Y-%m')='$month_year'"));
@@ -276,12 +277,14 @@ if (isset($_POST['generate_payroll'])) {
             }
 
             // Unpaid leave deduction for the month
+            // Interns have no annual leave entitlement — annual leave also deducted for them
             $per_day = $basic / $working_days_in_month;
+            $leave_type_filter = $is_intern ? "IN ('unpaid', 'annual')" : "= 'unpaid'";
             $unpaid_q = mysqli_query($conn, "SELECT COALESCE(SUM(
                 DATEDIFF(LEAST(end_date, '$month_end'), GREATEST(start_date, '$month_start')) + 1
             ), 0) as ud FROM leaves
                 WHERE employee_id = {$emp['id']} AND status = 'approved'
-                AND leave_type = 'unpaid'
+                AND leave_type $leave_type_filter
                 AND start_date <= '$month_end' AND end_date >= '$month_start'");
             $unpaid_days = (float)mysqli_fetch_assoc($unpaid_q)['ud'];
             $unpaid_deduction = round($per_day * $unpaid_days, 2);

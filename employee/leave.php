@@ -49,9 +49,9 @@ if (isset($_POST['update_leave'])) {
     if (strtotime($end_date) < strtotime($start_date)) {
         $error = '<div class="bg-red-100 border border-red-200 text-red-700 px-4 py-3 rounded-xl text-sm">✗ End date must be on or after start date.</div>';
     } else {
-    // Interns can only update to unpaid leave
-    if ($is_intern && $leave_type != 'unpaid') {
-        $error = '<div class="bg-red-100 border border-red-200 text-red-700 px-4 py-3 rounded-xl text-sm">✗ Interns can only apply for Unpaid Leave.</div>';
+    // Interns can only apply for Medical or Unpaid leave
+    if ($is_intern && !in_array($leave_type, ['medical', 'unpaid'])) {
+        $error = '<div class="bg-red-100 border border-red-200 text-red-700 px-4 py-3 rounded-xl text-sm">✗ Interns can only apply for Medical or Unpaid Leave.</div>';
     } else {
     // Check if leave is still pending
     $check_query = mysqli_query($conn, "SELECT id FROM leaves WHERE id = $leave_id AND employee_id = $user_id AND status = 'pending'");
@@ -143,8 +143,8 @@ $leave_types = mysqli_query($conn, "SELECT * FROM leave_types WHERE status = 'ac
 // Handle new leave submission
 if (isset($_POST['apply_leave']) && !$edit_mode) {
     $leave_type = mysqli_real_escape_string($conn, $_POST['leave_type']);
-    if ($is_intern && $leave_type != 'unpaid') {
-        $error = '<div class="bg-red-100 border border-red-200 text-red-700 px-4 py-3 rounded-xl text-sm">✗ Interns can only apply for Unpaid Leave.</div>';
+    if ($is_intern && !in_array($leave_type, ['medical', 'unpaid'])) {
+        $error = '<div class="bg-red-100 border border-red-200 text-red-700 px-4 py-3 rounded-xl text-sm">✗ Interns can only apply for Medical or Unpaid Leave.</div>';
     } else {
         $half_day   = mysqli_real_escape_string($conn, $_POST['half_day']);
         $start_date = mysqli_real_escape_string($conn, $_POST['start_date']);
@@ -278,61 +278,7 @@ $balance = getLeaveBalance($user_id);
     <div class="h-0.5 bg-gradient-to-r from-transparent via-indigo-400 to-transparent"></div>
 </div>
 
-<!-- SIDEBAR -->
-<div id="sidebar" class="fixed top-0 left-0 h-full w-72 bg-gradient-to-b from-blue-900 to-blue-950 text-white z-50 transform -translate-x-full transition-transform duration-300 shadow-2xl overflow-y-auto">
-    <div class="p-6 border-b border-blue-800">
-        <div class="flex items-center gap-3 mb-4">
-            <div class="w-12 h-12 bg-white rounded-xl flex items-center justify-center">
-                <span class="text-blue-900 font-bold text-xl">IN</span>
-            </div>
-            <div>
-                <h2 class="font-bold"><?php echo $_SESSION['user_name']; ?></h2>
-                <p class="text-xs text-blue-300"><?php echo $_SESSION['employee_id']; ?></p>
-            </div>
-        </div>
-        <button onclick="toggleSidebar()" class="absolute top-4 right-4 text-white/60 hover:text-white">
-            <i class="fas fa-times text-xl"></i>
-        </button>
-    </div>
-    <nav class="p-4">
-        <a href="dashboard.php" class="flex items-center gap-3 py-3 px-4 rounded-xl hover:bg-blue-800/30 transition mb-1">
-            <i class="fas fa-tachometer-alt w-5"></i> Dashboard
-        </a>
-        <a href="clock.php" class="flex items-center gap-3 py-3 px-4 rounded-xl hover:bg-blue-800/30 transition mb-1">
-            <i class="fas fa-clock w-5"></i> Clock In/Out
-        </a>
-        <a href="leave.php" class="flex items-center gap-3 py-3 px-4 rounded-xl bg-blue-800/50 mb-1">
-            <i class="fas fa-calendar-alt w-5"></i> Apply Leave
-        </a>
-        <a href="claim.php" class="flex items-center gap-3 py-3 px-4 rounded-xl hover:bg-blue-800/30 transition mb-1">
-            <i class="fas fa-receipt w-5"></i> Apply Claim
-        </a>
-        <a href="gallery.php" class="flex items-center gap-3 py-3 px-4 rounded-xl hover:bg-blue-800/30 transition mb-1">
-            <i class="fas fa-images w-5"></i> Company Gallery
-        </a>
-        <a href="assets.php" class="flex items-center gap-3 py-3 px-4 rounded-xl hover:bg-blue-800/30 transition mb-1">
-            <i class="fas fa-boxes w-5"></i> Asset Tracker
-        </a>
-        <a href="management.php" class="flex items-center gap-3 py-3 px-4 rounded-xl hover:bg-blue-800/30 transition mb-1">
-            <i class="fas fa-briefcase w-5"></i> My Management
-        </a>
-        <a href="payslip.php" class="flex items-center gap-3 py-3 px-4 rounded-xl hover:bg-blue-800/30 transition mb-1">
-            <i class="fas fa-file-invoice-dollar w-5"></i> Payslip
-        </a>
-        <a href="calendar.php" class="flex items-center gap-3 py-3 px-4 rounded-xl hover:bg-blue-800/30 transition mb-1">
-            <i class="fas fa-calendar w-5"></i> Calendar
-        </a>
-        <a href="profile.php" class="flex items-center gap-3 py-3 px-4 rounded-xl hover:bg-blue-800/30 transition mb-1">
-            <i class="fas fa-user-circle w-5"></i> My Profile
-        </a>
-        <div class="border-t border-blue-800 my-4"></div>
-        <a href="../logout.php" class="flex items-center gap-3 py-3 px-4 rounded-xl bg-red-600/20 text-red-300 hover:bg-red-600/30 transition">
-            <i class="fas fa-sign-out-alt w-5"></i> Logout
-        </a>
-    </nav>
-</div>
-
-<div id="overlay" class="fixed inset-0 bg-black/50 z-40 hidden" onclick="toggleSidebar()"></div>
+<?php require_once '../includes/employee_sidebar.php'; ?>
 
 <!-- MAIN CONTENT -->
 <div class="px-4 py-6 max-w-2xl mx-auto">
@@ -425,7 +371,9 @@ $balance = getLeaveBalance($user_id);
                 <label class="block text-gray-700 text-sm font-semibold mb-2">Leave Type</label>
                 <select name="leave_type" id="leave_type" required class="w-full px-4 py-2.5 border-2 border-gray-200 rounded-xl focus:border-blue-500 transition" onchange="toggleHalfDayOption()">
                     <?php if($is_intern): ?>
-                        <option value="unpaid" selected>Unpaid Leave (salary deducted)</option>
+                        <option value="">Select Leave Type</option>
+                        <option value="medical" <?php echo ($edit_mode && isset($edit_leave['leave_type']) && $edit_leave['leave_type']=='medical') ? 'selected' : ''; ?>>Medical Leave (MC)</option>
+                        <option value="unpaid"  <?php echo ($edit_mode && isset($edit_leave['leave_type']) && $edit_leave['leave_type']=='unpaid')  ? 'selected' : ''; ?>>Unpaid Leave (salary deducted)</option>
                     <?php else: ?>
                     <option value="">Select Leave Type</option>
                     <?php while($type = mysqli_fetch_assoc($leave_types)):
@@ -664,12 +612,33 @@ $balance = getLeaveBalance($user_id);
     <?php endif; ?>
 </div>
 
-<script>
-function toggleSidebar() {
-    document.getElementById('sidebar').classList.toggle('-translate-x-full');
-    document.getElementById('overlay').classList.toggle('hidden');
-}
+<!-- Mobile Bottom Navigation -->
+<div class="bottom-nav fixed bottom-0 left-0 right-0 bg-white border-t border-gray-200 md:hidden shadow-lg z-20">
+    <div class="flex justify-around py-2">
+        <a href="dashboard.php" class="flex flex-col items-center py-1 px-3 text-gray-500">
+            <i class="fas fa-home text-xl"></i>
+            <span class="text-xs mt-1">Home</span>
+        </a>
+        <a href="clock.php" class="flex flex-col items-center py-1 px-3 text-gray-500">
+            <i class="fas fa-clock text-xl"></i>
+            <span class="text-xs mt-1">Clock</span>
+        </a>
+        <a href="leave.php" class="flex flex-col items-center py-1 px-3 text-blue-600">
+            <i class="fas fa-calendar-alt text-xl"></i>
+            <span class="text-xs mt-1">Leave</span>
+        </a>
+        <a href="payslip.php" class="flex flex-col items-center py-1 px-3 text-gray-500">
+            <i class="fas fa-file-invoice-dollar text-xl"></i>
+            <span class="text-xs mt-1">Payslip</span>
+        </a>
+        <a href="profile.php" class="flex flex-col items-center py-1 px-3 text-gray-500">
+            <i class="fas fa-user text-xl"></i>
+            <span class="text-xs mt-1">Profile</span>
+        </a>
+    </div>
+</div>
 
+<script>
 document.getElementById('fileInput')?.addEventListener('change', function(e) {
     const fileName = e.target.files[0]?.name || 'No file chosen';
     document.getElementById('fileName').textContent = fileName;

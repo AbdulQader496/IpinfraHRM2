@@ -28,6 +28,10 @@ $month_name = date('F Y', strtotime($selected_month . '-01'));
 $working_days_in_month = date('t', strtotime($selected_month . '-01'));
 if ($working_days_in_month <= 0) $working_days_in_month = 30;
 
+// Determine employee type early (needed for leave categorization below)
+$is_malaysian = ($employee['nationality'] == 'Malaysian');
+$is_intern = isset($employee['employee_type']) && $employee['employee_type'] == 'intern';
+
 // Get all approved leave dates for this month to avoid double-counting absences
 $leave_dates = [];
 $all_leaves_q = mysqli_query($conn, "SELECT start_date, end_date FROM leaves
@@ -92,7 +96,8 @@ while ($leave = mysqli_fetch_assoc($leaves_query)) {
     // Use stored total_days to match what was actually saved in payroll
     $days = (float)$leave['total_days'];
 
-    if ($leave['leave_type'] == 'unpaid') {
+    // Interns have no annual leave entitlement — deduct annual leave same as unpaid
+    if ($leave['leave_type'] == 'unpaid' || ($is_intern && $leave['leave_type'] == 'annual')) {
         $unpaid_leave_days += $days;
     } else {
         $paid_leave_days += $days;
@@ -106,9 +111,6 @@ $per_day_salary = $basic_salary / $working_days_in_month;
 $unpaid_deduction = $per_day_salary * $total_unpaid_days;
 
 // Statutory deductions (interns are exempt)
-$is_malaysian = ($employee['nationality'] == 'Malaysian');
-$is_intern = isset($employee['employee_type']) && $employee['employee_type'] == 'intern';
-
 if ($is_intern) {
     $epf = 0; $socso = 0; $eis = 0; $pcb = 0;
 } else {

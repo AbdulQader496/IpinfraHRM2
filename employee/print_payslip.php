@@ -544,7 +544,7 @@ if (preg_match('/^(\d{4})-(\d{2})$/', $period_display, $m)) {
 
         <!-- ══ HEADER ══ -->
         <div class="header-band">
-            <div class="logo-box">IN</div>
+            <div class="logo-box"><img src="../uploads/1775551018_4xzREYTcMvK7ReGODviudjeDBIofOQ78mr5DsN9g.jpg" alt="IPINFRA" style="width:48px;height:48px;object-fit:contain;"></div>
             <div class="header-company">
                 <div class="company-name">Ipinfra Networks Sdn Bhd</div>
                 <div class="company-sub">

@@ -126,6 +126,47 @@ while ($dr = mysqli_fetch_assoc($dept_result)) {
 // Get recent employees
 $recent_employees = mysqli_query($conn, "SELECT * FROM employees WHERE role='employee' ORDER BY id DESC LIMIT 5");
 
+// ── Employee of the Month (admin-selected) ────────────────────────────
+@mysqli_query($conn, "CREATE TABLE IF NOT EXISTS employee_of_month (
+    id INT PRIMARY KEY AUTO_INCREMENT,
+    employee_id INT NOT NULL,
+    month_year VARCHAR(7) NOT NULL,
+    note VARCHAR(255),
+    selected_by INT NULL,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE KEY uq_month (month_year),
+    FOREIGN KEY (employee_id) REFERENCES employees(id) ON DELETE CASCADE,
+    FOREIGN KEY (selected_by) REFERENCES employees(id) ON DELETE SET NULL
+)");
+
+if (isset($_GET['clear_eom'])) {
+    mysqli_query($conn, "DELETE FROM employee_of_month WHERE month_year = DATE_FORMAT(CURDATE(),'%Y-%m')");
+    header('Location: dashboard.php');
+    exit();
+}
+
+if (isset($_POST['set_eom'])) {
+    $eom_emp = intval($_POST['eom_employee_id']);
+    $eom_note = mysqli_real_escape_string($conn, $_POST['eom_note'] ?? '');
+    $eom_month = date('Y-m');
+    $sel_by = intval($_SESSION['user_id']);
+    mysqli_query($conn, "INSERT INTO employee_of_month (employee_id, month_year, note, selected_by)
+        VALUES ($eom_emp, '$eom_month', '$eom_note', $sel_by)
+        ON DUPLICATE KEY UPDATE employee_id=$eom_emp, note='$eom_note', selected_by=$sel_by, created_at=NOW()");
+    header('Location: dashboard.php');
+    exit();
+}
+
+$eom_current = null;
+try {
+    $eom_current = mysqli_fetch_assoc(mysqli_query($conn,
+        "SELECT m.*, e.name, e.department, e.profile_pic
+         FROM employee_of_month m
+         JOIN employees e ON m.employee_id = e.id
+         WHERE m.month_year = DATE_FORMAT(CURDATE(),'%Y-%m')
+         LIMIT 1"));
+} catch (Exception $e) { }
+
 // Get announcements
 $announcements = mysqli_query($conn, "SELECT * FROM announcements WHERE is_active = 1 AND (end_date IS NULL OR end_date >= CURDATE()) ORDER BY 
     CASE announcement_type 
@@ -215,14 +256,14 @@ $announcements = mysqli_query($conn, "SELECT * FROM announcements WHERE is_activ
 <?php require_once '../includes/global_ui.php'; ?>
 
 <!-- Premium Mobile Header -->
-<div class="bg-gradient-to-r from-slate-900 via-indigo-900 to-slate-900 text-white sticky top-0 z-40 shadow-2xl">
+<div class="bg-[#060912] text-white sticky top-0 z-40 shadow-2xl">
     <div class="flex justify-between items-center px-4 py-4">
         <div class="flex items-center gap-3">
             <button onclick="toggleSidebar()" class="text-white/80 hover:text-white p-2 rounded-full hover:bg-white/10">
                 <i class="fas fa-bars text-xl"></i>
             </button>
             <div class="w-10 h-10 bg-gradient-to-br from-blue-500 to-indigo-600 rounded-xl flex items-center justify-center shadow-lg">
-                <span class="text-white font-bold text-sm">IN</span>
+                <img src="../uploads/1775551018_4xzREYTcMvK7ReGODviudjeDBIofOQ78mr5DsN9g.jpg" alt="IPINFRA" style="width:28px;height:28px;object-fit:contain;border-radius:4px;background:#fff;">
             </div>
             <div>
                 <p class="text-xs text-blue-200 font-medium">IPINFRA NETWORKS</p>
@@ -282,64 +323,7 @@ $announcements = mysqli_query($conn, "SELECT * FROM announcements WHERE is_activ
     </div>
 </div>
 
-<!-- SIDEBAR -->
-<div id="sidebar" class="fixed top-0 left-0 h-full w-72 bg-gradient-to-b from-gray-900 to-gray-950 text-white z-50 transform -translate-x-full transition-transform duration-300 shadow-2xl overflow-y-auto">
-    <div class="p-6 border-b border-gray-800">
-        <div class="flex items-center gap-3 mb-4">
-            <div class="w-12 h-12 bg-white rounded-xl flex items-center justify-center">
-                <span class="text-gray-900 font-bold text-xl">IN</span>
-            </div>
-            <div>
-                <h2 class="font-bold"><?php echo $_SESSION['user_name']; ?></h2>
-                <p class="text-xs text-gray-400">Administrator</p>
-            </div>
-        </div>
-        <button onclick="toggleSidebar()" class="absolute top-4 right-4 text-white/60 hover:text-white">
-            <i class="fas fa-times text-xl"></i>
-        </button>
-    </div>
-    <nav class="p-4">
-        <a href="dashboard.php" class="flex items-center gap-3 py-3 px-4 rounded-xl hover:bg-gray-800/30 transition mb-1">
-            <i class="fas fa-tachometer-alt w-5"></i> Dashboard
-        </a>
-        <a href="employees.php" class="flex items-center gap-3 py-3 px-4 rounded-xl hover:bg-gray-800/30 transition mb-1">
-            <i class="fas fa-users w-5"></i> Employees
-        </a>
-        <a href="manage_leave.php" class="flex items-center gap-3 py-3 px-4 rounded-xl hover:bg-gray-800/30 transition mb-1">
-            <i class="fas fa-calendar-check w-5"></i> Leave Management
-        </a>
-        <a href="manage_claim.php" class="flex items-center gap-3 py-3 px-4 rounded-xl hover:bg-gray-800/30 transition mb-1">
-            <i class="fas fa-receipt w-5"></i> Claim Management
-        </a>
-        <a href="attendance.php" class="flex items-center gap-3 py-3 px-4 rounded-xl hover:bg-gray-800/30 transition mb-1">
-            <i class="fas fa-fingerprint w-5"></i> Attendance
-        </a>
-        <a href="manage_assets.php" class="flex items-center gap-3 py-3 px-4 rounded-xl hover:bg-gray-800/30 transition mb-1">
-            <i class="fas fa-boxes w-5"></i> Asset Management
-        </a>
-        <a href="manage_gallery.php" class="flex items-center gap-3 py-3 px-4 rounded-xl hover:bg-gray-800/30 transition mb-1">
-            <i class="fas fa-images w-5"></i> Gallery Management
-        </a>
-        <a href="management.php" class="flex items-center gap-3 py-3 px-4 rounded-xl hover:bg-gray-800/30 transition mb-1">
-            <i class="fas fa-briefcase w-5"></i> Management
-        </a>
-        <a href="payroll.php" class="flex items-center gap-3 py-3 px-4 rounded-xl hover:bg-gray-800/30 transition mb-1">
-            <i class="fas fa-file-invoice-dollar w-5"></i> Payroll
-        </a>
-        <a href="holidays.php" class="flex items-center gap-3 py-3 px-4 rounded-xl hover:bg-gray-800/30 transition mb-1">
-            <i class="fas fa-calendar-alt w-5"></i> Holidays
-        </a>
-        <a href="audit_log.php" class="flex items-center gap-3 py-3 px-4 rounded-xl hover:bg-gray-800/30 transition mb-1">
-            <i class="fas fa-shield-alt w-5"></i> Audit Log
-        </a>
-        <div class="border-t border-gray-800 my-4"></div>
-        <a href="../logout.php" class="flex items-center gap-3 py-3 px-4 rounded-xl bg-red-600/20 text-red-300 hover:bg-red-600/30 transition">
-            <i class="fas fa-sign-out-alt w-5"></i> Logout
-        </a>
-    </nav>
-</div>
-
-<div id="overlay" class="fixed inset-0 bg-black/50 z-40 hidden" onclick="toggleSidebar()"></div>
+<?php require_once '../includes/admin_sidebar.php'; ?>
 
 <!-- Main Content -->
 <div class="px-4 py-6 pb-24 md:pb-6 max-w-7xl mx-auto">
@@ -348,12 +332,17 @@ $announcements = mysqli_query($conn, "SELECT * FROM announcements WHERE is_activ
     <div class="welcome-card rounded-2xl p-6 mb-8 text-white shadow-2xl animate-slideLeft">
         <div class="relative z-10">
             <div class="flex items-center justify-between flex-wrap gap-4">
-                <div>
-                    <p class="text-sm text-blue-200">Welcome back,</p>
-                    <h1 class="text-3xl font-bold mt-1"><?php echo $_SESSION['user_name']; ?></h1>
-                    <p class="text-sm text-blue-200 mt-2">
-                        <i class="fas fa-calendar-alt mr-2"></i><?php echo date('l, d F Y'); ?>
-                    </p>
+                <div class="flex items-center gap-4">
+                    <img src="../uploads/1775551018_4xzREYTcMvK7ReGODviudjeDBIofOQ78mr5DsN9g.jpg" alt="IPINFRA"
+                         style="width:72px;height:72px;object-fit:contain;border-radius:14px;background:#fff;padding:5px;flex-shrink:0;">
+                    <div>
+                        <p class="text-xs font-semibold tracking-widest uppercase text-blue-200">IPINFRA Networks Sdn Bhd</p>
+                        <p class="text-xs text-blue-200 mb-1">HR Management System</p>
+                        <h1 class="text-3xl font-bold"><?php echo $_SESSION['user_name']; ?></h1>
+                        <p class="text-sm text-blue-200 mt-1">
+                            <i class="fas fa-calendar-alt mr-2"></i><?php echo date('l, d F Y'); ?>
+                        </p>
+                    </div>
                 </div>
                 <div class="text-right">
                     <div class="w-16 h-16 bg-white/20 rounded-2xl flex items-center justify-center backdrop-blur-sm">
@@ -542,6 +531,59 @@ $announcements = mysqli_query($conn, "SELECT * FROM announcements WHERE is_activ
         </div>
     </div>
 
+    <!-- Employee of the Month -->
+    <div class="mb-8">
+        <div class="bg-gradient-to-r from-indigo-600 via-purple-600 to-pink-600 rounded-2xl shadow-xl overflow-hidden relative">
+            <div class="absolute top-0 right-0 w-48 h-48 bg-white/10 rounded-full -translate-y-1/2 translate-x-1/2 pointer-events-none"></div>
+            <div class="absolute bottom-0 left-0 w-32 h-32 bg-white/10 rounded-full translate-y-1/2 -translate-x-1/2 pointer-events-none"></div>
+            <div class="relative z-10 p-5">
+                <div class="flex items-center justify-between mb-4">
+                    <div class="flex items-center gap-2">
+                        <i class="fas fa-trophy text-yellow-300 text-xl"></i>
+                        <div>
+                            <p class="font-bold text-white text-sm uppercase tracking-widest">Employee of the Month</p>
+                            <p class="text-white/60 text-xs"><?php echo date('F Y'); ?></p>
+                        </div>
+                    </div>
+                    <div class="flex gap-2">
+                        <?php if($eom_current): ?>
+                        <a href="?clear_eom=1" data-confirm="Remove this month's Employee of the Month?" data-confirm-title="Remove Selection" class="bg-white/20 hover:bg-red-500/60 text-white text-xs font-semibold px-3 py-1.5 rounded-lg transition backdrop-blur-sm">
+                            <i class="fas fa-trash mr-1"></i> Remove
+                        </a>
+                        <?php endif; ?>
+                        <button onclick="document.getElementById('eomModal').classList.remove('hidden')" class="bg-white/20 hover:bg-white/30 text-white text-xs font-semibold px-3 py-1.5 rounded-lg transition backdrop-blur-sm">
+                            <i class="fas fa-edit mr-1"></i> <?php echo $eom_current ? 'Change' : 'Select'; ?>
+                        </button>
+                    </div>
+                </div>
+                <?php if($eom_current): ?>
+                <div class="flex items-center gap-4">
+                    <div class="w-16 h-16 rounded-2xl bg-white/20 backdrop-blur-sm flex items-center justify-center overflow-hidden border-2 border-white/40 shadow-lg flex-shrink-0">
+                        <?php if(!empty($eom_current['profile_pic']) && file_exists('../uploads/profiles/'.$eom_current['profile_pic'])): ?>
+                            <img src="../uploads/profiles/<?php echo htmlspecialchars($eom_current['profile_pic']); ?>" class="w-full h-full object-cover">
+                        <?php else: ?>
+                            <span class="text-2xl font-bold text-white"><?php echo strtoupper(substr($eom_current['name'],0,1)); ?></span>
+                        <?php endif; ?>
+                    </div>
+                    <div>
+                        <a href="view_employee.php?id=<?php echo $eom_current['employee_id']; ?>" class="text-xl font-bold text-white hover:underline block"><?php echo htmlspecialchars($eom_current['name']); ?></a>
+                        <p class="text-white/80 text-sm"><?php echo htmlspecialchars($eom_current['department'] ?: 'No department'); ?></p>
+                        <?php if(!empty($eom_current['note'])): ?>
+                            <p class="text-white/70 text-xs mt-1 italic">"<?php echo htmlspecialchars($eom_current['note']); ?>"</p>
+                        <?php endif; ?>
+                    </div>
+                </div>
+                <?php else: ?>
+                <div class="text-center py-4">
+                    <i class="fas fa-user-circle text-white/30 text-5xl mb-3 block"></i>
+                    <p class="text-white/70 text-sm">No employee selected for this month yet</p>
+                    <p class="text-white/50 text-xs mt-1">Click "Select" to choose an employee</p>
+                </div>
+                <?php endif; ?>
+            </div>
+        </div>
+    </div>
+
     <!-- ═══════════════════════════════════════════════════ -->
     <!-- ANALYTICS SECTION                                  -->
     <!-- ═══════════════════════════════════════════════════ -->
@@ -698,6 +740,45 @@ $announcements = mysqli_query($conn, "SELECT * FROM announcements WHERE is_activ
                 <p class="text-xs text-gray-400 mt-1">Click "Add Employee" to get started</p>
             </div>
         <?php endif; ?>
+    </div>
+</div>
+
+<!-- Employee of the Month Modal -->
+<div id="eomModal" class="hidden fixed inset-0 bg-black/50 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+    <div class="bg-white rounded-2xl max-w-md w-full shadow-2xl">
+        <div class="bg-gradient-to-r from-indigo-600 to-purple-600 p-5 rounded-t-2xl">
+            <div class="flex justify-between items-center">
+                <div>
+                    <h2 class="text-xl font-bold text-white">Select Employee of the Month</h2>
+                    <p class="text-xs text-indigo-100 mt-1"><?php echo date('F Y'); ?></p>
+                </div>
+                <button onclick="document.getElementById('eomModal').classList.add('hidden')" class="text-white hover:text-gray-200">
+                    <i class="fas fa-times text-xl"></i>
+                </button>
+            </div>
+        </div>
+        <form method="POST" class="p-5 space-y-4">
+            <div>
+                <label class="block text-sm font-semibold text-gray-700 mb-2">Employee</label>
+                <select name="eom_employee_id" required class="w-full px-4 py-2.5 border-2 border-gray-200 rounded-xl focus:border-purple-500 focus:outline-none">
+                    <option value="">— Select Employee —</option>
+                    <?php
+                    $eom_list = mysqli_query($conn, "SELECT id, name, department FROM employees WHERE role='employee' AND status='active' ORDER BY name");
+                    while($el = mysqli_fetch_assoc($eom_list)):
+                        $sel = ($eom_current && $eom_current['employee_id'] == $el['id']) ? 'selected' : '';
+                    ?>
+                        <option value="<?php echo $el['id']; ?>" <?php echo $sel; ?>><?php echo htmlspecialchars($el['name']); ?><?php echo $el['department'] ? ' — '.$el['department'] : ''; ?></option>
+                    <?php endwhile; ?>
+                </select>
+            </div>
+            <div>
+                <label class="block text-sm font-semibold text-gray-700 mb-2">Reason / Note <span class="text-gray-400 font-normal">(optional)</span></label>
+                <input type="text" name="eom_note" value="<?php echo htmlspecialchars($eom_current['note'] ?? ''); ?>" class="w-full px-4 py-2.5 border-2 border-gray-200 rounded-xl focus:border-purple-500 focus:outline-none" placeholder="e.g., Outstanding performance in client projects">
+            </div>
+            <button type="submit" name="set_eom" class="w-full bg-gradient-to-r from-indigo-600 to-purple-600 text-white py-3 rounded-xl font-semibold hover:shadow-lg transition">
+                <i class="fas fa-trophy mr-2"></i> Confirm Selection
+            </button>
+        </form>
     </div>
 </div>
 
@@ -1050,13 +1131,6 @@ const payrollTotals    = <?php echo json_encode($payroll_totals); ?>;
             document.getElementById('notifDropdown').classList.add('hidden');
         }
     });
-
-    function toggleSidebar() {
-        const sidebar = document.getElementById('sidebar');
-        const overlay = document.getElementById('overlay');
-        sidebar.classList.toggle('-translate-x-full');
-        overlay.classList.toggle('hidden');
-    }
     
     function openEditAnnouncementModal(announcement) {
         document.getElementById('edit_announcement_id').value = announcement.id;

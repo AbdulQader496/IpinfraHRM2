@@ -1,11 +1,11 @@
-<?php
+﻿<?php
 require_once '../includes/auth.php';
 redirectIfNotLoggedIn();
 require_once '../includes/db.php';
 
 $user_id = $_SESSION['user_id'];
-$year = date('Y');
-$month = date('m');
+$year  = isset($_GET['year'])  ? intval($_GET['year'])  : (int)date('Y');
+$month = isset($_GET['month']) ? intval($_GET['month']) : (int)date('m');
 
 $holidays = mysqli_query($conn, "SELECT * FROM holidays WHERE YEAR(holiday_date) = $year");
 $holiday_dates = [];
@@ -25,11 +25,7 @@ while ($row = mysqli_fetch_assoc($leaves)) {
     }
 }
 
-// Month navigation
-if (isset($_GET['month']) && isset($_GET['year'])) {
-    $month = $_GET['month'];
-    $year = $_GET['year'];
-}
+// Month navigation already resolved above
 $current_month = date('F Y', strtotime("$year-$month-01"));
 $prev_month = date('m', strtotime("$year-$month-01 -1 month"));
 $prev_year = date('Y', strtotime("$year-$month-01 -1 month"));
@@ -77,7 +73,7 @@ $next_year = date('Y', strtotime("$year-$month-01 +1 month"));
 <body class="bg-gradient-to-br from-gray-50 to-gray-100 min-h-screen pb-20">
     
 <!-- Premium Header -->
-<div class="bg-gradient-to-r from-slate-900 via-indigo-900 to-slate-900 text-white sticky top-0 z-40 shadow-2xl backdrop-blur-sm">
+<div class="bg-[#060912] text-white sticky top-0 z-40 shadow-2xl backdrop-blur-sm">
     <div class="flex items-center justify-between px-5 py-4">
         <div class="flex items-center gap-3">
             <!-- Menu Button -->
@@ -90,7 +86,7 @@ $next_year = date('Y', strtotime("$year-$month-01 +1 month"));
             <!-- Logo -->
             <div class="relative">
                 <div class="w-10 h-10 bg-gradient-to-br from-blue-500 via-indigo-500 to-purple-600 rounded-xl flex items-center justify-center shadow-lg shadow-indigo-500/20 animate-pulse">
-                    <span class="text-white font-bold text-sm">IN</span>
+                    <img src="../uploads/1775551018_4xzREYTcMvK7ReGODviudjeDBIofOQ78mr5DsN9g.jpg" alt="IPINFRA" style="width:28px;height:28px;object-fit:contain;border-radius:4px;background:#fff;">
                 </div>
                 <div class="absolute -top-1 -right-1 w-3 h-3 bg-green-400 rounded-full border-2 border-slate-900"></div>
             </div>
@@ -113,61 +109,7 @@ $next_year = date('Y', strtotime("$year-$month-01 +1 month"));
     <!-- Subtle bottom border glow -->
     <div class="h-0.5 bg-gradient-to-r from-transparent via-indigo-400 to-transparent"></div>
 </div>
-<!-- SIDEBAR -->
-<div id="sidebar" class="fixed top-0 left-0 h-full w-72 bg-gradient-to-b from-blue-900 to-blue-950 text-white z-50 transform -translate-x-full transition-transform duration-300 shadow-2xl overflow-y-auto">
-    <div class="p-6 border-b border-blue-800">
-        <div class="flex items-center gap-3 mb-4">
-            <div class="w-12 h-12 bg-white rounded-xl flex items-center justify-center">
-                <span class="text-blue-900 font-bold text-xl">IN</span>
-            </div>
-            <div>
-                <h2 class="font-bold"><?php echo $_SESSION['user_name']; ?></h2>
-                <p class="text-xs text-blue-300"><?php echo $_SESSION['employee_id']; ?></p>
-            </div>
-        </div>
-        <button onclick="toggleSidebar()" class="absolute top-4 right-4 text-white/60 hover:text-white">
-            <i class="fas fa-times text-xl"></i>
-        </button>
-    </div>
-    <nav class="p-4">
-        <a href="dashboard.php" class="flex items-center gap-3 py-3 px-4 rounded-xl hover:bg-blue-800/30 transition mb-1">
-            <i class="fas fa-tachometer-alt w-5"></i> Dashboard
-        </a>
-        <a href="clock.php" class="flex items-center gap-3 py-3 px-4 rounded-xl hover:bg-blue-800/30 transition mb-1">
-            <i class="fas fa-clock w-5"></i> Clock In/Out
-        </a>
-        <a href="leave.php" class="flex items-center gap-3 py-3 px-4 rounded-xl hover:bg-blue-800/30 transition mb-1">
-            <i class="fas fa-calendar-alt w-5"></i> Apply Leave
-        </a>
-        <a href="claim.php" class="flex items-center gap-3 py-3 px-4 rounded-xl hover:bg-blue-800/30 transition mb-1">
-            <i class="fas fa-receipt w-5"></i> Apply Claim
-        </a>
-        <a href="gallery.php" class="flex items-center gap-3 py-3 px-4 rounded-xl hover:bg-blue-800/30 transition mb-1">
-            <i class="fas fa-images w-5"></i> Company Gallery
-        </a>
-        <a href="assets.php" class="flex items-center gap-3 py-3 px-4 rounded-xl hover:bg-blue-800/30 transition mb-1">
-            <i class="fas fa-boxes w-5"></i> Asset Tracker
-        </a>
-        <a href="management.php" class="flex items-center gap-3 py-3 px-4 rounded-xl bg-blue-800/50 mb-1">
-            <i class="fas fa-briefcase w-5"></i> My Management
-        </a>
-        <a href="payslip.php" class="flex items-center gap-3 py-3 px-4 rounded-xl hover:bg-blue-800/30 transition mb-1">
-            <i class="fas fa-file-invoice-dollar w-5"></i> Payslip
-        </a>
-        <a href="calendar.php" class="flex items-center gap-3 py-3 px-4 rounded-xl hover:bg-blue-800/30 transition mb-1">
-            <i class="fas fa-calendar w-5"></i> Calendar
-        </a>
-        <a href="profile.php" class="flex items-center gap-3 py-3 px-4 rounded-xl hover:bg-blue-800/30 transition mb-1">
-            <i class="fas fa-user-circle w-5"></i> My Profile
-        </a>
-        <div class="border-t border-blue-800 my-4"></div>
-        <a href="../logout.php" class="flex items-center gap-3 py-3 px-4 rounded-xl bg-red-600/20 text-red-300 hover:bg-red-600/30 transition">
-            <i class="fas fa-sign-out-alt w-5"></i> Logout
-        </a>
-    </nav>
-</div>
-
-<div id="overlay" class="fixed inset-0 bg-black/50 z-40 hidden" onclick="toggleSidebar()"></div>
+<?php require_once '../includes/employee_sidebar.php'; ?>
 
 <!-- Main Content -->
 <div class="px-4 py-6 max-w-lg mx-auto">
@@ -192,7 +134,8 @@ $next_year = date('Y', strtotime("$year-$month-01 +1 month"));
     </div>
 
     <!-- Calendar Grid -->
-    <div class="bg-white rounded-2xl shadow-xl overflow-hidden">
+    <div class="overflow-x-auto">
+    <div class="bg-white rounded-2xl shadow-xl overflow-hidden min-w-[320px]">
         <!-- Weekday Headers -->
         <div class="grid grid-cols-7 bg-gradient-to-r from-gray-50 to-gray-100 border-b">
             <?php 
@@ -254,6 +197,7 @@ $next_year = date('Y', strtotime("$year-$month-01 +1 month"));
             ?>
         </div>
     </div>
+    </div><!-- /overflow-x-auto -->
 
     <!-- Legend -->
     <div class="flex justify-center gap-6 mt-6">
@@ -291,10 +235,6 @@ $next_year = date('Y', strtotime("$year-$month-01 +1 month"));
 </div>
 
 <script>
-function toggleSidebar() {
-    document.getElementById('sidebar').classList.toggle('-translate-x-full');
-    document.getElementById('overlay').classList.toggle('hidden');
-}
 </script>
 
 </body>

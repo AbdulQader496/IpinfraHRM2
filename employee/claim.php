@@ -1,12 +1,10 @@
-<?php
+﻿<?php
 require_once '../includes/auth.php';
 redirectIfNotLoggedIn();
 require_once '../includes/db.php';
 require_once '../includes/toast_fn.php';
 
 $user_id = $_SESSION['user_id'];
-$message = '';
-$error = '';
 $edit_mode = false;
 $edit_claim_id = 0;
 
@@ -34,11 +32,10 @@ if (isset($_POST['update_claim'])) {
     // Check if claim is still pending
     $check_query = mysqli_query($conn, "SELECT id FROM claims WHERE id = $claim_id AND employee_id = $user_id AND status = 'pending'");
     if (mysqli_num_rows($check_query) > 0) {
-        $update_query = "UPDATE claims SET 
-                            claim_type = '$claim_type', 
-                            amount = $amount, 
-                            description = '$description',
-                            updated_at = NOW()
+        $update_query = "UPDATE claims SET
+                            claim_type = '$claim_type',
+                            amount = $amount,
+                            description = '$description'
                          WHERE id = $claim_id";
         
         if (mysqli_query($conn, $update_query)) {
@@ -87,9 +84,6 @@ if (isset($_GET['delete_attachment'])) {
             unlink($file_path);
         }
         mysqli_query($conn, "DELETE FROM claim_attachments WHERE id = $attach_id");
-        $message = '<div class="bg-green-100 border-l-4 border-green-500 text-green-700 px-4 py-3 rounded-xl text-sm">
-                        <i class="fas fa-trash mr-2"></i> Attachment deleted successfully!
-                    </div>';
     }
     header("Location: claim.php?edit=$claim_id");
     exit();
@@ -99,28 +93,19 @@ if (isset($_GET['delete_attachment'])) {
 // HANDLE DELETE CLAIM (Only pending claims)
 // ========================================
 if (isset($_GET['delete'])) {
-    $claim_id = (int)$_GET['delete'];
-    
-    // Check if claim is pending
-    $check_query = mysqli_query($conn, "SELECT id FROM claims WHERE id = $claim_id AND employee_id = $user_id AND status = 'pending'");
+    $claim_id    = (int)$_GET['delete'];
+    $check_query = mysqli_query($conn, "SELECT id FROM claims WHERE id=$claim_id AND employee_id=$user_id AND status='pending'");
     if (mysqli_num_rows($check_query) > 0) {
-        // Delete attachments first
-        $attach_query = mysqli_query($conn, "SELECT file_path FROM claim_attachments WHERE claim_id = $claim_id");
+        $attach_query = mysqli_query($conn, "SELECT file_path FROM claim_attachments WHERE claim_id=$claim_id");
         while ($attach = mysqli_fetch_assoc($attach_query)) {
-            $file_path = "../uploads/claims/" . $attach['file_path'];
-            if (file_exists($file_path)) {
-                unlink($file_path);
-            }
+            $fp = "../uploads/claims/" . $attach['file_path'];
+            if (file_exists($fp)) unlink($fp);
         }
-        mysqli_query($conn, "DELETE FROM claim_attachments WHERE claim_id = $claim_id");
-        mysqli_query($conn, "DELETE FROM claims WHERE id = $claim_id");
-        $message = '<div class="bg-green-100 border-l-4 border-green-500 text-green-700 px-4 py-3 rounded-xl text-sm">
-                        <i class="fas fa-trash mr-2"></i> Claim deleted successfully!
-                    </div>';
+        mysqli_query($conn, "DELETE FROM claim_attachments WHERE claim_id=$claim_id");
+        mysqli_query($conn, "DELETE FROM claims WHERE id=$claim_id");
+        header('Location: claim.php?msg=deleted'); exit();
     } else {
-        $error = '<div class="bg-red-100 border-l-4 border-red-500 text-red-700 px-4 py-3 rounded-xl text-sm">
-                      <i class="fas fa-exclamation-circle mr-2"></i> Cannot delete claim that is already processed.
-                  </div>';
+        header('Location: claim.php?err=' . urlencode('Cannot delete a claim that is already processed.')); exit();
     }
 }
 
@@ -253,7 +238,7 @@ $pending_total = mysqli_fetch_assoc(mysqli_query($conn, "SELECT SUM(amount) as t
 <?php require_once '../includes/confirm_modal.php'; ?>
 
 <!-- Premium Header -->
-<div class="bg-gradient-to-r from-slate-900 via-indigo-900 to-slate-900 text-white sticky top-0 z-40 shadow-2xl backdrop-blur-sm">
+<div class="bg-[#060912] text-white sticky top-0 z-40 shadow-2xl backdrop-blur-sm">
     <div class="flex items-center justify-between px-5 py-4">
         <div class="flex items-center gap-3">
             <button onclick="toggleSidebar()" class="relative group">
@@ -263,7 +248,7 @@ $pending_total = mysqli_fetch_assoc(mysqli_query($conn, "SELECT SUM(amount) as t
             </button>
             <div class="relative">
                 <div class="w-10 h-10 bg-gradient-to-br from-blue-500 via-indigo-500 to-purple-600 rounded-xl flex items-center justify-center shadow-lg shadow-indigo-500/20 animate-pulse">
-                    <span class="text-white font-bold text-sm">IN</span>
+                    <img src="../uploads/1775551018_4xzREYTcMvK7ReGODviudjeDBIofOQ78mr5DsN9g.jpg" alt="IPINFRA" style="width:28px;height:28px;object-fit:contain;border-radius:4px;background:#fff;">
                 </div>
                 <div class="absolute -top-1 -right-1 w-3 h-3 bg-green-400 rounded-full border-2 border-slate-900"></div>
             </div>
@@ -281,61 +266,7 @@ $pending_total = mysqli_fetch_assoc(mysqli_query($conn, "SELECT SUM(amount) as t
     <div class="h-0.5 bg-gradient-to-r from-transparent via-indigo-400 to-transparent"></div>
 </div>
 
-<!-- SIDEBAR -->
-<div id="sidebar" class="fixed top-0 left-0 h-full w-72 bg-gradient-to-b from-blue-900 to-blue-950 text-white z-50 transform -translate-x-full transition-transform duration-300 shadow-2xl overflow-y-auto">
-    <div class="p-6 border-b border-blue-800">
-        <div class="flex items-center gap-3 mb-4">
-            <div class="w-12 h-12 bg-white rounded-xl flex items-center justify-center">
-                <span class="text-blue-900 font-bold text-xl">IN</span>
-            </div>
-            <div>
-                <h2 class="font-bold"><?php echo $_SESSION['user_name']; ?></h2>
-                <p class="text-xs text-blue-300"><?php echo $_SESSION['employee_id']; ?></p>
-            </div>
-        </div>
-        <button onclick="toggleSidebar()" class="absolute top-4 right-4 text-white/60 hover:text-white">
-            <i class="fas fa-times text-xl"></i>
-        </button>
-    </div>
-    <nav class="p-4">
-        <a href="dashboard.php" class="flex items-center gap-3 py-3 px-4 rounded-xl hover:bg-blue-800/30 transition mb-1">
-            <i class="fas fa-tachometer-alt w-5"></i> Dashboard
-        </a>
-        <a href="clock.php" class="flex items-center gap-3 py-3 px-4 rounded-xl hover:bg-blue-800/30 transition mb-1">
-            <i class="fas fa-clock w-5"></i> Clock In/Out
-        </a>
-        <a href="leave.php" class="flex items-center gap-3 py-3 px-4 rounded-xl hover:bg-blue-800/30 transition mb-1">
-            <i class="fas fa-calendar-alt w-5"></i> Apply Leave
-        </a>
-        <a href="claim.php" class="flex items-center gap-3 py-3 px-4 rounded-xl bg-blue-800/50 mb-1">
-            <i class="fas fa-receipt w-5"></i> Apply Claim
-        </a>
-        <a href="gallery.php" class="flex items-center gap-3 py-3 px-4 rounded-xl hover:bg-blue-800/30 transition mb-1">
-            <i class="fas fa-images w-5"></i> Company Gallery
-        </a>
-        <a href="assets.php" class="flex items-center gap-3 py-3 px-4 rounded-xl hover:bg-blue-800/30 transition mb-1">
-            <i class="fas fa-boxes w-5"></i> Asset Tracker
-        </a>
-        <a href="management.php" class="flex items-center gap-3 py-3 px-4 rounded-xl hover:bg-blue-800/30 transition mb-1">
-            <i class="fas fa-briefcase w-5"></i> My Management
-        </a>
-        <a href="payslip.php" class="flex items-center gap-3 py-3 px-4 rounded-xl hover:bg-blue-800/30 transition mb-1">
-            <i class="fas fa-file-invoice-dollar w-5"></i> Payslip
-        </a>
-        <a href="calendar.php" class="flex items-center gap-3 py-3 px-4 rounded-xl hover:bg-blue-800/30 transition mb-1">
-            <i class="fas fa-calendar w-5"></i> Calendar
-        </a>
-        <a href="profile.php" class="flex items-center gap-3 py-3 px-4 rounded-xl hover:bg-blue-800/30 transition mb-1">
-            <i class="fas fa-user-circle w-5"></i> My Profile
-        </a>
-        <div class="border-t border-blue-800 my-4"></div>
-        <a href="../logout.php" class="flex items-center gap-3 py-3 px-4 rounded-xl bg-red-600/20 text-red-300 hover:bg-red-600/30 transition">
-            <i class="fas fa-sign-out-alt w-5"></i> Logout
-        </a>
-    </nav>
-</div>
-
-<div id="overlay" class="fixed inset-0 bg-black/50 z-40 hidden" onclick="toggleSidebar()"></div>
+<?php require_once '../includes/employee_sidebar.php'; ?>
 
 <!-- MAIN CONTENT -->
 <div class="px-4 py-6 max-w-2xl mx-auto">
@@ -393,10 +324,15 @@ $pending_total = mysqli_fetch_assoc(mysqli_query($conn, "SELECT SUM(amount) as t
             } elseif ($_GET['msg'] == 'updated') {
                 echo '<div class="bg-green-100 border-l-4 border-green-500 text-green-700 px-4 py-3 rounded-xl text-sm mb-4">
                     <i class="fas fa-check-circle mr-2"></i> ✓ Claim updated successfully!</div>';
+            } elseif ($_GET['msg'] == 'deleted') {
+                echo '<div class="bg-green-100 border-l-4 border-green-500 text-green-700 px-4 py-3 rounded-xl text-sm mb-4">
+                    <i class="fas fa-trash mr-2"></i> ✓ Claim deleted successfully!</div>';
             }
         }
-        echo $message;
-        echo $error;
+        if (isset($_GET['err'])) {
+            echo '<div class="bg-red-100 border-l-4 border-red-500 text-red-700 px-4 py-3 rounded-xl text-sm mb-4">
+                <i class="fas fa-exclamation-circle mr-2"></i> ' . htmlspecialchars($_GET['err']) . '</div>';
+        }
         ?>
 
         <form method="POST" enctype="multipart/form-data" class="space-y-4" id="claimForm">
@@ -493,16 +429,23 @@ $pending_total = mysqli_fetch_assoc(mysqli_query($conn, "SELECT SUM(amount) as t
                     <span class="text-xs text-gray-400">(<?php echo $total_rows; ?> total)</span>
                 </div>
                 
-                <form method="GET" class="flex gap-2">
+                <form method="GET" class="flex gap-2 flex-wrap">
                     <select name="status" class="text-sm border border-gray-200 rounded-lg px-3 py-1.5">
                         <option value="">All Status</option>
                         <option value="pending" <?php echo $status_filter == 'pending' ? 'selected' : ''; ?>>Pending</option>
                         <option value="approved" <?php echo $status_filter == 'approved' ? 'selected' : ''; ?>>Approved</option>
                         <option value="rejected" <?php echo $status_filter == 'rejected' ? 'selected' : ''; ?>>Rejected</option>
                     </select>
+                    <select name="per_page" class="text-sm border border-gray-200 rounded-lg px-3 py-1.5">
+                        <option value="5"  <?php echo $per_page == 5  ? 'selected' : ''; ?>>5 / page</option>
+                        <option value="10" <?php echo $per_page == 10 ? 'selected' : ''; ?>>10 / page</option>
+                        <option value="25" <?php echo $per_page == 25 ? 'selected' : ''; ?>>25 / page</option>
+                        <option value="50" <?php echo $per_page == 50 ? 'selected' : ''; ?>>50 / page</option>
+                        <option value="100" <?php echo $per_page == 100 ? 'selected' : ''; ?>>All</option>
+                    </select>
                     <input type="hidden" name="page" value="1">
-                    <button type="submit" class="bg-purple-600 text-white px-3 py-1.5 rounded-lg text-sm">Filter</button>
-                    <?php if($status_filter): ?>
+                    <button type="submit" class="bg-purple-600 text-white px-3 py-1.5 rounded-lg text-sm">Apply</button>
+                    <?php if($status_filter || $per_page != 10): ?>
                         <a href="claim.php" class="bg-gray-200 text-gray-700 px-3 py-1.5 rounded-lg text-sm">Clear</a>
                     <?php endif; ?>
                 </form>
@@ -574,14 +517,6 @@ $pending_total = mysqli_fetch_assoc(mysqli_query($conn, "SELECT SUM(amount) as t
                         <a href="?page=<?php echo $page+1; ?>&per_page=<?php echo $per_page; ?>&status=<?php echo $status_filter; ?>" class="px-3 py-1 bg-white border rounded-lg text-sm hover:bg-gray-100">Next →</a>
                         <a href="?page=<?php echo $total_pages; ?>&per_page=<?php echo $per_page; ?>&status=<?php echo $status_filter; ?>" class="px-3 py-1 bg-white border rounded-lg text-sm hover:bg-gray-100">Last</a>
                     <?php endif; ?>
-                </div>
-                <div class="flex items-center gap-2">
-                    <span class="text-xs text-gray-500">Show:</span>
-                    <select onchange="window.location.href=this.value" class="text-sm border rounded px-2 py-1">
-                        <option value="?per_page=10&page=1&status=<?php echo $status_filter; ?>" <?php echo $per_page == 10 ? 'selected' : ''; ?>>10</option>
-                        <option value="?per_page=25&page=1&status=<?php echo $status_filter; ?>" <?php echo $per_page == 25 ? 'selected' : ''; ?>>25</option>
-                        <option value="?per_page=50&page=1&status=<?php echo $status_filter; ?>" <?php echo $per_page == 50 ? 'selected' : ''; ?>>50</option>
-                    </select>
                 </div>
             </div>
             <?php endif; ?>
@@ -655,10 +590,6 @@ $pending_total = mysqli_fetch_assoc(mysqli_query($conn, "SELECT SUM(amount) as t
 </div>
 
 <script>
-function toggleSidebar() {
-    document.getElementById('sidebar').classList.toggle('-translate-x-full');
-    document.getElementById('overlay').classList.toggle('hidden');
-}
 
 // File upload handling
 const fileInput = document.getElementById('fileInput');

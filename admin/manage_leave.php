@@ -12,7 +12,7 @@ $page = isset($_GET['page']) ? (int)$_GET['page'] : 1;
 $per_page = isset($_GET['per_page']) ? (int)$_GET['per_page'] : 10;
 $search = isset($_GET['search']) ? mysqli_real_escape_string($conn, $_GET['search']) : '';
 $allowed_statuses = ['pending', 'approved', 'rejected'];
-$status_filter = isset($_GET['status']) && in_array($_GET['status'], $allowed_statuses) ? $_GET['status'] : '';
+$status_filter = isset($_GET['status']) && in_array($_GET['status'], $allowed_statuses) ? $_GET['status'] : (isset($_GET['status']) ? '' : 'pending');
 $type_filter = isset($_GET['type']) ? mysqli_real_escape_string($conn, $_GET['type']) : '';
 $date_from = isset($_GET['date_from']) && preg_match('/^\d{4}-\d{2}-\d{2}$/', $_GET['date_from']) ? $_GET['date_from'] : '';
 $date_to = isset($_GET['date_to']) && preg_match('/^\d{4}-\d{2}-\d{2}$/', $_GET['date_to']) ? $_GET['date_to'] : '';
@@ -392,7 +392,7 @@ $leave_type_options = mysqli_query($conn, "SELECT DISTINCT leave_type FROM leave
             </div>
             <div class="flex gap-2">
                 <button type="submit" class="flex-1 bg-blue-600 text-white px-3 py-2 rounded-lg text-sm hover:bg-blue-700">Filter</button>
-                <a href="manage_leave.php" class="flex-1 bg-gray-200 text-gray-700 px-3 py-2 rounded-lg text-sm text-center hover:bg-gray-300">Reset</a>
+                <a href="manage_leave.php?status=pending" class="flex-1 bg-gray-200 text-gray-700 px-3 py-2 rounded-lg text-sm text-center hover:bg-gray-300">Reset</a>
             </div>
         </form>
         <!-- Export CSV — preserves active filters -->

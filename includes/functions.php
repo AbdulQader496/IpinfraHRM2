@@ -24,14 +24,7 @@ function calculateEIS($salary, $is_malaysian = true) {
 }
 
 function calculatePCB($salary, $is_malaysian = true) {
-    if (!$is_malaysian) return 0;
-    $annual = $salary * 12;
-    if ($annual <= 5000)   return 0;
-    if ($annual <= 35000)  return round(($annual * 0.01) / 12, 2);
-    if ($annual <= 50000)  return round(($annual * 0.03) / 12, 2);
-    if ($annual <= 70000)  return round(($annual * 0.08) / 12, 2);
-    if ($annual <= 100000) return round(($annual * 0.13) / 12, 2);
-    return round(($annual * 0.21) / 12, 2);
+    return 0; // PCB not applicable — employees handle own tax filing
 }
 
 function isMalaysian($employee_id) {

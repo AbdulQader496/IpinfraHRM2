@@ -5,7 +5,10 @@ require_once '../includes/db.php';
 require_once '../includes/toast_fn.php';
 
 $user_id = $_SESSION['user_id'];
-$payrolls = mysqli_query($conn, "SELECT * FROM payroll WHERE employee_id = $user_id ORDER BY month_year DESC");
+$payrolls = mysqli_query($conn, "SELECT p.* FROM payroll p
+    INNER JOIN (SELECT MAX(id) as max_id FROM payroll WHERE employee_id = $user_id GROUP BY month_year) m
+    ON p.id = m.max_id
+    ORDER BY p.month_year DESC");
 
 $emp_data = mysqli_fetch_assoc(mysqli_query($conn, "SELECT nationality, employee_type FROM employees WHERE id = $user_id"));
 $is_malaysian_emp = isset($emp_data['nationality']) && $emp_data['nationality'] == 'Malaysian';

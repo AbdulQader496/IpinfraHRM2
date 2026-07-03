@@ -243,6 +243,34 @@ if (isset($_POST['action']) && isset($_POST['id'])) {
 }
 
 // ========================================
+// UNDO (REVERT) LEAVE DECISION
+// ========================================
+if (isset($_POST['undo_leave'])) {
+    if (!validateCsrfToken($_POST['csrf_token'] ?? '')) {
+        showToast('Security error.', 'error');
+        header('Location: manage_leave.php'); exit();
+    }
+    $id = intval($_POST['undo_leave']);
+    $leave = mysqli_fetch_assoc(mysqli_query($conn, "SELECT * FROM leaves WHERE id=$id AND status IN ('approved','rejected')"));
+    if ($leave) {
+        $days = (isset($leave['half_day']) && $leave['half_day'] != 'none') ? 0.5
+              : (strtotime($leave['end_date']) - strtotime($leave['start_date'])) / 86400 + 1;
+        mysqli_begin_transaction($conn);
+        mysqli_query($conn, "UPDATE leaves SET status='pending' WHERE id=$id");
+        if ($leave['status'] == 'approved') {
+            if ($leave['leave_type'] == 'annual') {
+                mysqli_query($conn, "UPDATE employees SET used_annual_leave = GREATEST(0, used_annual_leave - $days) WHERE id = {$leave['employee_id']}");
+            } elseif ($leave['leave_type'] == 'medical') {
+                mysqli_query($conn, "UPDATE employees SET used_medical_leave = GREATEST(0, used_medical_leave - $days) WHERE id = {$leave['employee_id']}");
+            }
+        }
+        mysqli_commit($conn);
+        showToast('Leave reverted to pending.', 'success');
+    }
+    header('Location: manage_leave.php'); exit();
+}
+
+// ========================================
 // ADJUST LEAVE BALANCE
 // ========================================
 if (isset($_POST['adjust_leave'])) {
@@ -527,6 +555,19 @@ $leave_type_options = mysqli_query($conn, "SELECT DISTINCT leave_type FROM leave
                                     <i class="fas <?php echo $row['status'] == 'approved' ? 'fa-check-circle' : ($row['status'] == 'rejected' ? 'fa-times-circle' : 'fa-clock'); ?>"></i>
                                     <?php echo ucfirst($row['status']); ?>
                                 </span>
+                                <?php if ($row['status'] !== 'pending'): ?>
+                                    <div class="mt-2">
+                                        <form id="undo_leave_<?php echo $row['id']; ?>" method="POST" onsubmit="return false;">
+                                            <?php echo csrfField(); ?>
+                                            <input type="hidden" name="undo_leave" value="<?php echo $row['id']; ?>">
+                                            <button type="button"
+                                                onclick="confirmAction('Revert to Pending?','This will reset the leave back to pending so it can be reviewed again. Leave balances will be restored if it was approved.',function(){document.getElementById('undo_leave_<?php echo $row['id']; ?>').submit();})"
+                                                class="inline-flex items-center gap-1.5 text-xs text-gray-500 hover:text-indigo-600 bg-gray-100 hover:bg-indigo-50 border border-gray-200 hover:border-indigo-200 px-2.5 py-1.5 rounded-lg transition font-medium">
+                                                <i class="fas fa-rotate-left text-[10px]"></i> Undo
+                                            </button>
+                                        </form>
+                                    </div>
+                                <?php endif; ?>
                                 <?php if ($row['status'] == 'pending'): ?>
                                     <?php
                                     $modal_days = (isset($row['half_day']) && $row['half_day'] != 'none') ? 0.5

@@ -128,6 +128,19 @@ if (isset($_POST['claim_action']) && validateCsrfToken($_POST['csrf_token'] ?? '
     header("Location: manage_claim.php?page=$page&per_page=$per_page&search=" . urlencode($search) . "&status=$status_filter&type=$type_filter&date_from=$date_from&date_to=$date_to");
     exit();
 }
+// ========================================
+// UNDO (REVERT) CLAIM DECISION
+// ========================================
+if (isset($_POST['undo_claim']) && validateCsrfToken($_POST['csrf_token'] ?? '')) {
+    $id = intval($_POST['undo_claim']);
+    $claim = mysqli_fetch_assoc(mysqli_query($conn, "SELECT id FROM claims WHERE id=$id AND status IN ('approved','rejected')"));
+    if ($claim) {
+        mysqli_query($conn, "UPDATE claims SET status='pending', reviewed_at=NULL WHERE id=$id");
+        showToast('Claim reverted to pending.', 'success');
+    }
+    header("Location: manage_claim.php?page=$page&per_page=$per_page&search=" . urlencode($search) . "&status=$status_filter&type=$type_filter&date_from=$date_from&date_to=$date_to");
+    exit();
+}
 ?>
 <!DOCTYPE html>
 <html lang="en">
@@ -446,6 +459,19 @@ if (isset($_POST['claim_action']) && validateCsrfToken($_POST['csrf_token'] ?? '
                                 <?php echo ucfirst($row['status']); ?>
                             </span>
                             
+                            <?php if ($row['status'] !== 'pending'): ?>
+                                <div class="mt-3">
+                                    <form id="undo_claim_<?php echo $row['id']; ?>" method="POST" onsubmit="return false;">
+                                        <?php echo csrfField(); ?>
+                                        <input type="hidden" name="undo_claim" value="<?php echo $row['id']; ?>">
+                                        <button type="button"
+                                            onclick="confirmAction('Revert to Pending?','This will reset the claim status back to pending so it can be reviewed again.',function(){document.getElementById('undo_claim_<?php echo $row['id']; ?>').submit();})"
+                                            class="inline-flex items-center gap-1.5 text-xs text-gray-500 hover:text-indigo-600 bg-gray-100 hover:bg-indigo-50 border border-gray-200 hover:border-indigo-200 px-2.5 py-1.5 rounded-lg transition font-medium">
+                                            <i class="fas fa-rotate-left text-[10px]"></i> Undo
+                                        </button>
+                                    </form>
+                                </div>
+                            <?php endif; ?>
                             <?php if ($row['status'] == 'pending'): ?>
                                 <div class="flex gap-2 mt-4">
                                     <form method="POST" action="manage_claim.php?page=<?php echo $page; ?>&per_page=<?php echo $per_page; ?>&search=<?php echo urlencode($search); ?>&status=<?php echo $status_filter; ?>&type=<?php echo urlencode($type_filter); ?>&date_from=<?php echo $date_from; ?>&date_to=<?php echo $date_to; ?>" style="display:contents;">

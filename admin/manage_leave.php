@@ -728,10 +728,10 @@ $leave_type_options = mysqli_query($conn, "SELECT DISTINCT leave_type FROM leave
                             </td>
                             <td class="p-3">
                                 <button onclick='openEditTypeModal(<?php echo json_encode($type); ?>)' class="text-blue-600 mr-2">Edit</button>
-                                <form method="POST" style="display:inline" onsubmit="return confirm('Delete this leave type? Employees will no longer be able to apply for it.')">
+                                <form id="del_type_<?php echo $type['id']; ?>" method="POST" style="display:inline" onsubmit="return false;">
                                     <?php echo csrfField(); ?>
                                     <input type="hidden" name="delete_type" value="<?php echo $type['id']; ?>">
-                                    <button type="submit" class="text-red-600 hover:text-red-800 transition">Delete</button>
+                                    <button type="button" onclick="confirmAction('Delete Leave Type?','Employees will no longer be able to apply for this leave type.',function(){document.getElementById('del_type_<?php echo $type['id']; ?>').submit();})" class="text-red-600 hover:text-red-800 transition">Delete</button>
                                 </form>
                             </td>
                         </tr>
@@ -939,10 +939,15 @@ $leave_type_options = mysqli_query($conn, "SELECT DISTINCT leave_type FROM leave
     function leaveSubmitBulk(action) {
         const checked = leaveGetCheckedBoxes();
         if (checked.length === 0) return;
-        const label = action === 'approve' ? 'approve' : 'reject';
-        if (!confirm('Are you sure you want to ' + label + ' ' + checked.length + ' leave application(s)?')) return;
-        document.getElementById('leaveBulkActionInput').value = action;
-        document.getElementById('leaveBulkForm').submit();
+        const label = action === 'approve' ? 'Approve' : 'Reject';
+        confirmAction(
+            label + ' ' + checked.length + ' Leave Application' + (checked.length > 1 ? 's' : '') + '?',
+            'Are you sure you want to <strong>' + label.toLowerCase() + '</strong> ' + checked.length + ' selected leave application' + (checked.length > 1 ? 's' : '') + '? Employees will be notified.',
+            function() {
+                document.getElementById('leaveBulkActionInput').value = action;
+                document.getElementById('leaveBulkForm').submit();
+            }
+        );
     }
 
     function leaveClearSelection() {
@@ -1142,20 +1147,22 @@ $leave_type_options = mysqli_query($conn, "SELECT DISTINCT leave_type FROM leave
 
         <!-- Action Buttons -->
         <div class="px-5 pb-5 flex gap-3">
-            <form method="POST" style="flex:1;display:flex;">
+            <form id="ld_approve_form" method="POST" style="flex:1;display:flex;" onsubmit="return false;">
                 <?php echo csrfField(); ?>
                 <input type="hidden" name="action" value="approve">
                 <input type="hidden" name="id" id="ld_approve_id" value="">
-                <button type="submit" id="ld_approve_btn"
+                <button type="button"
+                   onclick="confirmAction('Approve Leave Request?', 'This will approve the leave and notify the employee. The leave balance will be updated.', function(){ document.getElementById(\'ld_approve_form\').submit(); })"
                    class="flex-1 bg-gradient-to-r from-green-500 to-emerald-600 text-white text-center py-3 rounded-xl font-semibold text-sm shadow hover:shadow-lg hover:from-green-600 hover:to-emerald-700 transition flex items-center justify-center gap-2">
                     <i class="fas fa-check-circle"></i> Approve
                 </button>
             </form>
-            <form method="POST" style="flex:1;display:flex;">
+            <form id="ld_reject_form" method="POST" style="flex:1;display:flex;" onsubmit="return false;">
                 <?php echo csrfField(); ?>
                 <input type="hidden" name="action" value="reject">
                 <input type="hidden" name="id" id="ld_reject_id" value="">
-                <button type="submit" id="ld_reject_btn"
+                <button type="button"
+                   onclick="confirmAction('Reject Leave Request?', 'This will reject the leave request and notify the employee.', function(){ document.getElementById(\'ld_reject_form\').submit(); })"
                    class="flex-1 bg-gradient-to-r from-red-500 to-rose-600 text-white text-center py-3 rounded-xl font-semibold text-sm shadow hover:shadow-lg hover:from-red-600 hover:to-rose-700 transition flex items-center justify-center gap-2">
                     <i class="fas fa-times-circle"></i> Reject
                 </button>

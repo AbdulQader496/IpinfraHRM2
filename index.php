@@ -411,24 +411,80 @@ if (isset($_POST['login'])) {
 
         /* ── Responsive: mobile stacked layout ───────────────────── */
         @media (max-width: 768px) {
-            body {
-                flex-direction: column;
-            }
+            body { flex-direction: column; }
+
+            /* Compact top bar — logo + name side by side */
             .brand-panel {
                 min-height: auto;
-                padding: 2.5rem 1.5rem;
+                padding: 0.9rem 1.25rem;
+                flex-direction: row;
+                justify-content: flex-start;
+                align-items: center;
+                gap: 0.85rem;
             }
-            .brand-tagline { display: none; }
-            .brand-badges  { display: none; }
-            .brand-footer  { position: static; margin-top: 1.25rem; }
+            .brand-panel::before,
+            .brand-panel::after { display: none; }
+            .geo-shape { display: none; }
+
+            .brand-content {
+                display: flex;
+                flex-direction: row;
+                align-items: center;
+                gap: 0.75rem;
+                text-align: left;
+                max-width: none;
+            }
+            .brand-logo-wrap {
+                width: 44px; height: 44px;
+                border-radius: 12px;
+                margin: 0;
+                flex-shrink: 0;
+            }
+            .brand-logo-inner {
+                width: 32px; height: 32px;
+                border-radius: 8px;
+            }
+            .brand-logo-inner span { font-size: 1rem; }
+
+            .brand-name {
+                font-size: 0.95rem;
+                margin-bottom: 0.05rem;
+                line-height: 1.2;
+            }
+            .brand-sub {
+                font-size: 0.6rem;
+                margin-bottom: 0;
+                letter-spacing: 0.06em;
+            }
+
+            /* Hide everything except name + sub on mobile */
+            .brand-divider  { display: none; }
+            .brand-tagline  { display: none; }
+            .brand-badges   { display: none; }
+            .brand-footer   { display: none; }
+
+            /* Form fills remaining space */
             .form-panel {
                 width: 100%;
                 min-width: 0;
-                min-height: auto;
-                padding: 2rem 1.5rem 3.5rem;
+                min-height: 0;
+                flex: 1;
+                padding: 1.75rem 1.25rem 4rem;
                 box-shadow: none;
             }
-            .form-panel-footer { position: fixed; }
+            .form-panel-inner { max-width: 100%; }
+
+            .form-heading    { font-size: 1.3rem; }
+            .form-subheading { margin-bottom: 1.5rem; }
+
+            .form-panel-footer {
+                position: fixed;
+                bottom: 0; left: 0; right: 0;
+                background: #fff;
+                padding: 0.5rem 1rem;
+                font-size: 0.65rem;
+                border-top: 1px solid #f1f5f9;
+            }
         }
 
         @keyframes slideInRight {

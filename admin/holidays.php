@@ -4,6 +4,7 @@ redirectIfNotAdmin();
 require_once '../includes/db.php';
 
 if (isset($_POST['add_holiday'])) {
+    if (!validateCsrfToken($_POST['csrf_token'] ?? '')) { header('Location: holidays.php'); exit; }
     $date = mysqli_real_escape_string($conn, $_POST['holiday_date']);
     $name = mysqli_real_escape_string($conn, $_POST['holiday_name']);
     if (!preg_match('/^\d{4}-\d{2}-\d{2}$/', $date)) {
@@ -15,8 +16,8 @@ if (isset($_POST['add_holiday'])) {
     }
 }
 
-if (isset($_GET['delete'])) {
-    $id = intval($_GET['delete']);
+if (isset($_POST['delete']) && validateCsrfToken($_POST['csrf_token'] ?? '')) {
+    $id = intval($_POST['delete']);
     mysqli_query($conn, "DELETE FROM holidays WHERE id = $id");
     header('Location: holidays.php');
     exit();
@@ -70,6 +71,7 @@ $holidays = mysqli_query($conn, "SELECT * FROM holidays ORDER BY holiday_date DE
                 <i class="fas fa-plus-circle text-green-600"></i> Add New Holiday
             </h2>
             <form method="POST" class="flex flex-col gap-3">
+                <?php echo csrfField(); ?>
                 <input type="date" name="holiday_date" required class="px-4 py-3 border border-gray-200 rounded-xl">
                 <input type="text" name="holiday_name" placeholder="Holiday Name" required class="px-4 py-3 border border-gray-200 rounded-xl">
                 <button type="submit" name="add_holiday" class="bg-green-600 text-white py-3 rounded-xl">Add Holiday</button>
@@ -88,9 +90,11 @@ $holidays = mysqli_query($conn, "SELECT * FROM holidays ORDER BY holiday_date DE
                         <p class="font-medium text-gray-800"><?php echo htmlspecialchars($row['holiday_name']); ?></p>
                         <p class="text-xs text-gray-500"><?php echo date('l, d F Y', strtotime($row['holiday_date'])); ?></p>
                     </div>
-                    <a href="?delete=<?php echo $row['id']; ?>" data-confirm="Delete this holiday from the calendar?" data-confirm-title="Delete Holiday" class="text-red-500">
-                        <i class="fas fa-trash text-lg"></i>
-                    </a>
+                    <form method="post" style="display:inline" onsubmit="return confirm('Delete this holiday?')">
+                        <?php echo csrfField(); ?>
+                        <input type="hidden" name="delete" value="<?php echo intval($row['id']); ?>">
+                        <button type="submit" class="text-red-500"><i class="fas fa-trash text-lg"></i></button>
+                    </form>
                 </div>
                 <?php endwhile; ?>
                 <?php if (mysqli_num_rows($holidays) == 0): ?>

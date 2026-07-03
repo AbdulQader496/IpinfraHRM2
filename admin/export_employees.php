@@ -3,6 +3,12 @@ require_once '../includes/auth.php';
 redirectIfNotAdmin();
 require_once '../includes/db.php';
 
+// CSRF gate — must be a POST with a valid token
+if (!isset($_POST['csrf_token']) || !validateCsrfToken($_POST['csrf_token'])) {
+    header('Location: employees.php');
+    exit;
+}
+
 // Set headers for CSV download
 header('Content-Type: text/csv');
 header('Content-Disposition: attachment; filename="employees_' . date('Y-m-d') . '.csv"');
@@ -62,4 +68,3 @@ while ($row = mysqli_fetch_assoc($export_query)) {
 
 fclose($output);
 exit();
-?>

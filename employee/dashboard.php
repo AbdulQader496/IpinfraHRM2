@@ -1,15 +1,16 @@
-﻿<?php
+<?php
 require_once '../includes/auth.php';
 redirectIfNotLoggedIn();
 require_once '../includes/db.php';
 require_once '../includes/toast_fn.php';
-$user_id = $_SESSION['user_id'];
+$user_id = intval($_SESSION['user_id']);
 
 $today = date('Y-m-d');
 $current_time = date('H:i:s');
 
 // Handle Clock In/Out directly from dashboard
 if (isset($_POST['clock_in'])) {
+    if (!validateCsrfToken($_POST['csrf_token'] ?? '')) { header('Location: dashboard.php'); exit(); }
     $existing = mysqli_fetch_assoc(mysqli_query($conn, "SELECT id FROM attendance WHERE employee_id = $user_id AND date = '$today'"));
     if (!$existing) {
         $status = ($current_time > '10:00:00') ? 'late' : 'present';
@@ -20,6 +21,7 @@ if (isset($_POST['clock_in'])) {
 }
 
 if (isset($_POST['clock_out'])) {
+    if (!validateCsrfToken($_POST['csrf_token'] ?? '')) { header('Location: dashboard.php'); exit(); }
     mysqli_query($conn, "UPDATE attendance SET clock_out = '$current_time' WHERE employee_id = $user_id AND date = '$today'");
     header('Location: dashboard.php');
     exit();
@@ -65,11 +67,11 @@ try {
 } catch (Exception $ex) { }
 
 // Get announcements for employees
-$announcements = mysqli_query($conn, "SELECT * FROM announcements WHERE is_active = 1 AND (target_role = 'all' OR target_role = 'employee') AND (end_date IS NULL OR end_date >= CURDATE()) ORDER BY 
-    CASE announcement_type 
-        WHEN 'urgent' THEN 1 
-        WHEN 'holiday' THEN 2 
-        ELSE 3 
+$announcements = mysqli_query($conn, "SELECT * FROM announcements WHERE is_active = 1 AND (target_role = 'all' OR target_role = 'employee') AND (end_date IS NULL OR end_date >= CURDATE()) ORDER BY
+    CASE announcement_type
+        WHEN 'urgent' THEN 1
+        WHEN 'holiday' THEN 2
+        ELSE 3
     END, created_at DESC LIMIT 5");
 ?>
 <!DOCTYPE html>
@@ -112,7 +114,7 @@ $announcements = mysqli_query($conn, "SELECT * FROM announcements WHERE is_activ
                     <i class="fas fa-bars text-lg"></i>
                 </div>
             </button>
-            
+
             <!-- Logo -->
             <div class="relative">
                 <div class="w-10 h-10 bg-gradient-to-br from-blue-500 via-indigo-500 to-purple-600 rounded-xl flex items-center justify-center shadow-lg shadow-indigo-500/20 animate-pulse">
@@ -120,22 +122,22 @@ $announcements = mysqli_query($conn, "SELECT * FROM announcements WHERE is_activ
                 </div>
                 <div class="absolute -top-1 -right-1 w-3 h-3 bg-green-400 rounded-full border-2 border-slate-900"></div>
             </div>
-            
+
             <!-- Brand -->
             <div class="hidden sm:block">
                 <p class="text-xs text-blue-200 font-medium tracking-wide">IPINFRA NETWORKS</p>
                 <p class="text-sm font-bold tracking-tight">Employee Portal</p>
             </div>
         </div>
-        
+
         <!-- Right side -->
         <div class="flex items-center gap-2">
             <div class="w-8 h-8 rounded-full bg-gradient-to-br from-blue-500 to-indigo-500 flex items-center justify-center shadow-lg">
-                <span class="text-white text-xs font-bold"><?php echo substr($_SESSION['user_name'], 0, 1); ?></span>
+                <span class="text-white text-xs font-bold"><?php echo substr(htmlspecialchars($_SESSION['user_name'] ?? '', ENT_QUOTES, 'UTF-8'), 0, 1); ?></span>
             </div>
         </div>
     </div>
-    
+
     <!-- Subtle bottom border glow -->
     <div class="h-0.5 bg-gradient-to-r from-transparent via-indigo-400 to-transparent"></div>
 </div>
@@ -157,7 +159,7 @@ $announcements = mysqli_query($conn, "SELECT * FROM announcements WHERE is_activ
             <div class="flex justify-between items-end">
                 <div>
                     <p class="text-sm opacity-80">Welcome,</p>
-                    <h1 class="text-2xl font-bold"><?php echo $_SESSION['user_name']; ?></h1>
+                    <h1 class="text-2xl font-bold"><?php echo htmlspecialchars($_SESSION['user_name'] ?? '', ENT_QUOTES, 'UTF-8'); ?></h1>
                     <p class="text-sm opacity-70 mt-1"><?php echo date('l, d F Y'); ?></p>
                 </div>
                 <div class="text-right flex flex-col items-end justify-center">
@@ -203,6 +205,7 @@ $announcements = mysqli_query($conn, "SELECT * FROM announcements WHERE is_activ
                     <h3 class="text-xl font-bold text-gray-800">Not Clocked In Yet</h3>
                     <p class="text-sm text-gray-500 mb-4">Office hours: 9:30 AM - 6:00 PM</p>
                     <form method="POST">
+                        <?php echo csrfField(); ?>
                         <button type="submit" name="clock_in" class="bg-gradient-to-r from-green-500 to-green-600 text-white px-8 py-3 rounded-xl font-bold text-lg shadow-lg hover:shadow-xl transition">
                             <i class="fas fa-sign-in-alt mr-2"></i> Clock In Now
                         </button>
@@ -218,6 +221,7 @@ $announcements = mysqli_query($conn, "SELECT * FROM announcements WHERE is_activ
                         <p class="text-xs text-gray-400 mb-4">On time (before 10:00 AM)</p>
                     <?php endif; ?>
                     <form method="POST">
+                        <?php echo csrfField(); ?>
                         <button type="submit" name="clock_out" class="bg-gradient-to-r from-red-500 to-red-600 text-white px-8 py-3 rounded-xl font-bold text-lg shadow-lg hover:shadow-xl transition">
                             <i class="fas fa-sign-out-alt mr-2"></i> Clock Out
                         </button>
@@ -279,7 +283,7 @@ $announcements = mysqli_query($conn, "SELECT * FROM announcements WHERE is_activ
             </div>
             <div class="divide-y max-h-80 overflow-y-auto">
                 <?php if(mysqli_num_rows($announcements) > 0): ?>
-                    <?php while($ann = mysqli_fetch_assoc($announcements)): 
+                    <?php while($ann = mysqli_fetch_assoc($announcements)):
                         $type_colors = [
                             'general' => 'bg-blue-100 text-blue-700',
                             'urgent' => 'bg-red-100 text-red-700',
@@ -385,7 +389,7 @@ $announcements = mysqli_query($conn, "SELECT * FROM announcements WHERE is_activ
                 <button onclick="showTab('leaves')" id="tabLeavesBtn" class="px-3 py-1 rounded-lg text-sm font-medium bg-blue-600 text-white">Leave Requests</button>
                 <button onclick="showTab('claims')" id="tabClaimsBtn" class="px-3 py-1 rounded-lg text-sm font-medium bg-gray-200 text-gray-700">Claims</button>
             </div>
-            
+
             <!-- Leaves Activity -->
             <div id="leavesTab" class="bg-white rounded-xl shadow-md overflow-hidden">
                 <?php if(mysqli_num_rows($recent_leaves) > 0): ?>
@@ -444,36 +448,16 @@ $announcements = mysqli_query($conn, "SELECT * FROM announcements WHERE is_activ
         </div>
     </div>
 
-    <!-- Mobile Bottom Navigation -->
-    <div class="bottom-nav fixed bottom-0 left-0 right-0 bg-white border-t border-gray-200 md:hidden shadow-lg z-20">
-        <div class="flex justify-around py-2">
-            <a href="dashboard.php" class="flex flex-col items-center py-1 px-3 text-blue-600">
-                <i class="fas fa-home text-xl"></i>
-                <span class="text-xs mt-1">Home</span>
-            </a>
-            <a href="leave.php" class="flex flex-col items-center py-1 px-3 text-gray-500">
-                <i class="fas fa-calendar-alt text-xl"></i>
-                <span class="text-xs mt-1">Leave</span>
-            </a>
-            <a href="claim.php" class="flex flex-col items-center py-1 px-3 text-gray-500">
-                <i class="fas fa-receipt text-xl"></i>
-                <span class="text-xs mt-1">Claim</span>
-            </a>
-            <a href="profile.php" class="flex flex-col items-center py-1 px-3 text-gray-500">
-                <i class="fas fa-user text-xl"></i>
-                <span class="text-xs mt-1">Profile</span>
-            </a>
-        </div>
-    </div>
+    <?php require_once '../includes/employee_bottom_nav.php'; ?>
 
     <script>
-        
+
         function showTab(tab) {
             const leavesTab = document.getElementById('leavesTab');
             const claimsTab = document.getElementById('claimsTab');
             const leavesBtn = document.getElementById('tabLeavesBtn');
             const claimsBtn = document.getElementById('tabClaimsBtn');
-            
+
             if (tab === 'leaves') {
                 leavesTab.classList.remove('hidden');
                 claimsTab.classList.add('hidden');
@@ -486,7 +470,7 @@ $announcements = mysqli_query($conn, "SELECT * FROM announcements WHERE is_activ
                 claimsBtn.className = 'px-3 py-1 rounded-lg text-sm font-medium bg-blue-600 text-white';
             }
         }
-        
+
         function updateClock() {
             const now = new Date();
             let h = now.getHours(), m = now.getMinutes(), s = now.getSeconds();

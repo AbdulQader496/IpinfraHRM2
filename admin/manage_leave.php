@@ -97,6 +97,10 @@ $leaves = mysqli_query($conn, "SELECT l.*, e.name, e.employee_id, e.department
 // LEAVE TYPES MANAGEMENT
 // ========================================
 if (isset($_POST['add_leave_type'])) {
+    if (!validateCsrfToken($_POST['csrf_token'] ?? '')) {
+        showToast('Invalid request.', 'error');
+        header('Location: manage_leave.php'); exit();
+    }
     $leave_name           = mysqli_real_escape_string($conn, $_POST['leave_name']);
     $leave_code           = mysqli_real_escape_string($conn, $_POST['leave_code']);
     $days_per_year        = intval($_POST['days_per_year']);
@@ -112,6 +116,10 @@ if (isset($_POST['add_leave_type'])) {
 }
 
 if (isset($_POST['update_leave_type'])) {
+    if (!validateCsrfToken($_POST['csrf_token'] ?? '')) {
+        showToast('Invalid request.', 'error');
+        header('Location: manage_leave.php'); exit();
+    }
     $id                   = intval($_POST['type_id']);
     $leave_name           = mysqli_real_escape_string($conn, $_POST['leave_name']);
     $leave_code           = mysqli_real_escape_string($conn, $_POST['leave_code']);
@@ -131,8 +139,12 @@ if (isset($_POST['update_leave_type'])) {
     exit();
 }
 
-if (isset($_GET['delete_type'])) {
-    $id = intval($_GET['delete_type']);
+if (isset($_POST['delete_type'])) {
+    if (!validateCsrfToken($_POST['csrf_token'] ?? '')) {
+        showToast('Invalid request.', 'error');
+        header('Location: manage_leave.php'); exit();
+    }
+    $id = intval($_POST['delete_type']);
     mysqli_query($conn, "DELETE FROM leave_types WHERE id=$id");
     header('Location: manage_leave.php');
     exit();
@@ -157,16 +169,18 @@ if (isset($_POST['bulk_leave_action']) && !empty($_POST['ids'])) {
         $days = (isset($br['half_day']) && $br['half_day'] != 'none') ? 0.5
               : (strtotime($br['end_date']) - strtotime($br['start_date'])) / 86400 + 1;
 
+        mysqli_begin_transaction($conn);
         mysqli_query($conn, "UPDATE leaves SET status='$bulk_status' WHERE id={$br['id']}");
-
         if ($bulk_status === 'approved') {
             if ($br['leave_type'] == 'annual') {
                 mysqli_query($conn, "UPDATE employees SET used_annual_leave = used_annual_leave + $days WHERE id = {$br['employee_id']}");
             } elseif ($br['leave_type'] == 'medical') {
                 mysqli_query($conn, "UPDATE employees SET used_medical_leave = used_medical_leave + $days WHERE id = {$br['employee_id']}");
             }
+            mysqli_commit($conn);
             addNotification($br['employee_id'], 'Leave Approved', 'Your ' . $br['leave_type'] . ' leave has been approved.');
         } else {
+            mysqli_commit($conn);
             addNotification($br['employee_id'], 'Leave Rejected', 'Your ' . $br['leave_type'] . ' leave has been rejected.');
         }
         $affected++;
@@ -187,9 +201,13 @@ if (isset($_POST['bulk_leave_action']) && !empty($_POST['ids'])) {
 // ========================================
 // LEAVE REQUESTS HANDLING
 // ========================================
-if (isset($_GET['action']) && isset($_GET['id'])) {
-    $id     = intval($_GET['id']);
-    $action = $_GET['action'];
+if (isset($_POST['action']) && isset($_POST['id'])) {
+    if (!validateCsrfToken($_POST['csrf_token'] ?? '')) {
+        showToast('Invalid request.', 'error');
+        header('Location: manage_leave.php'); exit();
+    }
+    $id     = intval($_POST['id']);
+    $action = $_POST['action'];
     $status = ($action == 'approve') ? 'approved' : 'rejected';
 
     $leave = mysqli_fetch_assoc(mysqli_query($conn, "SELECT * FROM leaves WHERE id=$id AND status='pending'"));
@@ -203,17 +221,19 @@ if (isset($_GET['action']) && isset($_GET['id'])) {
         $days = (isset($leave['half_day']) && $leave['half_day'] != 'none') ? 0.5
               : (strtotime($leave['end_date']) - strtotime($leave['start_date'])) / 86400 + 1;
 
+        mysqli_begin_transaction($conn);
         mysqli_query($conn, "UPDATE leaves SET status='$status' WHERE id=$id");
-
         if ($status == 'approved') {
             if ($leave['leave_type'] == 'annual') {
                 mysqli_query($conn, "UPDATE employees SET used_annual_leave = used_annual_leave + $days WHERE id = {$leave['employee_id']}");
             } elseif ($leave['leave_type'] == 'medical') {
                 mysqli_query($conn, "UPDATE employees SET used_medical_leave = used_medical_leave + $days WHERE id = {$leave['employee_id']}");
             }
+            mysqli_commit($conn);
             addNotification($leave['employee_id'], 'Leave Approved', 'Your ' . $leave['leave_type'] . ' leave has been approved.');
             showToast('Leave application approved successfully.', 'success');
         } else {
+            mysqli_commit($conn);
             addNotification($leave['employee_id'], 'Leave Rejected', 'Your ' . $leave['leave_type'] . ' leave has been rejected.');
             showToast('Leave application rejected.', 'warning');
         }
@@ -226,6 +246,10 @@ if (isset($_GET['action']) && isset($_GET['id'])) {
 // ADJUST LEAVE BALANCE
 // ========================================
 if (isset($_POST['adjust_leave'])) {
+    if (!validateCsrfToken($_POST['csrf_token'] ?? '')) {
+        showToast('Invalid request.', 'error');
+        header('Location: manage_leave.php'); exit();
+    }
     $employee_id   = intval($_POST['employee_id']);
     $adjust_type   = $_POST['adjust_type'];
     $adjust_field  = $_POST['adjust_field'];
@@ -233,11 +257,11 @@ if (isset($_POST['adjust_leave'])) {
     $adjust_amount = floatval($_POST['adjust_amount']);
     $op            = ($action_type == 'add') ? '+' : '-';
 
-    if ($adjust_type == 'annual') {
-        $field = ($adjust_field == 'entitlement') ? 'annual_leave_entitlement' : 'used_annual_leave';
-    } else {
-        $field = ($adjust_field == 'entitlement') ? 'medical_leave_entitlement' : 'used_medical_leave';
-    }
+    $field_map = ['annual_entitlement' => 'annual_leave_entitlement', 'annual_used' => 'used_annual_leave', 'medical_entitlement' => 'medical_leave_entitlement', 'medical_used' => 'used_medical_leave'];
+    $key = ($adjust_type == 'annual' ? 'annual' : 'medical') . '_' . $adjust_field;
+    if (!isset($field_map[$key])) { showToast('Invalid field.', 'error'); header('Location: manage_leave.php'); exit(); }
+    $field = $field_map[$key];
+
     mysqli_query($conn, "UPDATE employees SET $field = $field $op $adjust_amount WHERE id = $employee_id");
     showToast('Leave balance updated.', 'success');
     header('Location: manage_leave.php'); exit();
@@ -246,7 +270,7 @@ if (isset($_POST['adjust_leave'])) {
 // ========================================
 // RESET ALL LEAVE BALANCES (Year Reset)
 // ========================================
-if (isset($_POST['reset_leave_balances'])) {
+if (isset($_POST['reset_leave_balances']) && validateCsrfToken($_POST['csrf_token'] ?? '')) {
     mysqli_query($conn, "UPDATE employees SET used_annual_leave = 0, used_medical_leave = 0 WHERE role = 'employee'");
     showToast('All leave balances reset to 0 for the new year.', 'success');
     header('Location: manage_leave.php'); exit();
@@ -426,6 +450,7 @@ $leave_type_options = mysqli_query($conn, "SELECT DISTINCT leave_type FROM leave
     <div id="requestsTab">
         <!-- Bulk form -->
         <form id="leaveBulkForm" method="POST">
+            <?php echo csrfField(); ?>
             <input type="hidden" name="bulk_leave_action" id="leaveBulkActionInput" value="">
 
         <div class="bg-white rounded-xl shadow-xl overflow-hidden">
@@ -487,15 +512,18 @@ $leave_type_options = mysqli_query($conn, "SELECT DISTINCT leave_type FROM leave
                                     <p class="text-xs text-gray-500 mt-2">Reason: <?php echo substr(htmlspecialchars($row['reason']), 0, 100); ?></p>
                                 <?php endif; ?>
                                 <?php if($row['attachment']): ?>
-                                    <a href="../uploads/<?php echo $row['attachment']; ?>" target="_blank" class="text-xs text-blue-600 mt-1 inline-block">
+                                    <a href="../uploads/<?php echo htmlspecialchars($row['attachment']); ?>" target="_blank" class="text-xs text-blue-600 mt-1 inline-block">
                                         <i class="fas fa-paperclip"></i> View Attachment
                                     </a>
                                 <?php endif; ?>
                             </div>
                             <div class="text-right">
-                                <span class="inline-flex items-center gap-1 px-2 py-1 rounded-full text-xs font-semibold <?php 
-                                    echo $row['status'] == 'approved' ? 'bg-green-100 text-green-700' : 
-                                        ($row['status'] == 'rejected' ? 'bg-red-100 text-red-700' : 'bg-yellow-100 text-yellow-700'); ?>">
+                                <?php
+                                $leave_status_class = ($row['status'] == 'approved') ? 'bg-green-100 text-green-700'
+                                    : (($row['status'] == 'rejected') ? 'bg-red-100 text-red-700'
+                                    : 'bg-amber-100 text-amber-800');
+                                ?>
+                                <span class="inline-flex items-center gap-1 px-2 py-1 rounded-full text-xs font-semibold <?php echo $leave_status_class; ?>">
                                     <i class="fas <?php echo $row['status'] == 'approved' ? 'fa-check-circle' : ($row['status'] == 'rejected' ? 'fa-times-circle' : 'fa-clock'); ?>"></i>
                                     <?php echo ucfirst($row['status']); ?>
                                 </span>
@@ -596,6 +624,7 @@ $leave_type_options = mysqli_query($conn, "SELECT DISTINCT leave_type FROM leave
             <div class="bg-gray-50 px-4 py-3 border-b flex items-center justify-between flex-wrap gap-2">
                 <p class="font-semibold text-gray-800"><i class="fas fa-chart-line mr-2 text-blue-600"></i> Employee Leave Balances</p>
                 <form method="POST" class="inline">
+                    <?php echo csrfField(); ?>
                     <button type="submit" name="reset_leave_balances"
                         data-confirm="Reset ALL employee used leave to 0? Do this at the start of a new year only." data-confirm-title="Year-End Leave Reset"
                         class="flex items-center gap-2 bg-orange-100 hover:bg-orange-200 text-orange-700 px-4 py-1.5 rounded-lg text-sm font-semibold transition">
@@ -699,7 +728,11 @@ $leave_type_options = mysqli_query($conn, "SELECT DISTINCT leave_type FROM leave
                             </td>
                             <td class="p-3">
                                 <button onclick='openEditTypeModal(<?php echo json_encode($type); ?>)' class="text-blue-600 mr-2">Edit</button>
-                                <a href="?delete_type=<?php echo $type['id']; ?>" data-confirm="Delete this leave type? Employees will no longer be able to apply for it." data-confirm-title="Delete Leave Type" class="text-red-600">Delete</a>
+                                <form method="POST" style="display:inline" onsubmit="return confirm('Delete this leave type? Employees will no longer be able to apply for it.')">
+                                    <?php echo csrfField(); ?>
+                                    <input type="hidden" name="delete_type" value="<?php echo $type['id']; ?>">
+                                    <button type="submit" class="text-red-600 hover:text-red-800 transition">Delete</button>
+                                </form>
                             </td>
                         </tr>
                         <?php endwhile; ?>
@@ -725,6 +758,7 @@ $leave_type_options = mysqli_query($conn, "SELECT DISTINCT leave_type FROM leave
             </div>
         </div>
         <form method="POST" class="p-5 space-y-4">
+            <?php echo csrfField(); ?>
             <input type="hidden" name="employee_id" id="adj_employee_id">
             <div class="bg-blue-50 p-3 rounded-xl">
                 <p class="font-medium text-gray-800" id="adj_employee_name"></p>
@@ -783,6 +817,7 @@ $leave_type_options = mysqli_query($conn, "SELECT DISTINCT leave_type FROM leave
             <button onclick="document.getElementById('addTypeModal').classList.add('hidden')" class="text-gray-500">&times;</button>
         </div>
         <form method="POST" class="p-4 space-y-3">
+            <?php echo csrfField(); ?>
             <div class="grid grid-cols-2 gap-3">
                 <input type="text" name="leave_name" placeholder="Leave Name" required class="px-4 py-3 border rounded-xl">
                 <input type="text" name="leave_code" placeholder="Code (e.g., AL)" required class="px-4 py-3 border rounded-xl">
@@ -813,6 +848,7 @@ $leave_type_options = mysqli_query($conn, "SELECT DISTINCT leave_type FROM leave
             <button onclick="document.getElementById('editTypeModal').classList.add('hidden')" class="text-gray-500">&times;</button>
         </div>
         <form method="POST" class="p-4 space-y-3">
+            <?php echo csrfField(); ?>
             <input type="hidden" name="type_id" id="edit_type_id">
             <div class="grid grid-cols-2 gap-3">
                 <input type="text" name="leave_name" id="edit_leave_name" placeholder="Leave Name" required class="px-4 py-3 border rounded-xl">
@@ -1016,8 +1052,8 @@ $leave_type_options = mysqli_query($conn, "SELECT DISTINCT leave_type FROM leave
         }
 
         // Action buttons
-        document.getElementById('ld_approve_btn').href = '?action=approve&id=' + data.id;
-        document.getElementById('ld_reject_btn').href  = '?action=reject&id='  + data.id;
+        document.getElementById('ld_approve_id').value = data.id;
+        document.getElementById('ld_reject_id').value  = data.id;
 
         // Show modal with animation
         var modal = document.getElementById('leaveDetailsModal');
@@ -1106,14 +1142,24 @@ $leave_type_options = mysqli_query($conn, "SELECT DISTINCT leave_type FROM leave
 
         <!-- Action Buttons -->
         <div class="px-5 pb-5 flex gap-3">
-            <a id="ld_approve_btn" href="#"
-               class="flex-1 bg-gradient-to-r from-green-500 to-emerald-600 text-white text-center py-3 rounded-xl font-semibold text-sm shadow hover:shadow-lg hover:from-green-600 hover:to-emerald-700 transition flex items-center justify-center gap-2">
-                <i class="fas fa-check-circle"></i> Approve
-            </a>
-            <a id="ld_reject_btn" href="#"
-               class="flex-1 bg-gradient-to-r from-red-500 to-rose-600 text-white text-center py-3 rounded-xl font-semibold text-sm shadow hover:shadow-lg hover:from-red-600 hover:to-rose-700 transition flex items-center justify-center gap-2">
-                <i class="fas fa-times-circle"></i> Reject
-            </a>
+            <form method="POST" style="flex:1;display:flex;">
+                <?php echo csrfField(); ?>
+                <input type="hidden" name="action" value="approve">
+                <input type="hidden" name="id" id="ld_approve_id" value="">
+                <button type="submit" id="ld_approve_btn"
+                   class="flex-1 bg-gradient-to-r from-green-500 to-emerald-600 text-white text-center py-3 rounded-xl font-semibold text-sm shadow hover:shadow-lg hover:from-green-600 hover:to-emerald-700 transition flex items-center justify-center gap-2">
+                    <i class="fas fa-check-circle"></i> Approve
+                </button>
+            </form>
+            <form method="POST" style="flex:1;display:flex;">
+                <?php echo csrfField(); ?>
+                <input type="hidden" name="action" value="reject">
+                <input type="hidden" name="id" id="ld_reject_id" value="">
+                <button type="submit" id="ld_reject_btn"
+                   class="flex-1 bg-gradient-to-r from-red-500 to-rose-600 text-white text-center py-3 rounded-xl font-semibold text-sm shadow hover:shadow-lg hover:from-red-600 hover:to-rose-700 transition flex items-center justify-center gap-2">
+                    <i class="fas fa-times-circle"></i> Reject
+                </button>
+            </form>
         </div>
     </div>
 </div>

@@ -4,7 +4,7 @@ redirectIfNotLoggedIn();
 require_once '../includes/db.php';
 require_once '../includes/functions.php';
 
-$user_id = $_SESSION['user_id'];
+$user_id = intval($_SESSION['user_id']);
 $selected_month = isset($_GET['month']) ? $_GET['month'] : date('Y-m');
 if (!preg_match('/^\d{4}-\d{2}$/', $selected_month)) {
     $selected_month = date('Y-m');
@@ -105,7 +105,7 @@ while ($leave = mysqli_fetch_assoc($leaves_query)) {
 }
 
 // Calculations
-$total_unpaid_days = $unpaid_leave_days + $absent_days + ($half_days * 0.5);
+$total_unpaid_days = $unpaid_leave_days + $absent_days;
 $basic_salary   = $employee['basic_salary'];
 $per_day_salary = $basic_salary / $working_days_in_month;
 $unpaid_deduction = $per_day_salary * $total_unpaid_days;
@@ -177,8 +177,8 @@ $net_salary = $basic_salary - $unpaid_deduction + $approved_claims_amount - $tot
             <div class="p-6 border-b">
                 <div class="flex justify-between items-start flex-wrap gap-4">
                     <div>
-                        <h2 class="text-xl font-bold text-gray-800"><?php echo $employee['name']; ?></h2>
-                        <p class="text-gray-500 text-sm"><?php echo $employee['employee_id']; ?> • <?php echo $employee['department']; ?> • <?php echo $employee['position']; ?></p>
+                        <h2 class="text-xl font-bold text-gray-800"><?php echo htmlspecialchars($employee['name']); ?></h2>
+                        <p class="text-gray-500 text-sm"><?php echo htmlspecialchars($employee['employee_id']); ?> • <?php echo htmlspecialchars($employee['department']); ?> • <?php echo htmlspecialchars($employee['position']); ?></p>
                     </div>
                     <div class="text-right">
                         <p class="text-sm text-gray-500">Pay Period</p>
@@ -235,7 +235,7 @@ $net_salary = $basic_salary - $unpaid_deduction + $approved_claims_amount - $tot
                 </div>
                 <div class="mt-3 p-3 bg-gray-100 rounded-lg">
                     <p class="text-sm"><strong>Total Unpaid Days:</strong> <?php echo number_format($total_unpaid_days, 2); ?> days</p>
-                    <p class="text-xs text-gray-500">(Unpaid Leaves: <?php echo $unpaid_leave_days; ?> + Absent: <?php echo $absent_days; ?> + Half Days: <?php echo $half_days * 0.5; ?>)</p>
+                    <p class="text-xs text-gray-500">(Unpaid Leaves: <?php echo $unpaid_leave_days; ?> + Absent: <?php echo $absent_days; ?>)</p>
                 </div>
             </div>
 

@@ -28,21 +28,27 @@ if (isset($_POST['add_employee'])) {
     // Handle profile picture upload
     $profile_pic = '';
     if (isset($_FILES['profile_pic']) && $_FILES['profile_pic']['error'] == 0) {
-        $target_dir = "../uploads/profiles/";
-        if (!is_dir($target_dir)) {
-            mkdir($target_dir, 0777, true);
+        $allowed_ext  = ['jpg','jpeg','png','gif','webp'];
+        $allowed_mime = ['image/jpeg','image/png','image/gif','image/webp'];
+        $pic_ext  = strtolower(pathinfo($_FILES['profile_pic']['name'], PATHINFO_EXTENSION));
+        $finfo    = finfo_open(FILEINFO_MIME_TYPE);
+        $real_mime = finfo_file($finfo, $_FILES['profile_pic']['tmp_name']);
+        finfo_close($finfo);
+        if (in_array($pic_ext, $allowed_ext) && in_array($real_mime, $allowed_mime) && $_FILES['profile_pic']['size'] <= 2097152) {
+            $target_dir = "../uploads/profiles/";
+            if (!is_dir($target_dir)) mkdir($target_dir, 0777, true);
+            $profile_pic = bin2hex(random_bytes(8)) . '.' . $pic_ext;
+            move_uploaded_file($_FILES['profile_pic']['tmp_name'], $target_dir . $profile_pic);
         }
-        $file_extension = pathinfo($_FILES['profile_pic']['name'], PATHINFO_EXTENSION);
-        $profile_pic = time() . '_' . $employee_id . '.' . $file_extension;
-        move_uploaded_file($_FILES['profile_pic']['tmp_name'], $target_dir . $profile_pic);
     }
-    
+
     $is_subject = ($nationality == 'Malaysian') ? 1 : 0;
-    
+
     // UPDATED INSERT QUERY with new fields
     $query = "INSERT INTO employees (employee_id, name, ic_number, passport_no, nationality, email, password, department, position, basic_salary, join_date, profile_pic, is_subject_to_statutory, phone, address, bank_name, bank_account, employee_type)
               VALUES ('$employee_id', '$name', '$ic_number', '$passport_no', '$nationality', '$email', '$password', '$department', '$position', '$basic_salary', '$join_date', '$profile_pic', '$is_subject', '$phone', '$address', '$bank_name', '$bank_account', '$employee_type')";
     mysqli_query($conn, $query);
+    showToast('Employee added successfully!');
     header('Location: employees.php');
     exit();
 }
@@ -70,13 +76,18 @@ if (isset($_POST['update_employee'])) {
     // Handle profile picture upload
     $profile_pic = mysqli_real_escape_string($conn, $_POST['existing_profile_pic']);
     if (isset($_FILES['profile_pic']) && $_FILES['profile_pic']['error'] == 0) {
-        $target_dir = "../uploads/profiles/";
-        if (!is_dir($target_dir)) {
-            mkdir($target_dir, 0777, true);
+        $allowed_ext  = ['jpg','jpeg','png','gif','webp'];
+        $allowed_mime = ['image/jpeg','image/png','image/gif','image/webp'];
+        $pic_ext  = strtolower(pathinfo($_FILES['profile_pic']['name'], PATHINFO_EXTENSION));
+        $finfo    = finfo_open(FILEINFO_MIME_TYPE);
+        $real_mime = finfo_file($finfo, $_FILES['profile_pic']['tmp_name']);
+        finfo_close($finfo);
+        if (in_array($pic_ext, $allowed_ext) && in_array($real_mime, $allowed_mime) && $_FILES['profile_pic']['size'] <= 2097152) {
+            $target_dir = "../uploads/profiles/";
+            if (!is_dir($target_dir)) mkdir($target_dir, 0777, true);
+            $profile_pic = bin2hex(random_bytes(8)) . '.' . $pic_ext;
+            move_uploaded_file($_FILES['profile_pic']['tmp_name'], $target_dir . $profile_pic);
         }
-        $file_extension = pathinfo($_FILES['profile_pic']['name'], PATHINFO_EXTENSION);
-        $profile_pic = time() . '_' . $_POST['employee_id'] . '.' . $file_extension;
-        move_uploaded_file($_FILES['profile_pic']['tmp_name'], $target_dir . $profile_pic);
     }
     
     $is_subject = ($nationality == 'Malaysian') ? 1 : 0;
@@ -102,13 +113,14 @@ if (isset($_POST['update_employee'])) {
                 employee_type='$employee_type'
               WHERE id=$id";
     mysqli_query($conn, $query);
+    showToast('Employee updated successfully!');
     header('Location: employees.php');
     exit();
 }
 
 // Handle Delete
-if (isset($_GET['delete'])) {
-    $id = intval($_GET['delete']);
+if (isset($_POST['emp_delete']) && validateCsrfToken($_POST['csrf_token'] ?? '')) {
+    $id = intval($_POST['emp_delete']);
     // Remove related records first to avoid FK constraint failures
     $related = ['attendance', 'leaves', 'payroll', 'claims', 'notifications', 'employee_of_month', 'asset_requests'];
     foreach ($related as $tbl) {
@@ -117,19 +129,27 @@ if (isset($_GET['delete'])) {
         } catch (Exception $e) { /* table may not exist in this environment */ }
     }
     mysqli_query($conn, "DELETE FROM employees WHERE id = $id");
+    showToast('Employee deleted.', 'info');
     header('Location: employees.php');
     exit();
 }
 
-// Handle Add Department (only runs if departments table exists)
+// Handle Add Department — supports both AJAX (X-Requested-With) and plain POST
 if (isset($_POST['add_department'])) {
-    $dept_name = trim(mysqli_real_escape_string($conn, $_POST['dept_name']));
+    $is_ajax = strtolower($_SERVER['HTTP_X_REQUESTED_WITH'] ?? '') === 'xmlhttprequest';
+    if (!validateCsrfToken($_POST['csrf_token'] ?? '')) {
+        if ($is_ajax) { http_response_code(403); header('Content-Type: application/json'); echo json_encode(['error' => 'Security error']); exit; }
+        header('Location: employees.php'); exit();
+    }
+    $dept_name = trim(mysqli_real_escape_string($conn, $_POST['dept_name'] ?? ''));
     if ($dept_name !== '') {
         mysqli_query($conn, "CREATE TABLE IF NOT EXISTS departments (id INT PRIMARY KEY AUTO_INCREMENT, name VARCHAR(100) NOT NULL UNIQUE, created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP)");
         try {
             mysqli_query($conn, "INSERT IGNORE INTO departments (name) VALUES ('$dept_name')");
-        } catch (Exception $e) { /* ignore */ }
+        } catch (Exception $e) { /* ignore duplicate */ }
     }
+    if ($is_ajax) { header('Content-Type: application/json'); echo json_encode(['success' => true, 'name' => $dept_name]); exit; }
+    showToast('Department added.');
     header('Location: employees.php');
     exit();
 }
@@ -387,10 +407,13 @@ $employees = mysqli_query($conn, "SELECT * FROM employees WHERE role='employee' 
                     <i class="fas fa-plus"></i>
                     <span class="font-semibold">Add New Employee</span>
                 </button>
-                <button onclick="exportEmployees()" class="bg-white text-gray-700 px-4 py-3 rounded-xl shadow-md hover:shadow-lg transition border border-gray-200">
-                    <i class="fas fa-download"></i>
-                    <span class="hidden sm:inline ml-1">Export</span>
-                </button>
+                <form method="POST" action="export_employees.php" style="display:inline">
+                    <?php echo csrfField(); ?>
+                    <button type="submit" class="bg-white text-gray-700 px-4 py-3 rounded-xl shadow-md hover:shadow-lg transition border border-gray-200">
+                        <i class="fas fa-download"></i>
+                        <span class="hidden sm:inline ml-1">Export</span>
+                    </button>
+                </form>
             </div>
             
             <!-- View Toggle -->
@@ -456,18 +479,21 @@ $employees = mysqli_query($conn, "SELECT * FROM employees WHERE role='employee' 
                         <span class="text-green-600 font-bold">RM <?php echo number_format($row['basic_salary'], 2); ?></span>
                     </div>
                     <div class="flex gap-2 pt-3">
-                        <button onclick='openViewModal(<?php echo json_encode($row); ?>)' 
+                        <button onclick='openViewModal(<?php echo json_encode($row, JSON_HEX_APOS | JSON_HEX_QUOT | JSON_HEX_TAG); ?>)' 
                                 class="flex-1 bg-purple-50 text-purple-600 py-2 rounded-lg hover:bg-purple-100 transition text-sm font-medium">
                             <i class="fas fa-eye mr-1"></i> View
                         </button>
-                        <button onclick='openEditModal(<?php echo json_encode($row); ?>)' 
+                        <button onclick='openEditModal(<?php echo json_encode($row, JSON_HEX_APOS | JSON_HEX_QUOT | JSON_HEX_TAG); ?>)' 
                                 class="flex-1 bg-blue-50 text-blue-600 py-2 rounded-lg hover:bg-blue-100 transition text-sm font-medium">
                             <i class="fas fa-edit mr-1"></i> Edit
                         </button>
-                        <a href="?delete=<?php echo $row['id']; ?>" data-confirm="This will permanently delete the employee and all related records." data-confirm-title="Delete Employee" 
-                           class="flex-1 bg-red-50 text-red-600 py-2 rounded-lg hover:bg-red-100 transition text-sm font-medium text-center">
-                            <i class="fas fa-trash mr-1"></i> Del
-                        </a>
+                        <form method="POST" style="flex:1;" data-confirm="This will permanently delete the employee and all related records." data-confirm-title="Delete Employee">
+                            <?php echo csrfField(); ?>
+                            <input type="hidden" name="emp_delete" value="<?php echo $row['id']; ?>">
+                            <button type="submit" class="w-full bg-red-50 text-red-600 py-2 rounded-lg hover:bg-red-100 transition text-sm font-medium text-center">
+                                <i class="fas fa-trash mr-1"></i> Del
+                            </button>
+                        </form>
                     </div>
                 </div>
             </div>
@@ -529,15 +555,19 @@ $employees = mysqli_query($conn, "SELECT * FROM employees WHERE role='employee' 
                             <td class="px-4 py-3 text-right font-bold text-green-600">RM <?php echo number_format($row['basic_salary'], 2); ?></td>
                             <td class="px-4 py-3 text-center">
                                 <div class="flex gap-2 justify-center">
-                                    <button onclick='openViewModal(<?php echo json_encode($row); ?>)' class="text-purple-600 hover:text-purple-800 transition" title="View Profile">
+                                    <button onclick='openViewModal(<?php echo json_encode($row, JSON_HEX_APOS | JSON_HEX_QUOT | JSON_HEX_TAG); ?>)' class="text-purple-600 hover:text-purple-800 transition" title="View Profile">
                                         <i class="fas fa-eye"></i>
                                     </button>
-                                    <button onclick='openEditModal(<?php echo json_encode($row); ?>)' class="text-blue-600 hover:text-blue-800 transition" title="Edit">
+                                    <button onclick='openEditModal(<?php echo json_encode($row, JSON_HEX_APOS | JSON_HEX_QUOT | JSON_HEX_TAG); ?>)' class="text-blue-600 hover:text-blue-800 transition" title="Edit">
                                         <i class="fas fa-edit"></i>
                                     </button>
-                                    <a href="?delete=<?php echo $row['id']; ?>" data-confirm="This will permanently delete the employee and all related records." data-confirm-title="Delete Employee" class="text-red-500 hover:text-red-700 transition" title="Delete">
-                                        <i class="fas fa-trash"></i>
-                                    </a>
+                                    <form method="POST" style="display:inline;" data-confirm="This will permanently delete the employee and all related records." data-confirm-title="Delete Employee">
+                                        <?php echo csrfField(); ?>
+                                        <input type="hidden" name="emp_delete" value="<?php echo $row['id']; ?>">
+                                        <button type="submit" class="text-red-500 hover:text-red-700 transition" title="Delete">
+                                            <i class="fas fa-trash"></i>
+                                        </button>
+                                    </form>
                                 </div>
                             </td>
                         </tr>
@@ -782,10 +812,10 @@ $employees = mysqli_query($conn, "SELECT * FROM employees WHERE role='employee' 
                             <?php endforeach; ?>
                         </select>
                         <div id="add_new_dept_box" class="hidden mt-2">
-                            <form method="POST" class="flex gap-2">
-                                <input type="text" name="dept_name" placeholder="New department name" class="flex-1 px-3 py-2 border border-blue-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
-                                <button type="submit" name="add_department" class="bg-blue-600 text-white px-3 py-2 rounded-lg text-sm hover:bg-blue-700 transition">Add</button>
-                            </form>
+                            <div class="flex gap-2">
+                                <input type="text" id="add_dept_input" placeholder="New department name" class="flex-1 px-3 py-2 border border-blue-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
+                                <button type="button" onclick="addDeptAjax('add')" class="bg-blue-600 text-white px-3 py-2 rounded-lg text-sm hover:bg-blue-700 transition">Add</button>
+                            </div>
                         </div>
                     </div>
                     <input type="text" name="position" placeholder="Position" required class="w-full px-4 py-3 border border-gray-200 rounded-xl">
@@ -905,10 +935,10 @@ $employees = mysqli_query($conn, "SELECT * FROM employees WHERE role='employee' 
                             <?php endforeach; ?>
                         </select>
                         <div id="edit_new_dept_box" class="hidden mt-2">
-                            <form method="POST" class="flex gap-2">
-                                <input type="text" name="dept_name" placeholder="New department name" class="flex-1 px-3 py-2 border border-blue-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
-                                <button type="submit" name="add_department" class="bg-blue-600 text-white px-3 py-2 rounded-lg text-sm hover:bg-blue-700 transition">Add</button>
-                            </form>
+                            <div class="flex gap-2">
+                                <input type="text" id="edit_dept_input" placeholder="New department name" class="flex-1 px-3 py-2 border border-blue-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
+                                <button type="button" onclick="addDeptAjax('edit')" class="bg-blue-600 text-white px-3 py-2 rounded-lg text-sm hover:bg-blue-700 transition">Add</button>
+                            </div>
                         </div>
                     </div>
                     <input type="text" name="position" id="edit_position" placeholder="Position" required class="w-full px-4 py-3 border border-gray-200 rounded-xl">
@@ -1076,21 +1106,21 @@ $employees = mysqli_query($conn, "SELECT * FROM employees WHERE role='employee' 
             }
             
             // Set personal info
-            document.getElementById('view_name').innerHTML = employee.name || '-';
-            document.getElementById('view_employee_id').innerHTML = employee.employee_id || '-';
-            document.getElementById('view_fullname').innerHTML = employee.name || '-';
-            document.getElementById('view_empid').innerHTML = employee.employee_id || '-';
-            document.getElementById('view_nationality').innerHTML = employee.nationality || '-';
-            document.getElementById('view_ic').innerHTML = employee.ic_number || '-';
-            document.getElementById('view_passport').innerHTML = employee.passport_no || '-';
-            document.getElementById('view_email').innerHTML = employee.email || '-';
-            document.getElementById('view_phone').innerHTML = employee.phone || '-';
-            document.getElementById('view_join_date').innerHTML = employee.join_date ? new Date(employee.join_date).toLocaleDateString('en-MY') : '-';
-            
+            document.getElementById('view_name').textContent = employee.name || '-';
+            document.getElementById('view_employee_id').textContent = employee.employee_id || '-';
+            document.getElementById('view_fullname').textContent = employee.name || '-';
+            document.getElementById('view_empid').textContent = employee.employee_id || '-';
+            document.getElementById('view_nationality').textContent = employee.nationality || '-';
+            document.getElementById('view_ic').textContent = employee.ic_number || '-';
+            document.getElementById('view_passport').textContent = employee.passport_no || '-';
+            document.getElementById('view_email').textContent = employee.email || '-';
+            document.getElementById('view_phone').textContent = employee.phone || '-';
+            document.getElementById('view_join_date').textContent = employee.join_date ? new Date(employee.join_date).toLocaleDateString('en-MY') : '-';
+
             // Set employment info
-            document.getElementById('view_department').innerHTML = employee.department || '-';
-            document.getElementById('view_position').innerHTML = employee.position || '-';
-            document.getElementById('view_salary').innerHTML = `RM ${parseFloat(employee.basic_salary).toLocaleString('en-MY', {minimumFractionDigits: 2})}`;
+            document.getElementById('view_department').textContent = employee.department || '-';
+            document.getElementById('view_position').textContent = employee.position || '-';
+            document.getElementById('view_salary').textContent = `RM ${parseFloat(employee.basic_salary).toLocaleString('en-MY', {minimumFractionDigits: 2})}`;
             
             const statusHtml = employee.status === 'active' 
                 ? '<span class="text-green-600"><i class="fas fa-check-circle mr-1"></i> Active</span>' 
@@ -1098,14 +1128,14 @@ $employees = mysqli_query($conn, "SELECT * FROM employees WHERE role='employee' 
             document.getElementById('view_status').innerHTML = statusHtml;
             
             // Set leave entitlement
-            document.getElementById('view_annual_leave').innerHTML = employee.annual_leave_entitlement || 0;
-            document.getElementById('view_medical_leave').innerHTML = employee.medical_leave_entitlement || 0;
-            document.getElementById('view_used_annual').innerHTML = employee.used_annual_leave || 0;
-            document.getElementById('view_used_medical').innerHTML = employee.used_medical_leave || 0;
-            
+            document.getElementById('view_annual_leave').textContent = employee.annual_leave_entitlement || 0;
+            document.getElementById('view_medical_leave').textContent = employee.medical_leave_entitlement || 0;
+            document.getElementById('view_used_annual').textContent = employee.used_annual_leave || 0;
+            document.getElementById('view_used_medical').textContent = employee.used_medical_leave || 0;
+
             // Set bank info
-            document.getElementById('view_bank_name').innerHTML = employee.bank_name || '-';
-            document.getElementById('view_bank_account').innerHTML = employee.bank_account || '-';
+            document.getElementById('view_bank_name').textContent = employee.bank_name || '-';
+            document.getElementById('view_bank_account').textContent = employee.bank_account || '-';
             
             document.getElementById('viewModal').classList.remove('hidden');
         }
@@ -1156,8 +1186,30 @@ $employees = mysqli_query($conn, "SELECT * FROM employees WHERE role='employee' 
             document.getElementById('editModal').classList.remove('hidden');
         }
         
-        function exportEmployees() {
-            window.location.href = 'export_employees.php';
+        async function addDeptAjax(context) {
+            const inputEl = document.getElementById(context + '_dept_input');
+            const selectEl = document.getElementById(context + '_department');
+            const deptName = inputEl.value.trim();
+            if (!deptName) { inputEl.focus(); return; }
+            const fd = new FormData();
+            fd.append('add_department', '1');
+            fd.append('dept_name', deptName);
+            fd.append('csrf_token', '<?php echo htmlspecialchars(generateCsrfToken(), ENT_QUOTES); ?>');
+            try {
+                const res = await fetch('employees.php', { method: 'POST', headers: { 'X-Requested-With': 'XMLHttpRequest' }, body: fd });
+                const data = await res.json();
+                if (data.success && data.name) {
+                    const opt = new Option(data.name, data.name, true, true);
+                    selectEl.appendChild(opt);
+                    selectEl.value = data.name;
+                    inputEl.value = '';
+                    document.getElementById(context + '_new_dept_box').classList.add('hidden');
+                } else {
+                    alert(data.error || 'Failed to add department.');
+                }
+            } catch (e) {
+                alert('Failed to add department. Please try again.');
+            }
         }
 
         function toggleNewDept(prefix) {

@@ -10,6 +10,7 @@ require_once '../includes/toast_fn.php';
 
 // Add Announcement
 if (isset($_POST['add_announcement'])) {
+    if (!validateCsrfToken($_POST['csrf_token'] ?? '')) { showToast('Security error.', 'error'); header('Location: dashboard.php'); exit; }
     $title             = mysqli_real_escape_string($conn, $_POST['title']);
     $message           = mysqli_real_escape_string($conn, $_POST['message']);
     $announcement_type = mysqli_real_escape_string($conn, $_POST['announcement_type']);
@@ -20,12 +21,14 @@ if (isset($_POST['add_announcement'])) {
 
     mysqli_query($conn, "INSERT INTO announcements (title, message, announcement_type, target_role, start_date, end_date, created_by)
         VALUES ('$title', '$message', '$announcement_type', '$target_role', '$start_date', $end_date, $created_by)");
+    showToast('Announcement published successfully!');
     header('Location: dashboard.php');
     exit();
 }
 
 // Edit Announcement
 if (isset($_POST['edit_announcement'])) {
+    if (!validateCsrfToken($_POST['csrf_token'] ?? '')) { showToast('Security error.', 'error'); header('Location: dashboard.php'); exit; }
     $id                = intval($_POST['announcement_id']);
     $title             = mysqli_real_escape_string($conn, $_POST['title']);
     $message           = mysqli_real_escape_string($conn, $_POST['message']);
@@ -39,14 +42,19 @@ if (isset($_POST['edit_announcement'])) {
         title='$title', message='$message', announcement_type='$announcement_type',
         target_role='$target_role', start_date='$start_date', end_date=$end_date,
         is_active=$is_active WHERE id=$id");
+    showToast('Announcement updated.');
     header('Location: dashboard.php');
     exit();
 }
 
 // Delete Announcement
-if (isset($_GET['delete_announcement'])) {
-    $id = intval($_GET['delete_announcement']);
+if (isset($_POST['delete_announcement'])) {
+    if (!validateCsrfToken($_POST['csrf_token'] ?? '')) {
+        die('Invalid CSRF token.');
+    }
+    $id = intval($_POST['delete_announcement']);
     mysqli_query($conn, "DELETE FROM announcements WHERE id=$id");
+    showToast('Announcement deleted.', 'info');
     header('Location: dashboard.php');
     exit();
 }
@@ -138,14 +146,21 @@ $recent_employees = mysqli_query($conn, "SELECT * FROM employees WHERE role='emp
     FOREIGN KEY (employee_id) REFERENCES employees(id) ON DELETE CASCADE,
     FOREIGN KEY (selected_by) REFERENCES employees(id) ON DELETE SET NULL
 )");
+try { mysqli_query($conn, "ALTER TABLE employee_of_month ADD COLUMN note VARCHAR(255)"); } catch (Exception $e) {}
+try { mysqli_query($conn, "ALTER TABLE employee_of_month ADD COLUMN selected_by INT NULL"); } catch (Exception $e) {}
 
-if (isset($_GET['clear_eom'])) {
+if (isset($_POST['clear_eom'])) {
+    if (!validateCsrfToken($_POST['csrf_token'] ?? '')) {
+        die('Invalid CSRF token.');
+    }
     mysqli_query($conn, "DELETE FROM employee_of_month WHERE month_year = DATE_FORMAT(CURDATE(),'%Y-%m')");
+    showToast('Employee of the Month removed.', 'info');
     header('Location: dashboard.php');
     exit();
 }
 
 if (isset($_POST['set_eom'])) {
+    if (!validateCsrfToken($_POST['csrf_token'] ?? '')) { showToast('Security error.', 'error'); header('Location: dashboard.php'); exit; }
     $eom_emp = intval($_POST['eom_employee_id']);
     $eom_note = mysqli_real_escape_string($conn, $_POST['eom_note'] ?? '');
     $eom_month = date('Y-m');
@@ -153,6 +168,7 @@ if (isset($_POST['set_eom'])) {
     mysqli_query($conn, "INSERT INTO employee_of_month (employee_id, month_year, note, selected_by)
         VALUES ($eom_emp, '$eom_month', '$eom_note', $sel_by)
         ON DUPLICATE KEY UPDATE employee_id=$eom_emp, note='$eom_note', selected_by=$sel_by, created_at=NOW()");
+    showToast('Employee of the Month set successfully!');
     header('Location: dashboard.php');
     exit();
 }
@@ -254,6 +270,7 @@ $announcements = mysqli_query($conn, "SELECT * FROM announcements WHERE is_activ
 </head>
 <body class="bg-gradient-to-br from-slate-50 via-blue-50 to-indigo-50 min-h-screen pb-20">
 <?php require_once '../includes/global_ui.php'; ?>
+<?php require_once '../includes/toast.php'; ?>
 
 <!-- Premium Mobile Header -->
 <div class="bg-[#060912] text-white sticky top-0 z-40 shadow-2xl">
@@ -338,7 +355,7 @@ $announcements = mysqli_query($conn, "SELECT * FROM announcements WHERE is_activ
                     <div>
                         <p class="text-xs font-semibold tracking-widest uppercase text-blue-200">IPINFRA Networks Sdn Bhd</p>
                         <p class="text-xs text-blue-200 mb-1">HR Management System</p>
-                        <h1 class="text-3xl font-bold"><?php echo $_SESSION['user_name']; ?></h1>
+                        <h1 class="text-3xl font-bold"><?php echo htmlspecialchars($_SESSION['user_name'] ?? '', ENT_QUOTES, 'UTF-8'); ?></h1>
                         <p class="text-sm text-blue-200 mt-1">
                             <i class="fas fa-calendar-alt mr-2"></i><?php echo date('l, d F Y'); ?>
                         </p>
@@ -511,9 +528,13 @@ $announcements = mysqli_query($conn, "SELECT * FROM announcements WHERE is_activ
                                 <button onclick='openEditAnnouncementModal(<?php echo json_encode($ann); ?>)' class="text-blue-500 hover:text-blue-700 p-1">
                                     <i class="fas fa-edit"></i>
                                 </button>
-                                <a href="?delete_announcement=<?php echo $ann['id']; ?>" data-confirm="Delete this announcement? This cannot be undone." data-confirm-title="Delete Announcement" class="text-red-500 hover:text-red-700 p-1">
-                                    <i class="fas fa-trash"></i>
-                                </a>
+                                <form method="POST" style="display:inline;" data-confirm="Delete this announcement? This cannot be undone." data-confirm-title="Delete Announcement">
+                                    <?php echo csrfField(); ?>
+                                    <input type="hidden" name="delete_announcement" value="<?php echo intval($ann['id']); ?>">
+                                    <button type="submit" class="text-red-500 hover:text-red-700 p-1">
+                                        <i class="fas fa-trash"></i>
+                                    </button>
+                                </form>
                             </div>
                         </div>
                     </div>
@@ -547,9 +568,13 @@ $announcements = mysqli_query($conn, "SELECT * FROM announcements WHERE is_activ
                     </div>
                     <div class="flex gap-2">
                         <?php if($eom_current): ?>
-                        <a href="?clear_eom=1" data-confirm="Remove this month's Employee of the Month?" data-confirm-title="Remove Selection" class="bg-white/20 hover:bg-red-500/60 text-white text-xs font-semibold px-3 py-1.5 rounded-lg transition backdrop-blur-sm">
-                            <i class="fas fa-trash mr-1"></i> Remove
-                        </a>
+                        <form method="POST" style="display:inline;" data-confirm="Remove this month's Employee of the Month?" data-confirm-title="Remove Selection">
+                            <?php echo csrfField(); ?>
+                            <input type="hidden" name="clear_eom" value="1">
+                            <button type="submit" class="bg-white/20 hover:bg-red-500/60 text-white text-xs font-semibold px-3 py-1.5 rounded-lg transition backdrop-blur-sm">
+                                <i class="fas fa-trash mr-1"></i> Remove
+                            </button>
+                        </form>
                         <?php endif; ?>
                         <button onclick="document.getElementById('eomModal').classList.remove('hidden')" class="bg-white/20 hover:bg-white/30 text-white text-xs font-semibold px-3 py-1.5 rounded-lg transition backdrop-blur-sm">
                             <i class="fas fa-edit mr-1"></i> <?php echo $eom_current ? 'Change' : 'Select'; ?>
@@ -758,6 +783,7 @@ $announcements = mysqli_query($conn, "SELECT * FROM announcements WHERE is_activ
             </div>
         </div>
         <form method="POST" class="p-5 space-y-4">
+            <?php echo csrfField(); ?>
             <div>
                 <label class="block text-sm font-semibold text-gray-700 mb-2">Employee</label>
                 <select name="eom_employee_id" required class="w-full px-4 py-2.5 border-2 border-gray-200 rounded-xl focus:border-purple-500 focus:outline-none">
@@ -799,6 +825,7 @@ $announcements = mysqli_query($conn, "SELECT * FROM announcements WHERE is_activ
             </div>
         </div>
         <form method="POST" class="p-5 space-y-4">
+            <?php echo csrfField(); ?>
             <div>
                 <label class="block text-gray-700 text-sm font-semibold mb-2">Announcement Type</label>
                 <select name="announcement_type" required class="w-full px-4 py-2.5 border-2 border-gray-200 rounded-xl focus:border-purple-500">
@@ -858,6 +885,7 @@ $announcements = mysqli_query($conn, "SELECT * FROM announcements WHERE is_activ
             </div>
         </div>
         <form method="POST" class="p-5 space-y-4" id="editAnnouncementForm">
+            <?php echo csrfField(); ?>
             <input type="hidden" name="announcement_id" id="edit_announcement_id">
             <div>
                 <label class="block text-gray-700 text-sm font-semibold mb-2">Announcement Type</label>

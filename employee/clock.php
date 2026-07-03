@@ -4,7 +4,7 @@ redirectIfNotLoggedIn();
 require_once '../includes/db.php';
 require_once '../includes/toast_fn.php';
 
-$user_id = $_SESSION['user_id'];
+$user_id = intval($_SESSION['user_id']);
 $today = date('Y-m-d');
 $current_time = date('H:i:s');
 $current_day = date('l');
@@ -26,6 +26,13 @@ $auto_clockout_time = '21:00:00'; // 9:00 PM
 $query = "SELECT * FROM attendance WHERE employee_id = $user_id AND date = '$today'";
 $result = mysqli_query($conn, $query);
 $attendance = mysqli_fetch_assoc($result);
+
+// ========================================
+// CSRF VALIDATION
+// ========================================
+if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+    if (!validateCsrfToken($_POST['csrf_token'] ?? '')) { header('Location: clock.php'); exit(); }
+}
 
 // ========================================
 // CLOCK IN (Only if not weekend)
@@ -120,7 +127,7 @@ $week_attendance = mysqli_query($conn, "SELECT * FROM attendance WHERE employee_
 <?php require_once '../includes/confirm_modal.php'; ?>
 
 <!-- Premium Header -->
-<div class="bg-gradient-to-r from-slate-900 via-indigo-900 to-slate-900 text-white sticky top-0 z-40 shadow-2xl backdrop-blur-sm">
+<div class="bg-[#060912] text-white sticky top-0 z-40 shadow-2xl">
     <div class="flex items-center justify-between px-5 py-4">
         <div class="flex items-center gap-3">
             <button onclick="toggleSidebar()" class="relative group">
@@ -152,9 +159,6 @@ $week_attendance = mysqli_query($conn, "SELECT * FROM attendance WHERE employee_
 </div>
 
 <?php require_once '../includes/employee_sidebar.php'; ?>
-
-<?php require_once '../includes/global_ui.php'; ?>
-<?php require_once '../includes/toast.php'; ?>
 
 <!-- MAIN CONTENT -->
 <div class="px-4 py-6 max-w-2xl mx-auto">
@@ -229,6 +233,7 @@ $week_attendance = mysqli_query($conn, "SELECT * FROM attendance WHERE employee_
             </div>
             <?php if (!$is_weekend): ?>
                 <form method="POST">
+                    <?php echo csrfField(); ?>
                     <button type="submit" name="clock_in" class="w-full bg-gradient-to-r from-green-500 to-green-600 text-white py-4 rounded-xl font-bold text-lg shadow-lg hover:shadow-xl transition">
                         <i class="fas fa-sign-in-alt mr-2"></i> Clock In
                     </button>
@@ -255,6 +260,7 @@ $week_attendance = mysqli_query($conn, "SELECT * FROM attendance WHERE employee_
             </div>
             <?php if (!$is_weekend): ?>
                 <form method="POST">
+                    <?php echo csrfField(); ?>
                     <button type="submit" name="clock_out" class="w-full bg-gradient-to-r from-red-500 to-red-600 text-white py-4 rounded-xl font-bold text-lg shadow-lg hover:shadow-xl transition">
                         <i class="fas fa-sign-out-alt mr-2"></i> Clock Out
                     </button>
@@ -383,7 +389,7 @@ $week_attendance = mysqli_query($conn, "SELECT * FROM attendance WHERE employee_
                                 <p class="text-xs text-gray-400">
                                     In: <?php echo date('h:i A', strtotime($att['clock_in'])); ?>
                                 </p>
-                                <?php if(date('H', strtotime($att['date'])) >= 21): ?>
+                                <?php if($att['date'] === date('Y-m-d') && date('H') >= 21): ?>
                                     <p class="text-xs text-red-500">Not clocked out (past 9PM)</p>
                                 <?php endif; ?>
                             <?php elseif($is_att_weekend): ?>
@@ -448,27 +454,7 @@ $week_attendance = mysqli_query($conn, "SELECT * FROM attendance WHERE employee_
     </div>
 </div>
 
-<!-- Mobile Bottom Navigation -->
-<div class="bottom-nav fixed bottom-0 left-0 right-0 bg-white border-t border-gray-200 md:hidden shadow-lg z-20">
-    <div class="flex justify-around py-2">
-        <a href="dashboard.php" class="flex flex-col items-center py-1 px-3 text-gray-500">
-            <i class="fas fa-home text-xl"></i>
-            <span class="text-xs mt-1">Home</span>
-        </a>
-        <a href="clock.php" class="flex flex-col items-center py-1 px-3 text-blue-600">
-            <i class="fas fa-clock text-xl"></i>
-            <span class="text-xs mt-1">Clock</span>
-        </a>
-        <a href="leave.php" class="flex flex-col items-center py-1 px-3 text-gray-500">
-            <i class="fas fa-calendar-alt text-xl"></i>
-            <span class="text-xs mt-1">Leave</span>
-        </a>
-        <a href="profile.php" class="flex flex-col items-center py-1 px-3 text-gray-500">
-            <i class="fas fa-user text-xl"></i>
-            <span class="text-xs mt-1">Profile</span>
-        </a>
-    </div>
-</div>
+<?php require_once '../includes/employee_bottom_nav.php'; ?>
 
 <script>
     // ── Premium live clock ──────────────────────────────────

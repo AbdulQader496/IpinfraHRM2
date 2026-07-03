@@ -1,12 +1,25 @@
 <?php
+require_once '../includes/auth.php';
+redirectIfNotLoggedIn();
 require_once '../includes/db.php';
-$id = (int)$_GET['id'];
-$query = "SELECT p.*, e.name, e.employee_id, e.ic_number, e.department, e.position, e.nationality, e.employee_type
+$id        = (int)($_GET['id'] ?? 0);
+$viewer_id = intval($_SESSION['user_id']);
+$is_admin  = ($_SESSION['role'] ?? '') === 'admin';
+
+// Build query — add explicit alias so p.employee_id (FK) is not overwritten by e.employee_id
+$query = "SELECT p.*, p.employee_id AS payroll_emp_fk,
+                 e.name, e.employee_id, e.ic_number, e.department, e.position, e.nationality, e.employee_type
           FROM payroll p
           JOIN employees e ON p.employee_id = e.id
           WHERE p.id = $id";
 $result = mysqli_query($conn, $query);
 $row = mysqli_fetch_assoc($result);
+
+// Employees can only view their own payslip
+if (!$row || (!$is_admin && (int)$row['payroll_emp_fk'] !== $viewer_id)) {
+    header('Location: payslip.php');
+    exit;
+}
 
 $show_statutory = ($row['nationality'] == 'Malaysian') &&
                   (!isset($row['employee_type']) || $row['employee_type'] != 'intern');

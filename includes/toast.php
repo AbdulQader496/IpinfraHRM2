@@ -305,9 +305,9 @@ if (!empty($_SESSION['toast'])) {
     $t = $_SESSION['toast'];
     unset($_SESSION['toast']);
 
-    // Sanitise for JS string literal output
-    $jsMessage = addslashes($t['message']);
-    $jsType    = addslashes($t['type']);
-    echo "<script>document.addEventListener('DOMContentLoaded', function(){ window.showToast('{$jsMessage}', '{$jsType}'); });</script>\n";
+    // Sanitise for JS output
+    $jsMessage = json_encode($t['message']);
+    $jsType    = json_encode($t['type']);
+    echo "<script>document.addEventListener('DOMContentLoaded', function(){ window.showToast({$jsMessage}, {$jsType}); });</script>\n";
 }
 ?>

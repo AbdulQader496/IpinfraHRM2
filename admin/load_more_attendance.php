@@ -4,7 +4,7 @@ redirectIfNotAdmin();
 require_once '../includes/db.php';
 
 $page = isset($_GET['page']) ? (int)$_GET['page'] : 1;
-$date = isset($_GET['date']) ? $_GET['date'] : date('Y-m-d');
+$date = isset($_GET['date']) ? mysqli_real_escape_string($conn, $_GET['date']) : date('Y-m-d');
 $search = isset($_GET['search']) ? mysqli_real_escape_string($conn, $_GET['search']) : '';
 $per_page = 10;
 $offset = ($page - 1) * $per_page;
@@ -43,10 +43,10 @@ while ($row = mysqli_fetch_assoc($attendance)):
             <div class="w-9 h-9 rounded-full bg-gradient-to-br from-blue-100 to-blue-200 flex items-center justify-center">
                 <i class="fas fa-user text-blue-600 text-sm"></i>
             </div>
-            <span class="font-medium text-slate-800 text-sm"><?php echo $row['name']; ?></span>
+            <span class="font-medium text-slate-800 text-sm"><?php echo htmlspecialchars($row['name']); ?></span>
         </div>
     </td>
-    <td class="p-4 text-sm text-slate-500 font-mono"><?php echo $row['employee_id']; ?></td>
+    <td class="p-4 text-sm text-slate-500 font-mono"><?php echo htmlspecialchars($row['employee_id']); ?></td>
     
     <?php if(!$is_weekend): ?>
     <td class="p-4">
@@ -105,7 +105,7 @@ while ($row = mysqli_fetch_assoc($attendance)):
                 <i class="fas fa-check-circle mr-1"></i> Completed
             </span>
         <?php elseif ($row['clock_in'] && !$row['clock_out']): ?>
-            <span class="status-badge px-3 py-1 rounded-full text-xs font-medium bg-yellow-100 text-yellow-700">
+            <span class="status-badge px-3 py-1 rounded-full text-xs font-medium bg-amber-100 text-amber-800">
                 <i class="fas fa-hourglass-half mr-1"></i> In Progress
             </span>
         <?php elseif ($row['status'] == 'late'): ?>
@@ -120,7 +120,7 @@ while ($row = mysqli_fetch_assoc($attendance)):
     </td>
     
     <td class="p-4 text-center">
-        <button onclick="openEditModalFromLoad(<?php echo htmlspecialchars(json_encode($row)); ?>, '<?php echo $date; ?>')" 
+        <button onclick="openEditModalFromLoad(<?php echo json_encode($row, JSON_HEX_TAG | JSON_HEX_APOS | JSON_HEX_QUOT | JSON_HEX_AMP); ?>, '<?php echo $date; ?>')"
                 class="text-blue-600 hover:text-blue-800 transition" title="Edit Attendance">
             <i class="fas fa-edit"></i>
         </button>

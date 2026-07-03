@@ -2,41 +2,56 @@
 require_once '../includes/auth.php';
 redirectIfNotLoggedIn();
 require_once '../includes/db.php';
+require_once '../includes/toast_fn.php';
 
 $user_id = $_SESSION['user_id'];
 
 // ── Upload ──────────────────────────────────────────────────────────────────
 if (isset($_POST['upload_photo'])) {
+    if (!validateCsrfToken($_POST['csrf_token'] ?? '')) {
+        showToast('Security error.', 'error'); header('Location: gallery.php'); exit();
+    }
     $caption       = mysqli_real_escape_string($conn, $_POST['caption']);
     $activity_date = mysqli_real_escape_string($conn, $_POST['activity_date']);
     $target_dir    = "../uploads/gallery/";
     if (!is_dir($target_dir)) mkdir($target_dir, 0777, true);
     $allowed_ext  = ['jpg','jpeg','png','gif','webp'];
     $allowed_mime = ['image/jpeg','image/png','image/gif','image/webp'];
-    $file_ext  = strtolower(pathinfo($_FILES['photo']['name'], PATHINFO_EXTENSION));
-    $mime      = mime_content_type($_FILES['photo']['tmp_name']);
-    if (!in_array($file_ext, $allowed_ext) || !in_array($mime, $allowed_mime)) {
-        header('Location: gallery.php?err=' . urlencode('Invalid file type. Only JPG, PNG, GIF, WEBP allowed.')); exit();
+    if ($_FILES['photo']['error'] !== UPLOAD_ERR_OK) {
+        showToast('Upload error. Please try again.', 'error'); header('Location: gallery.php'); exit();
     }
-    $image_name = time() . '_' . $user_id . '.' . $file_ext;
+    if ($_FILES['photo']['size'] > 5 * 1024 * 1024) {
+        showToast('Image must be under 5 MB.', 'error'); header('Location: gallery.php'); exit();
+    }
+    $file_ext  = strtolower(pathinfo($_FILES['photo']['name'], PATHINFO_EXTENSION));
+    $finfo     = finfo_open(FILEINFO_MIME_TYPE);
+    $mime      = finfo_file($finfo, $_FILES['photo']['tmp_name']);
+    finfo_close($finfo);
+    if (!in_array($file_ext, $allowed_ext) || !in_array($mime, $allowed_mime)) {
+        showToast('Invalid file type. Only JPG, PNG, GIF, WEBP allowed.', 'error'); header('Location: gallery.php'); exit();
+    }
+    $image_name = bin2hex(random_bytes(8)) . '.' . $file_ext;
     if (move_uploaded_file($_FILES['photo']['tmp_name'], $target_dir . $image_name)) {
         mysqli_query($conn, "INSERT INTO gallery (employee_id, image_path, caption, activity_date)
             VALUES ($user_id, '$image_name', '$caption', '$activity_date')");
-        header('Location: gallery.php?msg=' . urlencode('Photo uploaded successfully!')); exit();
+        showToast('Photo uploaded successfully!'); header('Location: gallery.php'); exit();
     } else {
-        header('Location: gallery.php?err=' . urlencode('Upload failed. Please try again.')); exit();
+        showToast('Upload failed. Please try again.', 'error'); header('Location: gallery.php'); exit();
     }
 }
 
 // ── Edit ────────────────────────────────────────────────────────────────────
 if (isset($_POST['edit_photo'])) {
+    if (!validateCsrfToken($_POST['csrf_token'] ?? '')) {
+        showToast('Security error.', 'error'); header('Location: gallery.php'); exit();
+    }
     $id            = intval($_POST['photo_id']);
     $caption       = mysqli_real_escape_string($conn, $_POST['caption']);
     $activity_date = mysqli_real_escape_string($conn, $_POST['activity_date']);
 
     // Ownership check
     $own = mysqli_fetch_assoc(mysqli_query($conn, "SELECT * FROM gallery WHERE id=$id AND employee_id=$user_id"));
-    if (!$own) { header('Location: gallery.php?err=' . urlencode('Photo not found.')); exit(); }
+    if (!$own) { showToast('Photo not found.', 'error'); header('Location: gallery.php'); exit(); }
 
     // Optional new image
     if (!empty($_FILES['photo']['name']) && $_FILES['photo']['error'] == 0) {
@@ -45,7 +60,7 @@ if (isset($_POST['edit_photo'])) {
         $file_ext  = strtolower(pathinfo($_FILES['photo']['name'], PATHINFO_EXTENSION));
         $mime      = mime_content_type($_FILES['photo']['tmp_name']);
         if (!in_array($file_ext, $allowed_ext) || !in_array($mime, $allowed_mime)) {
-            header('Location: gallery.php?err=' . urlencode('Invalid file type.')); exit();
+            showToast('Invalid file type.', 'error'); header('Location: gallery.php'); exit();
         }
         $new_image = time() . '_' . $user_id . '.' . $file_ext;
         $target_dir = "../uploads/gallery/";
@@ -56,30 +71,30 @@ if (isset($_POST['edit_photo'])) {
             if (file_exists($old)) unlink($old);
             mysqli_query($conn, "UPDATE gallery SET image_path='$new_image', caption='$caption', activity_date='$activity_date' WHERE id=$id");
         } else {
-            header('Location: gallery.php?err=' . urlencode('Image replacement failed.')); exit();
+            showToast('Image replacement failed.', 'error'); header('Location: gallery.php'); exit();
         }
     } else {
         mysqli_query($conn, "UPDATE gallery SET caption='$caption', activity_date='$activity_date' WHERE id=$id");
     }
-    header('Location: gallery.php?msg=' . urlencode('Photo updated successfully!')); exit();
+    showToast('Photo updated successfully!'); header('Location: gallery.php'); exit();
 }
 
 // ── Delete ──────────────────────────────────────────────────────────────────
-if (isset($_GET['delete'])) {
-    $id  = intval($_GET['delete']);
+if (isset($_POST['delete'])) {
+    if (!validateCsrfToken($_POST['csrf_token'] ?? '')) {
+        showToast('Security error.', 'error'); header('Location: gallery.php'); exit();
+    }
+    $id  = intval($_POST['delete']);
     $own = mysqli_fetch_assoc(mysqli_query($conn, "SELECT * FROM gallery WHERE id=$id AND employee_id=$user_id"));
     if ($own) {
         $file = "../uploads/gallery/" . $own['image_path'];
         if (file_exists($file)) unlink($file);
         mysqli_query($conn, "DELETE FROM gallery WHERE id=$id");
-        header('Location: gallery.php?msg=' . urlencode('Photo deleted successfully!')); exit();
+        showToast('Photo deleted.', 'info'); header('Location: gallery.php'); exit();
     }
-    header('Location: gallery.php?err=' . urlencode('Photo not found or permission denied.')); exit();
+    showToast('Photo not found or permission denied.', 'error'); header('Location: gallery.php'); exit();
 }
 
-// ── Flash messages ──────────────────────────────────────────────────────────
-$success = htmlspecialchars($_GET['msg'] ?? '');
-$error   = htmlspecialchars($_GET['err'] ?? '');
 
 // ── Gallery data ────────────────────────────────────────────────────────────
 $gallery = mysqli_query($conn, "SELECT g.*, e.name, e.employee_id AS emp_code
@@ -103,7 +118,8 @@ while ($r = mysqli_fetch_assoc($gallery)) $photos[] = $r;
 .gallery-card:hover { transform: translateY(-3px); box-shadow: 0 12px 32px -8px rgba(0,0,0,.18); }
 </style>
 </head>
-<body class="bg-slate-50 min-h-screen pb-24">
+<body class="bg-gradient-to-br from-gray-50 to-gray-100 min-h-screen pb-24">
+<?php require_once '../includes/toast.php'; ?>
 
 <?php require_once '../includes/global_ui.php'; ?>
 <?php require_once '../includes/confirm_modal.php'; ?>
@@ -138,19 +154,6 @@ while ($r = mysqli_fetch_assoc($gallery)) $photos[] = $r;
         </button>
     </div>
 
-    <!-- Flash messages -->
-    <?php if ($success): ?>
-    <div class="bg-green-50 border border-green-200 rounded-2xl px-5 py-3 flex items-center gap-3">
-        <i class="fas fa-check-circle text-green-500"></i>
-        <p class="text-sm font-medium text-green-700"><?php echo $success; ?></p>
-    </div>
-    <?php endif; ?>
-    <?php if ($error): ?>
-    <div class="bg-red-50 border border-red-200 rounded-2xl px-5 py-3 flex items-center gap-3">
-        <i class="fas fa-exclamation-circle text-red-400"></i>
-        <p class="text-sm font-medium text-red-600"><?php echo $error; ?></p>
-    </div>
-    <?php endif; ?>
 
     <!-- Gallery grid -->
     <?php if (empty($photos)): ?>
@@ -221,11 +224,13 @@ while ($r = mysqli_fetch_assoc($gallery)) $photos[] = $r;
                             class="flex-1 flex items-center justify-center gap-1.5 py-1.5 rounded-lg bg-indigo-50 hover:bg-indigo-100 text-indigo-600 text-xs font-semibold transition">
                         <i class="fas fa-pencil-alt text-[11px]"></i>Edit
                     </button>
-                    <a href="?delete=<?php echo $photo['id']; ?>"
-                       data-confirm="Delete this photo permanently? This cannot be undone." data-confirm-title="Delete Photo"
-                       class="flex-1 flex items-center justify-center gap-1.5 py-1.5 rounded-lg bg-red-50 hover:bg-red-100 text-red-500 text-xs font-semibold transition">
-                        <i class="fas fa-trash text-[11px]"></i>Delete
-                    </a>
+                    <form method="POST" style="display:inline;flex:1;" onsubmit="return confirm('Delete this photo permanently? This cannot be undone.')">
+                        <?php echo csrfField(); ?>
+                        <input type="hidden" name="delete" value="<?php echo $photo['id']; ?>">
+                        <button type="submit" class="w-full flex items-center justify-center gap-1.5 py-1.5 rounded-lg bg-red-50 hover:bg-red-100 text-red-500 text-xs font-semibold transition">
+                            <i class="fas fa-trash text-[11px]"></i>Delete
+                        </button>
+                    </form>
                 </div>
                 <?php endif; ?>
             </div>
@@ -248,6 +253,7 @@ while ($r = mysqli_fetch_assoc($gallery)) $photos[] = $r;
                 <button onclick="closeUploadModal()" class="w-8 h-8 flex items-center justify-center rounded-lg hover:bg-gray-100 text-gray-400 transition"><i class="fas fa-times"></i></button>
             </div>
             <form method="POST" enctype="multipart/form-data" class="space-y-4">
+                <?php echo csrfField(); ?>
                 <div>
                     <label class="block text-xs font-semibold text-gray-600 uppercase tracking-wide mb-1.5">Photo <span class="text-red-400">*</span></label>
                     <label class="flex flex-col items-center gap-2 border-2 border-dashed border-gray-200 hover:border-indigo-400 rounded-xl p-5 cursor-pointer transition group" for="uploadPhotoFile">
@@ -291,6 +297,7 @@ while ($r = mysqli_fetch_assoc($gallery)) $photos[] = $r;
                 <button onclick="closeEditModal()" class="w-8 h-8 flex items-center justify-center rounded-lg hover:bg-gray-100 text-gray-400 transition"><i class="fas fa-times"></i></button>
             </div>
             <form method="POST" enctype="multipart/form-data" class="space-y-4" id="editForm">
+                <?php echo csrfField(); ?>
                 <input type="hidden" name="photo_id" id="editPhotoId">
                 <div>
                     <label class="block text-xs font-semibold text-gray-600 uppercase tracking-wide mb-1.5">Replace Photo (optional)</label>

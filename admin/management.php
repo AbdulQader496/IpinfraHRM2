@@ -7,9 +7,9 @@ require_once '../includes/functions.php';
 // ========================================
 // DELETE RESIGNATION RECORD
 // ========================================
-if (isset($_GET['delete_resignation'])) {
-    $id = intval($_GET['delete_resignation']);
-    
+if (isset($_POST['delete_resignation']) && validateCsrfToken($_POST['csrf_token'] ?? '')) {
+    $id = intval($_POST['delete_resignation']);
+
     $res = mysqli_fetch_assoc(mysqli_query($conn, "SELECT employee_id, status FROM employee_resignations WHERE id=$id"));
     if ($res) {
         if ($res['status'] == 'approved') {
@@ -24,9 +24,9 @@ if (isset($_GET['delete_resignation'])) {
 // ========================================
 // DELETE TERMINATION RECORD
 // ========================================
-if (isset($_GET['delete_termination'])) {
-    $id = intval($_GET['delete_termination']);
-    
+if (isset($_POST['delete_termination']) && validateCsrfToken($_POST['csrf_token'] ?? '')) {
+    $id = intval($_POST['delete_termination']);
+
     $term = mysqli_fetch_assoc(mysqli_query($conn, "SELECT employee_id FROM terminations WHERE id=$id"));
     if ($term) {
         mysqli_query($conn, "UPDATE employees SET is_terminated = 0, termination_id = NULL, employment_status = 'active', status = 'active' WHERE id={$term['employee_id']}");
@@ -39,8 +39,8 @@ if (isset($_GET['delete_termination'])) {
 // ========================================
 // DELETE DOCUMENT
 // ========================================
-if (isset($_GET['delete_doc'])) {
-    $id = intval($_GET['delete_doc']);
+if (isset($_POST['delete_doc']) && validateCsrfToken($_POST['csrf_token'] ?? '')) {
+    $id = intval($_POST['delete_doc']);
     $doc = mysqli_fetch_assoc(mysqli_query($conn, "SELECT file_path FROM employee_documents WHERE id=$id"));
     // Check both possible directories
     if ($doc) {
@@ -63,13 +63,13 @@ if (isset($_GET['delete_doc'])) {
 // ========================================
 // HANDLE RESIGNATION APPROVAL/REJECTION
 // ========================================
-if (isset($_GET['approve_resignation'])) {
-    $id = intval($_GET['approve_resignation']);
-    $status = in_array($_GET['status'] ?? '', ['approved', 'rejected']) ? $_GET['status'] : 'rejected';
+if (isset($_POST['approve_resignation']) && validateCsrfToken($_POST['csrf_token'] ?? '')) {
+    $id = intval($_POST['approve_resignation']);
+    $status = in_array($_POST['status'] ?? '', ['approved', 'rejected']) ? $_POST['status'] : 'rejected';
     $admin_notes = isset($_POST['admin_notes']) ? mysqli_real_escape_string($conn, $_POST['admin_notes']) : '';
-    
+
     mysqli_query($conn, "UPDATE employee_resignations SET status='$status', admin_notes='$admin_notes', approved_by={$_SESSION['user_id']}, approved_date=CURDATE() WHERE id=$id");
-    
+
     $res = mysqli_fetch_assoc(mysqli_query($conn, "SELECT employee_id FROM employee_resignations WHERE id=$id"));
     if ($status == 'approved') {
         mysqli_query($conn, "UPDATE employees SET employment_status='resigned' WHERE id={$res['employee_id']}");
@@ -93,14 +93,14 @@ if (isset($_POST['send_termination'])) {
     $notice_period_days = intval($_POST['notice_period_days'] ?? 0);
     $severance_pay = floatval($_POST['severance_pay'] ?? 0);
     $notes = mysqli_real_escape_string($conn, $_POST['notes']);
-    
-    $query = "INSERT INTO terminations (employee_id, termination_date, effective_date, reason, termination_type, notice_period_days, severance_pay, notes, status, created_by) 
+
+    $query = "INSERT INTO terminations (employee_id, termination_date, effective_date, reason, termination_type, notice_period_days, severance_pay, notes, status, created_by)
               VALUES ($employee_id, '$termination_date', '$effective_date', '$reason', '$termination_type', $notice_period_days, $severance_pay, '$notes', 'approved', {$_SESSION['user_id']})";
     mysqli_query($conn, $query);
     $term_id = mysqli_insert_id($conn);
-    
+
     mysqli_query($conn, "UPDATE employees SET is_terminated = 1, termination_id = $term_id, employment_status = 'terminated', status = 'inactive' WHERE id = $employee_id");
-    
+
     addNotification($employee_id, 'Employment Termination', 'Your employment has been terminated effective ' . date('d M Y', strtotime($effective_date)));
     header('Location: management.php');
     exit();
@@ -110,48 +110,67 @@ if (isset($_POST['send_termination'])) {
 // HANDLE DOCUMENT UPLOAD
 // ========================================
 if (isset($_POST['upload_document'])) {
-    $employee_id = $_POST['employee_id'];
+    $employee_id = intval($_POST['employee_id']);
     $document_title = mysqli_real_escape_string($conn, $_POST['document_title']);
     $document_type = $_POST['document_type'];
     $notes = mysqli_real_escape_string($conn, $_POST['notes']);
-    
+
     $target_dir = "../uploads/documents/";
     if (!is_dir($target_dir)) mkdir($target_dir, 0777, true);
-    
+
     $file_name = basename($_FILES['document_file']['name']);
     $file_name_escaped = mysqli_real_escape_string($conn, $file_name);
     $file_size = $_FILES['document_file']['size'];
-    $file_extension = pathinfo($file_name, PATHINFO_EXTENSION);
-    $file_path = time() . '_' . $employee_id . '.' . $file_extension;
+    $file_extension = strtolower(pathinfo($file_name, PATHINFO_EXTENSION));
+    $file_path = bin2hex(random_bytes(8)) . '.' . $file_extension;
 
-    if (move_uploaded_file($_FILES['document_file']['tmp_name'], $target_dir . $file_path)) {
-        $query = "INSERT INTO employee_documents (employee_id, document_title, document_type, file_path, file_name, file_size, upload_date, notes, uploaded_by)
-                  VALUES ($employee_id, '$document_title', '$document_type', '$file_path', '$file_name_escaped', $file_size, CURDATE(), '$notes', {$_SESSION['user_id']})";
-        mysqli_query($conn, $query);
-        addNotification($employee_id, 'New Document', 'A new document "' . $document_title . '" has been uploaded.');
-        $success = "Document uploaded successfully!";
+    if ($_FILES['document_file']['error'] !== UPLOAD_ERR_OK) {
+        $error = 'File upload error. Please try again.';
+    } elseif ($file_size > 10 * 1024 * 1024) {
+        $error = 'File must be under 10 MB.';
+    } else {
+        $allowed_ext = ['pdf','jpg','jpeg','png','doc','docx','xls','xlsx'];
+        $allowed_doc = ['application/pdf','image/jpeg','image/png','application/msword',
+                        'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+                        'application/vnd.ms-excel','application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'];
+        $finfo = finfo_open(FILEINFO_MIME_TYPE);
+        $doc_mime = finfo_file($finfo, $_FILES['document_file']['tmp_name']);
+        finfo_close($finfo);
+        if (!in_array($file_extension, $allowed_ext) || !in_array($doc_mime, $allowed_doc)) {
+            $error = 'Only PDF, image, Word, or Excel files are allowed.';
+        }
+    }
+
+    if (!isset($error)) {
+        if (move_uploaded_file($_FILES['document_file']['tmp_name'], $target_dir . $file_path)) {
+            $query = "INSERT INTO employee_documents (employee_id, document_title, document_type, file_path, file_name, file_size, upload_date, notes, uploaded_by)
+                      VALUES ($employee_id, '$document_title', '$document_type', '$file_path', '$file_name_escaped', $file_size, CURDATE(), '$notes', {$_SESSION['user_id']})";
+            mysqli_query($conn, $query);
+            addNotification($employee_id, 'New Document', 'A new document "' . $document_title . '" has been uploaded.');
+            $success = "Document uploaded successfully!";
+        }
     }
 }
 
 // ========================================
 // GET ALL DATA
 // ========================================
-$resignations = mysqli_query($conn, "SELECT r.*, e.name, e.employee_id, e.department 
-    FROM employee_resignations r 
-    JOIN employees e ON r.employee_id = e.id 
+$resignations = mysqli_query($conn, "SELECT r.*, e.name, e.employee_id, e.department
+    FROM employee_resignations r
+    JOIN employees e ON r.employee_id = e.id
     ORDER BY r.created_at DESC");
 
 $terminations = mysqli_query($conn, "SELECT t.*, e.name, e.employee_id, e.department, a.name as created_by_name
-    FROM terminations t 
-    JOIN employees e ON t.employee_id = e.id 
-    LEFT JOIN employees a ON t.created_by = a.id 
+    FROM terminations t
+    JOIN employees e ON t.employee_id = e.id
+    LEFT JOIN employees a ON t.created_by = a.id
     ORDER BY t.created_at DESC");
 
 // Get documents with proper file path detection
-$documents = mysqli_query($conn, "SELECT d.*, e.name, e.employee_id, 
+$documents = mysqli_query($conn, "SELECT d.*, e.name, e.employee_id,
     CASE WHEN d.uploaded_by = d.employee_id THEN 'Employee' ELSE 'HR' END as uploaded_by_role
-    FROM employee_documents d 
-    JOIN employees e ON d.employee_id = e.id 
+    FROM employee_documents d
+    JOIN employees e ON d.employee_id = e.id
     ORDER BY d.created_at DESC");
 
 $employees = mysqli_query($conn, "SELECT id, name, employee_id FROM employees WHERE role='employee' AND status='active' AND (is_terminated = 0 OR is_terminated IS NULL)");
@@ -209,7 +228,7 @@ $pending_count = mysqli_fetch_assoc(mysqli_query($conn, "SELECT COUNT(*) as coun
 
 <!-- MAIN CONTENT -->
 <div class="px-4 py-6 max-w-7xl mx-auto">
-    
+
     <div class="text-center mb-6 animate-fadeInUp">
         <h1 class="text-2xl font-bold text-gray-800">📋 Management Portal</h1>
         <p class="text-sm text-gray-500 mt-1">Manage resignations, terminations, and employee documents</p>
@@ -227,6 +246,10 @@ $pending_count = mysqli_fetch_assoc(mysqli_query($conn, "SELECT COUNT(*) as coun
                 </div>
             </div>
         </div>
+    <?php endif; ?>
+
+    <?php if(isset($error)): ?>
+        <div class="bg-red-100 border-l-4 border-red-500 text-red-700 p-3 rounded-xl mb-4"><?php echo htmlspecialchars($error, ENT_QUOTES, 'UTF-8'); ?></div>
     <?php endif; ?>
 
     <!-- Tabs -->
@@ -283,18 +306,18 @@ $pending_count = mysqli_fetch_assoc(mysqli_query($conn, "SELECT COUNT(*) as coun
                                         <i class="fas fa-user text-red-600 text-sm"></i>
                                     </div>
                                     <div>
-                                        <p class="font-semibold text-gray-800"><?php echo $row['name']; ?></p>
-                                        <p class="text-xs text-gray-500"><?php echo $row['employee_id']; ?></p>
+                                        <p class="font-semibold text-gray-800"><?php echo htmlspecialchars($row['name'] ?? '', ENT_QUOTES, 'UTF-8'); ?></p>
+                                        <p class="text-xs text-gray-500"><?php echo htmlspecialchars($row['employee_id'] ?? '', ENT_QUOTES, 'UTF-8'); ?></p>
                                     </div>
                                 </div>
                             </td>
                             <td class="p-3 text-sm"><?php echo date('d M Y', strtotime($row['requested_date'])); ?></td>
                             <td class="p-3 text-sm font-medium text-red-600"><?php echo date('d M Y', strtotime($row['last_working_date'])); ?></td>
-                            <td class="p-3 text-sm max-w-[200px] truncate"><?php echo substr($row['reason'], 0, 50); ?></td>
+                            <td class="p-3 text-sm max-w-[200px] truncate"><?php echo htmlspecialchars(substr($row['reason'] ?? '', 0, 50), ENT_QUOTES, 'UTF-8'); ?></td>
                             <td class="p-3 text-center">
-                                <span class="inline-flex items-center gap-1 px-2 py-1 rounded-full text-xs font-semibold <?php 
-                                    echo $row['status'] == 'approved' ? 'bg-green-100 text-green-700' : 
-                                        ($row['status'] == 'rejected' ? 'bg-red-100 text-red-700' : 
+                                <span class="inline-flex items-center gap-1 px-2 py-1 rounded-full text-xs font-semibold <?php
+                                    echo $row['status'] == 'approved' ? 'bg-green-100 text-green-700' :
+                                        ($row['status'] == 'rejected' ? 'bg-red-100 text-red-700' :
                                         ($row['status'] == 'cancelled' ? 'bg-gray-100 text-gray-700' : 'bg-yellow-100 text-yellow-700')); ?>">
                                     <i class="fas <?php echo $row['status'] == 'approved' ? 'fa-check-circle' : ($row['status'] == 'rejected' ? 'fa-times-circle' : 'fa-clock'); ?>"></i>
                                     <?php echo ucfirst($row['status']); ?>
@@ -303,16 +326,24 @@ $pending_count = mysqli_fetch_assoc(mysqli_query($conn, "SELECT COUNT(*) as coun
                             <td class="p-3 text-center">
                                 <?php if($row['status'] == 'pending'): ?>
                                     <div class="flex gap-2 justify-center">
-                                        <button onclick="openApproveModal(<?php echo htmlspecialchars(json_encode($row)); ?>)" class="bg-green-600 hover:bg-green-700 text-white px-3 py-1 rounded-lg text-xs font-medium transition">Approve</button>
-                                        <button onclick="openRejectModal(<?php echo htmlspecialchars(json_encode($row)); ?>)" class="bg-red-600 hover:bg-red-700 text-white px-3 py-1 rounded-lg text-xs font-medium transition">Reject</button>
-                                        <a href="?delete_resignation=<?php echo $row['id']; ?>" data-confirm="Delete this resignation record?" data-confirm-title="Delete Resignation" class="text-gray-500 hover:text-red-600 transition">
-                                            <i class="fas fa-trash"></i>
-                                        </a>
+                                        <button onclick="openApproveModal(<?php echo htmlspecialchars(json_encode(['id' => $row['id'], 'employee_id' => $row['employee_id'], 'name' => $row['name']], JSON_HEX_APOS | JSON_HEX_QUOT | JSON_HEX_TAG), ENT_QUOTES, 'UTF-8'); ?>)" class="bg-green-600 hover:bg-green-700 text-white px-3 py-1 rounded-lg text-xs font-medium transition">Approve</button>
+                                        <button onclick="openRejectModal(<?php echo htmlspecialchars(json_encode(['id' => $row['id'], 'employee_id' => $row['employee_id'], 'name' => $row['name']], JSON_HEX_APOS | JSON_HEX_QUOT | JSON_HEX_TAG), ENT_QUOTES, 'UTF-8'); ?>)" class="bg-red-600 hover:bg-red-700 text-white px-3 py-1 rounded-lg text-xs font-medium transition">Reject</button>
+                                        <form method="POST" style="display:inline;" onsubmit="return confirm('Delete this resignation record?')">
+                                            <?php echo csrfField(); ?>
+                                            <input type="hidden" name="delete_resignation" value="<?php echo intval($row['id']); ?>">
+                                            <button type="submit" class="text-gray-500 hover:text-red-600 transition">
+                                                <i class="fas fa-trash"></i>
+                                            </button>
+                                        </form>
                                     </div>
                                 <?php else: ?>
-                                    <a href="?delete_resignation=<?php echo $row['id']; ?>" data-confirm="Delete this resignation record?" data-confirm-title="Delete Resignation" class="text-red-600 hover:text-red-800 text-sm">
-                                        <i class="fas fa-trash"></i> Delete
-                                    </a>
+                                    <form method="POST" style="display:inline;" onsubmit="return confirm('Delete this resignation record?')">
+                                        <?php echo csrfField(); ?>
+                                        <input type="hidden" name="delete_resignation" value="<?php echo intval($row['id']); ?>">
+                                        <button type="submit" class="text-red-600 hover:text-red-800 text-sm">
+                                            <i class="fas fa-trash"></i> Delete
+                                        </button>
+                                    </form>
                                 <?php endif; ?>
                             </td>
                         </tr>
@@ -342,13 +373,13 @@ $pending_count = mysqli_fetch_assoc(mysqli_query($conn, "SELECT COUNT(*) as coun
                         <p class="text-xs text-gray-500">Terminate employee contract</p>
                     </div>
                 </div>
-                <form method="POST" class="space-y-4">
+                <form method="POST" id="termination-form" class="space-y-4">
                     <div>
                         <label class="block text-sm font-semibold text-gray-700 mb-2">Employee</label>
                         <select name="termination_employee_id" required class="w-full px-4 py-2.5 border-2 border-gray-200 rounded-xl focus:border-red-500 focus:outline-none">
                             <option value="">Select Employee</option>
                             <?php while($emp = mysqli_fetch_assoc($employees)): ?>
-                                <option value="<?php echo $emp['id']; ?>"><?php echo $emp['name']; ?> (<?php echo $emp['employee_id']; ?>)</option>
+                                <option value="<?php echo intval($emp['id']); ?>"><?php echo htmlspecialchars($emp['name'] ?? '', ENT_QUOTES, 'UTF-8'); ?> (<?php echo htmlspecialchars($emp['employee_id'] ?? '', ENT_QUOTES, 'UTF-8'); ?>)</option>
                             <?php endwhile; ?>
                         </select>
                     </div>
@@ -389,12 +420,12 @@ $pending_count = mysqli_fetch_assoc(mysqli_query($conn, "SELECT COUNT(*) as coun
                         <label class="block text-sm font-semibold text-gray-700 mb-2">Additional Notes</label>
                         <textarea name="notes" rows="2" class="w-full px-4 py-2.5 border-2 border-gray-200 rounded-xl"></textarea>
                     </div>
-                    <button type="submit" name="send_termination" class="w-full bg-gradient-to-r from-red-600 to-rose-600 text-white py-3 rounded-xl font-semibold hover:shadow-xl transition transform hover:scale-105" onclick="return confirmAction('Send Termination Notice', 'This will permanently mark the employee as terminated. Continue?', function(){ document.querySelector(\'form[data-termination-form]\') ? document.querySelector(\'form[data-termination-form]\').submit() : this.closest(\'form\').submit(); })">
+                    <button type="submit" name="send_termination" class="w-full bg-gradient-to-r from-red-600 to-rose-600 text-white py-3 rounded-xl font-semibold hover:shadow-xl transition transform hover:scale-105">
                         <i class="fas fa-paper-plane mr-2"></i> Send Termination Notice
                     </button>
                 </form>
             </div>
-            
+
             <!-- Termination History -->
             <div class="bg-white rounded-2xl shadow-xl overflow-hidden">
                 <div class="bg-gradient-to-r from-gray-50 to-white px-5 py-4 border-b">
@@ -415,21 +446,25 @@ $pending_count = mysqli_fetch_assoc(mysqli_query($conn, "SELECT COUNT(*) as coun
                                     <i class="fas fa-user text-red-600 text-sm"></i>
                                 </div>
                                 <div>
-                                    <p class="font-semibold text-gray-800"><?php echo $term['name']; ?></p>
-                                    <p class="text-xs text-gray-500"><?php echo $term['employee_id']; ?></p>
+                                    <p class="font-semibold text-gray-800"><?php echo htmlspecialchars($term['name'] ?? '', ENT_QUOTES, 'UTF-8'); ?></p>
+                                    <p class="text-xs text-gray-500"><?php echo htmlspecialchars($term['employee_id'] ?? '', ENT_QUOTES, 'UTF-8'); ?></p>
                                 </div>
                             </div>
                             <div class="flex items-center gap-2">
                                 <span class="text-xs bg-red-100 text-red-700 px-2 py-1 rounded-full">Terminated</span>
-                                <a href="?delete_termination=<?php echo $term['id']; ?>" data-confirm="Delete this termination record?" data-confirm-title="Delete Termination" class="text-red-500 hover:text-red-700" title="Delete">
-                                    <i class="fas fa-trash"></i>
-                                </a>
+                                <form method="POST" style="display:inline;" onsubmit="return confirm('Delete this termination record?')">
+                                    <?php echo csrfField(); ?>
+                                    <input type="hidden" name="delete_termination" value="<?php echo intval($term['id']); ?>">
+                                    <button type="submit" class="text-red-500 hover:text-red-700" title="Delete">
+                                        <i class="fas fa-trash"></i>
+                                    </button>
+                                </form>
                             </div>
                         </div>
                         <div class="mt-2 text-sm space-y-1">
                             <p><strong>Type:</strong> <?php echo ucfirst(str_replace('_', ' ', $term['termination_type'])); ?></p>
                             <p><strong>Effective:</strong> <?php echo date('d M Y', strtotime($term['effective_date'])); ?></p>
-                            <p class="text-gray-600"><?php echo substr($term['reason'], 0, 100); ?></p>
+                            <p class="text-gray-600"><?php echo htmlspecialchars(substr($term['reason'] ?? '', 0, 100), ENT_QUOTES, 'UTF-8'); ?></p>
                             <?php if($term['severance_pay'] > 0): ?>
                                 <p class="text-green-600 font-semibold">Severance: RM <?php echo number_format($term['severance_pay'], 2); ?></p>
                             <?php endif; ?>
@@ -471,7 +506,7 @@ $pending_count = mysqli_fetch_assoc(mysqli_query($conn, "SELECT COUNT(*) as coun
                         </tr>
                     </thead>
                     <tbody class="divide-y divide-gray-100">
-                        <?php while($doc = mysqli_fetch_assoc($documents)): 
+                        <?php while($doc = mysqli_fetch_assoc($documents)):
                             // Find the correct file path
                             $file_path = "";
                             $possible_paths = [
@@ -492,12 +527,12 @@ $pending_count = mysqli_fetch_assoc(mysqli_query($conn, "SELECT COUNT(*) as coun
                                         <i class="fas fa-user text-blue-600 text-sm"></i>
                                     </div>
                                     <div>
-                                        <p class="font-semibold text-gray-800"><?php echo $doc['name']; ?></p>
-                                        <p class="text-xs text-gray-500"><?php echo $doc['employee_id']; ?></p>
+                                        <p class="font-semibold text-gray-800"><?php echo htmlspecialchars($doc['name'] ?? '', ENT_QUOTES, 'UTF-8'); ?></p>
+                                        <p class="text-xs text-gray-500"><?php echo htmlspecialchars($doc['employee_id'] ?? '', ENT_QUOTES, 'UTF-8'); ?></p>
                                     </div>
                                 </div>
                             </td>
-                            <td class="p-3 font-medium"><?php echo $doc['document_title']; ?></td>
+                            <td class="p-3 font-medium"><?php echo htmlspecialchars($doc['document_title'] ?? '', ENT_QUOTES, 'UTF-8'); ?></td>
                             <td class="p-3">
                                 <span class="inline-flex items-center gap-1 px-2 py-1 rounded-full text-xs bg-blue-100 text-blue-700">
                                     <i class="fas fa-file-alt"></i> <?php echo ucfirst(str_replace('_', ' ', $doc['document_type'])); ?>
@@ -506,23 +541,27 @@ $pending_count = mysqli_fetch_assoc(mysqli_query($conn, "SELECT COUNT(*) as coun
                             <td class="p-3">
                                 <span class="inline-flex items-center gap-1 px-2 py-1 rounded-full text-xs font-semibold <?php echo $doc['uploaded_by_role'] == 'Employee' ? 'bg-green-100 text-green-700' : 'bg-purple-100 text-purple-700'; ?>">
                                     <i class="fas <?php echo $doc['uploaded_by_role'] == 'Employee' ? 'fa-user' : 'fa-building'; ?>"></i>
-                                    <?php echo $doc['uploaded_by_role']; ?>
+                                    <?php echo htmlspecialchars($doc['uploaded_by_role'] ?? '', ENT_QUOTES, 'UTF-8'); ?>
                                 </span>
                             </td>
                             <td class="p-3 text-sm"><?php echo date('d M Y', strtotime($doc['upload_date'])); ?></td>
                             <td class="p-3 text-center">
                                 <div class="flex gap-2 justify-center">
                                     <?php if($file_path): ?>
-                                        <a href="<?php echo $file_path; ?>" target="_blank" class="bg-blue-500 text-white p-2 rounded-lg hover:bg-blue-600 transition" title="View">
+                                        <a href="<?php echo htmlspecialchars($file_path, ENT_QUOTES, 'UTF-8'); ?>" target="_blank" class="bg-blue-500 text-white p-2 rounded-lg hover:bg-blue-600 transition" title="View">
                                             <i class="fas fa-eye"></i>
                                         </a>
-                                        <a href="<?php echo $file_path; ?>" download class="bg-green-500 text-white p-2 rounded-lg hover:bg-green-600 transition" title="Download">
+                                        <a href="<?php echo htmlspecialchars($file_path, ENT_QUOTES, 'UTF-8'); ?>" download class="bg-green-500 text-white p-2 rounded-lg hover:bg-green-600 transition" title="Download">
                                             <i class="fas fa-download"></i>
                                         </a>
                                     <?php endif; ?>
-                                    <a href="?delete_doc=<?php echo $doc['id']; ?>" data-confirm="Delete this document permanently?" data-confirm-title="Delete Document" class="bg-red-500 text-white p-2 rounded-lg hover:bg-red-600 transition" title="Delete">
-                                        <i class="fas fa-trash"></i>
-                                    </a>
+                                    <form method="POST" style="display:inline;" onsubmit="return confirm('Delete this document permanently?')">
+                                        <?php echo csrfField(); ?>
+                                        <input type="hidden" name="delete_doc" value="<?php echo intval($doc['id']); ?>">
+                                        <button type="submit" class="bg-red-500 text-white p-2 rounded-lg hover:bg-red-600 transition" title="Delete">
+                                            <i class="fas fa-trash"></i>
+                                        </button>
+                                    </form>
                                 </div>
                             </td>
                         </tr>
@@ -551,17 +590,17 @@ $pending_count = mysqli_fetch_assoc(mysqli_query($conn, "SELECT COUNT(*) as coun
                 </div>
             </div>
             <?php if(isset($success)): ?>
-                <div class="bg-green-100 border-l-4 border-green-500 text-green-700 p-3 rounded-xl mb-4"><?php echo $success; ?></div>
+                <div class="bg-green-100 border-l-4 border-green-500 text-green-700 p-3 rounded-xl mb-4"><?php echo htmlspecialchars($success, ENT_QUOTES, 'UTF-8'); ?></div>
             <?php endif; ?>
             <form method="POST" enctype="multipart/form-data" class="space-y-4">
                 <div>
                     <label class="block text-sm font-semibold text-gray-700 mb-2">Employee</label>
                     <select name="employee_id" required class="w-full px-4 py-2.5 border-2 border-gray-200 rounded-xl focus:border-blue-500 focus:outline-none">
                         <option value="">Select Employee</option>
-                        <?php 
+                        <?php
                         $all_emps = mysqli_query($conn, "SELECT id, name, employee_id FROM employees WHERE role='employee'");
                         while($emp = mysqli_fetch_assoc($all_emps)): ?>
-                            <option value="<?php echo $emp['id']; ?>"><?php echo $emp['name']; ?> (<?php echo $emp['employee_id']; ?>)</option>
+                            <option value="<?php echo intval($emp['id']); ?>"><?php echo htmlspecialchars($emp['name'] ?? '', ENT_QUOTES, 'UTF-8'); ?> (<?php echo htmlspecialchars($emp['employee_id'] ?? '', ENT_QUOTES, 'UTF-8'); ?>)</option>
                         <?php endwhile; ?>
                     </select>
                 </div>
@@ -612,6 +651,9 @@ $pending_count = mysqli_fetch_assoc(mysqli_query($conn, "SELECT COUNT(*) as coun
             <p class="text-xs text-green-100 mt-1">Confirm resignation approval</p>
         </div>
         <form method="POST" class="p-5 space-y-4" id="approveForm">
+            <?php echo csrfField(); ?>
+            <input type="hidden" name="approve_resignation" id="approveResignationId" value="">
+            <input type="hidden" name="status" value="approved">
             <div class="bg-green-50 p-3 rounded-xl text-center">
                 <i class="fas fa-check-circle text-green-600 text-2xl mb-2 block"></i>
                 <p class="text-sm text-green-800">Are you sure you want to approve this resignation?</p>
@@ -635,6 +677,9 @@ $pending_count = mysqli_fetch_assoc(mysqli_query($conn, "SELECT COUNT(*) as coun
             <p class="text-xs text-red-100 mt-1">Confirm resignation rejection</p>
         </div>
         <form method="POST" class="p-5 space-y-4" id="rejectForm">
+            <?php echo csrfField(); ?>
+            <input type="hidden" name="approve_resignation" id="rejectResignationId" value="">
+            <input type="hidden" name="status" value="rejected">
             <div class="bg-red-50 p-3 rounded-xl text-center">
                 <i class="fas fa-times-circle text-red-600 text-2xl mb-2 block"></i>
                 <p class="text-sm text-red-800">Are you sure you want to reject this resignation?</p>
@@ -674,13 +719,13 @@ function showTab(tab) {
 
 function openApproveModal(resignation) {
     currentResignationId = resignation.id;
-    document.getElementById('approveForm').action = '?approve_resignation=' + resignation.id + '&status=approved';
+    document.getElementById('approveResignationId').value = resignation.id;
     document.getElementById('approveModal').classList.remove('hidden');
 }
 
 function openRejectModal(resignation) {
     currentResignationId = resignation.id;
-    document.getElementById('rejectForm').action = '?approve_resignation=' + resignation.id + '&status=rejected';
+    document.getElementById('rejectResignationId').value = resignation.id;
     document.getElementById('rejectModal').classList.remove('hidden');
 }
 
@@ -693,6 +738,11 @@ function closeModals() {
 document.getElementById('docFile')?.addEventListener('change', function(e) {
     const fileName = e.target.files[0]?.name || 'No file chosen';
     document.getElementById('fileName').textContent = fileName;
+});
+
+// Termination form confirmation (F052)
+document.getElementById('termination-form')?.addEventListener('submit', function(e) {
+    if (!confirm('Send termination notice to this employee?')) e.preventDefault();
 });
 </script>
 </body>

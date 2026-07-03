@@ -4,7 +4,9 @@ require_once 'db.php';
 // Malaysia Statutory Calculations (ONLY for Malaysian employees)
 function calculateEPF($salary, $is_employee = true, $is_malaysian = true) {
     if (!$is_malaysian) return 0;
-    return $is_employee ? round($salary * 0.11, 2) : round($salary * 0.13, 2);
+    if ($is_employee) return round($salary * 0.11, 2);
+    // Employer rate: 13% for wages ≤ RM5,000; 12% for wages > RM5,000 (EPF Third Schedule)
+    return $salary <= 5000 ? round($salary * 0.13, 2) : round($salary * 0.12, 2);
 }
 
 function calculateSOCSO($salary, $is_employee = true, $is_malaysian = true) {

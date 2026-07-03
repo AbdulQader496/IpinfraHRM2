@@ -7,17 +7,30 @@ require_once '../includes/toast_fn.php';
 
 $message = '';
 
+// Handle Bulk Delete
+if (isset($_POST['bulk_delete']) && validateCsrfToken($_POST['csrf_token'] ?? '')) {
+    $ids = $_POST['delete_ids'] ?? [];
+    if (!empty($ids)) {
+        $safe_ids = implode(',', array_map('intval', $ids));
+        mysqli_query($conn, "DELETE FROM payroll WHERE id IN ($safe_ids)");
+        showToast(count($ids) . ' payroll record(s) deleted.', 'info');
+    }
+    $qs = http_build_query(array_filter(['month' => $_POST['filter_month'] ?? '', 'per_page' => $_POST['filter_per_page'] ?? '']));
+    header('Location: payroll.php' . ($qs ? '?'.$qs : '')); exit();
+}
+
 // Handle Delete Payroll Record
-if (isset($_GET['delete'])) {
-    $del_id = (int)$_GET['delete'];
+if (isset($_POST['pay_delete']) && validateCsrfToken($_POST['csrf_token'] ?? '')) {
+    $del_id = intval($_POST['pay_delete']);
     mysqli_query($conn, "DELETE FROM payroll WHERE id = $del_id");
     showToast('Payroll record deleted.', 'info');
-    header('Location: payroll.php'); exit();
+    $qs = http_build_query(array_filter(['month' => $_POST['filter_month'] ?? '', 'per_page' => $_POST['filter_per_page'] ?? '', 'page' => $_POST['filter_page'] ?? '']));
+    header('Location: payroll.php' . ($qs ? '?'.$qs : '')); exit();
 }
 
 // Handle Regenerate — delete then rebuild for one employee+month
-if (isset($_GET['regenerate'])) {
-    $regen_id = (int)$_GET['regenerate'];
+if (isset($_POST['pay_regenerate']) && validateCsrfToken($_POST['csrf_token'] ?? '')) {
+    $regen_id = intval($_POST['pay_regenerate']);
     $regen_row = mysqli_fetch_assoc(mysqli_query($conn, "SELECT p.month_year, e.* FROM payroll p JOIN employees e ON p.employee_id=e.id WHERE p.id=$regen_id"));
     if ($regen_row) {
         mysqli_query($conn, "DELETE FROM payroll WHERE id=$regen_id");
@@ -61,7 +74,10 @@ if (isset($_GET['regenerate'])) {
 
 // Handle CSV Export
 if (isset($_GET['export']) && $_GET['export'] === 'csv') {
-    $export_query = mysqli_query($conn, "SELECT e.employee_id, e.name, e.department, e.nationality, e.employee_type, p.month_year, p.basic_salary, p.epf_employee, p.socso_employee, p.eis_employee, p.pcb, p.unpaid_deduction, p.approved_claims, p.net_salary FROM payroll p JOIN employees e ON p.employee_id = e.id ORDER BY p.month_year DESC, e.name ASC");
+    $exp_month = trim($_GET['month'] ?? '');
+    if ($exp_month && !preg_match('/^\d{4}-\d{2}$/', $exp_month)) $exp_month = '';
+    $exp_where = $exp_month ? "WHERE p.month_year = '$exp_month'" : '';
+    $export_query = mysqli_query($conn, "SELECT e.employee_id, e.name, e.department, e.nationality, e.employee_type, p.month_year, p.basic_salary, p.epf_employee, p.socso_employee, p.eis_employee, p.pcb, p.unpaid_deduction, p.approved_claims, p.net_salary FROM payroll p JOIN employees e ON p.employee_id = e.id $exp_where ORDER BY p.month_year DESC, e.name ASC");
     $filename = 'payroll_export_' . date('Y-m-d') . '.csv';
     header('Content-Type: text/csv');
     header('Content-Disposition: attachment; filename="' . $filename . '"');
@@ -88,8 +104,12 @@ if (isset($_GET['export']) && $_GET['export'] === 'csv') {
 }
 
 // Handle Email Payslip
-if (isset($_GET['email'])) {
-    $email_id = (int)$_GET['email'];
+if (isset($_POST['email_payslip'])) {
+    if (!validateCsrfToken($_POST['csrf_token'] ?? '')) {
+        showToast('Security error.', 'error');
+        header('Location: payroll.php'); exit();
+    }
+    $email_id = (int)$_POST['email_payslip'];
     $email_row = mysqli_fetch_assoc(mysqli_query($conn, "SELECT p.*, e.name, e.employee_id, e.department, e.nationality, e.employee_type, e.email
         FROM payroll p JOIN employees e ON p.employee_id = e.id WHERE p.id = $email_id"));
 
@@ -243,10 +263,12 @@ if (isset($_GET['email'])) {
     } else {
         showToast('Could not send payslip: payroll record not found or employee email is missing.', 'error');
     }
-    header('Location: payroll.php'); exit();
+    $qs = http_build_query(array_filter(['month' => $_POST['filter_month'] ?? '', 'per_page' => $_POST['filter_per_page'] ?? '', 'page' => $_POST['filter_page'] ?? '']));
+    header('Location: payroll.php' . ($qs ? '?'.$qs : '')); exit();
 }
 
 if (isset($_POST['generate_payroll'])) {
+    if (!validateCsrfToken($_POST['csrf_token'] ?? '')) { showToast('Security error.', 'error'); header('Location: payroll.php'); exit; }
     $month_year = mysqli_real_escape_string($conn, $_POST['month_year']);
     $employees = mysqli_query($conn, "SELECT * FROM employees WHERE role='employee' AND status='active'");
     $generated_count = 0;
@@ -323,10 +345,32 @@ $stats_query = mysqli_query($conn, "SELECT
     FROM payroll");
 $stats = mysqli_fetch_assoc($stats_query);
 
+// Filters & pagination
+$filter_month = trim($_GET['month'] ?? '');
+if ($filter_month && !preg_match('/^\d{4}-\d{2}$/', $filter_month)) $filter_month = '';
+$per_page = (int)($_GET['per_page'] ?? 25);
+if (!in_array($per_page, [10, 25, 50, 100])) $per_page = 25;
+$page = max(1, (int)($_GET['page'] ?? 1));
+
+$where_clause = $filter_month ? "WHERE p.month_year = '" . mysqli_real_escape_string($conn, $filter_month) . "'" : '';
+
+$total_count = (int)mysqli_fetch_assoc(mysqli_query($conn,
+    "SELECT COUNT(*) as c FROM payroll p JOIN employees e ON p.employee_id = e.id $where_clause"))['c'];
+$total_pages = max(1, (int)ceil($total_count / $per_page));
+if ($page > $total_pages) $page = $total_pages;
+$offset = ($page - 1) * $per_page;
+
+// Distinct months for the filter dropdown
+$months_res = mysqli_query($conn, "SELECT DISTINCT month_year FROM payroll ORDER BY month_year DESC");
+$available_months = [];
+while ($mr = mysqli_fetch_assoc($months_res)) $available_months[] = $mr['month_year'];
+
 $payrolls = mysqli_query($conn, "SELECT p.*, e.name, e.employee_id, e.nationality, e.department, e.employee_type, e.email
     FROM payroll p
     JOIN employees e ON p.employee_id = e.id
-    ORDER BY p.month_year DESC, e.name");
+    $where_clause
+    ORDER BY p.month_year DESC, e.name
+    LIMIT $per_page OFFSET $offset");
 ?>
 <!DOCTYPE html>
 <html lang="en">
@@ -398,7 +442,7 @@ $payrolls = mysqli_query($conn, "SELECT p.*, e.name, e.employee_id, e.nationalit
         
         <!-- Header -->
         <div class="mb-6 animate-fadeInUp">
-            <h1 class="text-2xl font-bold text-gray-800">💰 Payroll Management</h1>
+            <h1 class="text-2xl font-bold text-gray-800">Payroll Management</h1>
             <p class="text-sm text-gray-500 mt-1">Process employee salaries and manage payroll records</p>
         </div>
 
@@ -457,43 +501,85 @@ $payrolls = mysqli_query($conn, "SELECT p.*, e.name, e.employee_id, e.nationalit
         </div>
 
         <!-- Generate Payroll Section -->
-        <div class="bg-white rounded-xl shadow-md p-5 mb-6 card-hover">
-            <div class="flex items-center gap-2 mb-3">
-                <div class="w-8 h-8 bg-blue-100 rounded-lg flex items-center justify-center">
-                    <i class="fas fa-calculator text-blue-600"></i>
+        <div class="bg-white rounded-xl shadow-md p-4 mb-6 card-hover">
+            <form method="POST" class="flex flex-col sm:flex-row items-center gap-3">
+                <?php echo csrfField(); ?>
+                <div class="w-8 h-8 bg-blue-100 rounded-lg flex items-center justify-center flex-shrink-0">
+                    <i class="fas fa-calculator text-blue-600 text-sm"></i>
                 </div>
-                <h2 class="font-bold text-gray-800">Generate Payroll</h2>
-            </div>
-            <form method="POST" class="flex flex-col sm:flex-row gap-3">
-                <div class="flex-1 relative">
-                    <i class="fas fa-calendar-alt absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400"></i>
-                    <input type="month" name="month_year" required class="w-full pl-10 pr-4 py-2.5 border border-gray-200 rounded-lg focus:border-blue-500 focus:outline-none">
+                <span class="font-semibold text-gray-800 text-sm whitespace-nowrap">Generate Payroll</span>
+                <div class="flex-1 relative min-w-0 w-full sm:w-auto">
+                    <i class="fas fa-calendar-alt absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 text-sm pointer-events-none"></i>
+                    <input type="month" name="month_year" required class="w-full pl-9 pr-3 py-2 border border-gray-200 rounded-lg focus:border-blue-500 focus:outline-none text-sm">
                 </div>
-                <button type="submit" name="generate_payroll" class="bg-blue-600 hover:bg-blue-700 text-white px-6 py-2.5 rounded-lg font-medium transition flex items-center justify-center gap-2">
-                    <i class="fas fa-sync-alt"></i> Generate Payroll
+                <button type="submit" name="generate_payroll" class="bg-blue-600 hover:bg-blue-700 text-white px-5 py-2 rounded-lg text-sm font-semibold transition flex items-center gap-2 whitespace-nowrap">
+                    <i class="fas fa-sync-alt text-xs"></i> Generate
                 </button>
+                <p class="text-xs text-gray-400 hidden sm:block">Malaysian: EPF, SOCSO, EIS auto-deducted &bull; Interns &amp; non-Malaysians: no statutory deductions</p>
             </form>
-            <div class="mt-3 p-3 bg-blue-50 rounded-lg">
-                <div class="flex items-start gap-2">
-                    <i class="fas fa-info-circle text-blue-600 mt-0.5 text-sm"></i>
-                    <div class="text-xs text-blue-800">
-                        <p><strong>Statutory Deductions:</strong> Malaysian regular employees: EPF (11%), SOCSO (0.5%), EIS (0.2%), PCB deducted automatically. Non-Malaysian & Intern employees: No statutory deductions. Approved claims are added to salary. Unpaid leave is deducted.</p>
-                    </div>
-                </div>
-            </div>
         </div>
+
+        <!-- Hidden bulk-delete form (outside row forms to avoid nesting) -->
+        <form id="bulkDeleteForm" method="POST">
+            <?php echo csrfField(); ?>
+            <input type="hidden" name="bulk_delete" value="1">
+            <input type="hidden" name="filter_month" value="<?php echo htmlspecialchars($filter_month); ?>">
+            <input type="hidden" name="filter_per_page" value="<?php echo $per_page; ?>">
+        </form>
 
         <!-- Payroll Records -->
         <div class="bg-white rounded-xl shadow-md overflow-hidden">
-            <div class="bg-gray-50 px-5 py-4 border-b flex items-center justify-between">
-                <div class="flex items-center gap-2">
-                    <i class="fas fa-file-invoice-dollar text-indigo-500"></i>
-                    <p class="font-semibold text-gray-800">Payroll Records</p>
+
+            <!-- Filter bar -->
+            <form method="GET" class="bg-gray-50 px-4 py-3 border-b flex flex-wrap items-center gap-3">
+                <div class="flex items-center gap-2 flex-1 min-w-0">
+                    <i class="fas fa-file-invoice-dollar text-indigo-500 text-sm"></i>
+                    <p class="font-semibold text-gray-800 text-sm whitespace-nowrap">Payroll Records</p>
+                    <span class="text-xs text-gray-400">(<?php echo $total_count; ?> total)</span>
                 </div>
-                <span class="text-xs text-gray-400">Latest first</span>
-                <a href="?export=csv" class="inline-flex items-center gap-1 text-xs bg-green-100 text-green-700 px-3 py-1.5 rounded-lg hover:bg-green-200 transition font-semibold">
-                  <i class="fas fa-download"></i> Export CSV
-                </a>
+                <div class="flex flex-wrap items-center gap-2 ml-auto">
+                    <!-- Month filter -->
+                    <select name="month" onchange="this.form.submit()"
+                        class="text-xs border border-gray-200 rounded-lg px-3 py-2 focus:border-indigo-400 focus:outline-none bg-white">
+                        <option value="">All Months</option>
+                        <?php foreach ($available_months as $m): ?>
+                            <option value="<?php echo $m; ?>" <?php echo ($filter_month === $m) ? 'selected' : ''; ?>>
+                                <?php echo date('F Y', strtotime($m . '-01')); ?>
+                            </option>
+                        <?php endforeach; ?>
+                    </select>
+                    <!-- Per-page -->
+                    <select name="per_page" onchange="this.form.submit()"
+                        class="text-xs border border-gray-200 rounded-lg px-3 py-2 focus:border-indigo-400 focus:outline-none bg-white">
+                        <?php foreach ([10, 25, 50, 100] as $pp): ?>
+                            <option value="<?php echo $pp; ?>" <?php echo ($per_page === $pp) ? 'selected' : ''; ?>><?php echo $pp; ?> / page</option>
+                        <?php endforeach; ?>
+                    </select>
+                    <!-- Export -->
+                    <a href="?export=csv<?php echo $filter_month ? '&month='.urlencode($filter_month) : ''; ?>"
+                       class="inline-flex items-center gap-1 text-xs bg-green-100 text-green-700 px-3 py-2 rounded-lg hover:bg-green-200 transition font-semibold whitespace-nowrap">
+                        <i class="fas fa-download"></i> Export CSV
+                    </a>
+                </div>
+            </form>
+
+            <!-- Bulk action bar (shown when rows are checked) -->
+            <div id="bulkBar" class="hidden bg-indigo-50 border-b border-indigo-100 px-5 py-2.5 flex items-center gap-3">
+                <input type="checkbox" id="selectAll" onchange="toggleAllPayroll(this.checked)"
+                    class="w-4 h-4 accent-indigo-600 cursor-pointer">
+                <label for="selectAll" class="text-xs font-semibold text-indigo-700 cursor-pointer select-none">Select All</label>
+                <span class="text-xs text-indigo-500"><span id="bulkCount">0</span> selected</span>
+                <button type="button" onclick="submitBulkDelete()"
+                    class="ml-auto flex items-center gap-1.5 bg-red-600 hover:bg-red-700 text-white text-xs font-semibold px-4 py-2 rounded-lg transition">
+                    <i class="fas fa-trash"></i> Delete Selected
+                </button>
+            </div>
+
+            <!-- Column header row -->
+            <div class="px-5 py-2 bg-gray-50 border-b flex items-center gap-3">
+                <input type="checkbox" id="selectAllTop" onchange="toggleAllPayroll(this.checked)"
+                    class="w-4 h-4 accent-indigo-600 cursor-pointer">
+                <span class="text-xs font-semibold text-gray-500 uppercase tracking-wide">Select</span>
             </div>
 
             <?php if(mysqli_num_rows($payrolls) > 0): ?>
@@ -518,8 +604,8 @@ $payrolls = mysqli_query($conn, "SELECT p.*, e.name, e.employee_id, e.nationalit
                             $badge = '<span class="text-xs bg-green-100 text-green-700 px-2 py-0.5 rounded-full"><i class="fas fa-check-circle mr-1"></i>Local</span>';
                         }
 
-                        // JSON for modal
-                        $modal_data = json_encode([
+                        // Array for modal — encoded once at call site with HEX flags
+                        $modal_data = [
                             'name'        => $row['name'],
                             'employee_id' => $row['employee_id'],
                             'department'  => $row['department'],
@@ -539,10 +625,16 @@ $payrolls = mysqli_query($conn, "SELECT p.*, e.name, e.employee_id, e.nationalit
                             'is_intern'   => $is_intern_row,
                             'is_malaysian'=> $is_malaysian_row,
                             'calc_url'    => '../employee/payroll_calculation.php?month=' . $row['month_year'] . '&emp_id=' . $row['employee_id'],
-                        ]);
+                        ];
                     ?>
                     <div class="payroll-row px-5 py-4">
                         <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+
+                            <!-- Checkbox -->
+                            <div class="flex-shrink-0 self-start sm:self-center">
+                                <input type="checkbox" class="payroll-cb w-4 h-4 accent-indigo-600 cursor-pointer"
+                                    value="<?php echo $row['id']; ?>" onchange="updateBulkBar()">
+                            </div>
 
                             <!-- Left: Employee Info -->
                             <div class="flex items-center gap-3 min-w-0">
@@ -590,30 +682,42 @@ $payrolls = mysqli_query($conn, "SELECT p.*, e.name, e.employee_id, e.nationalit
                                     <p class="text-xs text-gray-400">Net Salary</p>
                                     <p class="text-xl font-bold text-green-600">RM <?php echo number_format($row['net_salary'], 2); ?></p>
                                 </div>
-                                <button onclick='openBreakdown(<?php echo htmlspecialchars($modal_data, ENT_QUOTES); ?>)'
+                                <button onclick='openBreakdown(<?php echo json_encode($modal_data, JSON_HEX_TAG | JSON_HEX_APOS | JSON_HEX_QUOT | JSON_HEX_AMP); ?>)'
                                     class="flex items-center gap-2 bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-700 hover:to-purple-700 text-white px-4 py-2.5 rounded-xl text-sm font-semibold transition shadow-md hover:shadow-lg">
                                     <i class="fas fa-chart-bar"></i>
                                     <span class="hidden sm:inline">View Breakdown</span>
                                     <span class="sm:hidden">View</span>
                                 </button>
-                                <a href="?email=<?php echo $row['id']; ?>"
-                                   data-confirm="Send payslip to <?php echo htmlspecialchars($row['email'] ?? 'employee', ENT_QUOTES); ?> for <?php echo htmlspecialchars(date('F Y', strtotime($row['month_year'] . '-01')), ENT_QUOTES); ?>?" data-confirm-title="Email Payslip"
-                                   class="flex items-center gap-1 bg-indigo-100 hover:bg-indigo-200 text-indigo-600 px-3 py-2.5 rounded-xl text-sm font-semibold transition"
-                                   title="Email Payslip">
-                                    <i class="fas fa-envelope"></i>
-                                </a>
-                                <a href="?regenerate=<?php echo $row['id']; ?>"
-                                   data-confirm="Regenerate payroll for <?php echo htmlspecialchars($row['name'], ENT_QUOTES); ?> (<?php echo $row['month_year']; ?>)? The current record will be recalculated." data-confirm-title="Regenerate Payroll"
-                                   class="flex items-center gap-1 bg-blue-100 hover:bg-blue-200 text-blue-600 px-3 py-2.5 rounded-xl text-sm font-semibold transition"
-                                   title="Regenerate">
-                                    <i class="fas fa-sync-alt"></i>
-                                </a>
-                                <a href="?delete=<?php echo $row['id']; ?>"
-                                   data-confirm="Delete payroll record for <?php echo htmlspecialchars($row['name'], ENT_QUOTES); ?> (<?php echo $row['month_year']; ?>)? This cannot be undone." data-confirm-title="Delete Payroll Record"
-                                   class="flex items-center gap-1 bg-red-100 hover:bg-red-200 text-red-600 px-3 py-2.5 rounded-xl text-sm font-semibold transition"
-                                   title="Delete Record">
-                                    <i class="fas fa-trash"></i>
-                                </a>
+                                <form method="POST" style="display:inline" onsubmit="return confirm('Send payslip to <?php echo htmlspecialchars($row['email'] ?? 'employee', ENT_QUOTES); ?> for <?php echo htmlspecialchars(date('F Y', strtotime($row['month_year'] . '-01')), ENT_QUOTES); ?>?')">
+                                    <?php echo csrfField(); ?>
+                                    <input type="hidden" name="email_payslip" value="<?php echo $row['id']; ?>">
+                                    <input type="hidden" name="filter_month" value="<?php echo htmlspecialchars($_GET['month'] ?? ''); ?>">
+                                    <input type="hidden" name="filter_per_page" value="<?php echo htmlspecialchars($_GET['per_page'] ?? ''); ?>">
+                                    <input type="hidden" name="filter_page" value="<?php echo htmlspecialchars($_GET['page'] ?? ''); ?>">
+                                    <button type="submit" class="flex items-center gap-1 bg-indigo-100 hover:bg-indigo-200 text-indigo-600 px-3 py-2.5 rounded-xl text-sm font-semibold transition" title="Email Payslip">
+                                        <i class="fas fa-envelope"></i>
+                                    </button>
+                                </form>
+                                <form method="post" style="display:inline" onsubmit="return confirm('Regenerate payroll for <?php echo htmlspecialchars($row['name'], ENT_QUOTES); ?> (<?php echo $row['month_year']; ?>)? The current record will be recalculated.')">
+                                    <?php echo csrfField(); ?>
+                                    <input type="hidden" name="pay_regenerate" value="<?php echo $row['id']; ?>">
+                                    <input type="hidden" name="filter_month" value="<?php echo htmlspecialchars($filter_month); ?>">
+                                    <input type="hidden" name="filter_per_page" value="<?php echo $per_page; ?>">
+                                    <input type="hidden" name="filter_page" value="<?php echo $page; ?>">
+                                    <button type="submit" class="flex items-center gap-1 bg-blue-100 hover:bg-blue-200 text-blue-600 px-3 py-2.5 rounded-xl text-sm font-semibold transition" title="Regenerate">
+                                        <i class="fas fa-sync-alt"></i>
+                                    </button>
+                                </form>
+                                <form method="post" style="display:inline" onsubmit="return confirm('Delete payroll record for <?php echo htmlspecialchars($row['name'], ENT_QUOTES); ?> (<?php echo $row['month_year']; ?>)? This cannot be undone.')">
+                                    <?php echo csrfField(); ?>
+                                    <input type="hidden" name="pay_delete" value="<?php echo $row['id']; ?>">
+                                    <input type="hidden" name="filter_month" value="<?php echo htmlspecialchars($filter_month); ?>">
+                                    <input type="hidden" name="filter_per_page" value="<?php echo $per_page; ?>">
+                                    <input type="hidden" name="filter_page" value="<?php echo $page; ?>">
+                                    <button type="submit" class="flex items-center gap-1 bg-red-100 hover:bg-red-200 text-red-600 px-3 py-2.5 rounded-xl text-sm font-semibold transition" title="Delete Record">
+                                        <i class="fas fa-trash"></i>
+                                    </button>
+                                </form>
                             </div>
 
                         </div>
@@ -629,6 +733,62 @@ $payrolls = mysqli_query($conn, "SELECT p.*, e.name, e.employee_id, e.nationalit
                     <p class="text-xs text-gray-400 mt-1">Generate payroll for a month above</p>
                 </div>
             <?php endif; ?>
+
+            <?php if ($total_pages > 1): ?>
+            <!-- Pagination -->
+            <div class="px-5 py-4 border-t bg-gray-50 flex flex-wrap items-center justify-between gap-3">
+                <p class="text-xs text-gray-500">
+                    Showing <?php echo ($offset + 1); ?>–<?php echo min($offset + $per_page, $total_count); ?> of <?php echo $total_count; ?> records
+                </p>
+                <div class="flex items-center gap-1.5 flex-wrap">
+                    <?php
+                    $pg_base = '?page=%d&per_page=' . $per_page . ($filter_month ? '&month=' . urlencode($filter_month) : '');
+
+                    // Prev
+                    if ($page > 1):
+                    ?><a href="<?php echo sprintf($pg_base, $page - 1); ?>"
+                       class="inline-flex items-center justify-center w-8 h-8 rounded-lg border border-gray-200 bg-white text-gray-500 hover:bg-indigo-50 hover:border-indigo-300 hover:text-indigo-600 transition text-xs font-medium">
+                        <i class="fas fa-chevron-left text-[10px]"></i>
+                    </a>
+                    <?php endif;
+
+                    // Page numbers — show up to 7 with ellipsis
+                    $range = 2;
+                    $start = max(1, $page - $range);
+                    $end   = min($total_pages, $page + $range);
+                    if ($start > 1): ?>
+                        <a href="<?php echo sprintf($pg_base, 1); ?>"
+                           class="inline-flex items-center justify-center w-8 h-8 rounded-lg border border-gray-200 bg-white text-xs font-medium text-gray-600 hover:bg-indigo-50 hover:text-indigo-600 transition">1</a>
+                        <?php if ($start > 2): ?><span class="text-gray-400 text-xs px-1">…</span><?php endif; ?>
+                    <?php endif;
+
+                    for ($i = $start; $i <= $end; $i++): ?>
+                        <a href="<?php echo sprintf($pg_base, $i); ?>"
+                           class="inline-flex items-center justify-center w-8 h-8 rounded-lg border text-xs font-semibold transition
+                                  <?php echo ($i === $page)
+                                    ? 'bg-indigo-600 border-indigo-600 text-white shadow'
+                                    : 'border-gray-200 bg-white text-gray-600 hover:bg-indigo-50 hover:text-indigo-600'; ?>">
+                            <?php echo $i; ?>
+                        </a>
+                    <?php endfor;
+
+                    if ($end < $total_pages): ?>
+                        <?php if ($end < $total_pages - 1): ?><span class="text-gray-400 text-xs px-1">…</span><?php endif; ?>
+                        <a href="<?php echo sprintf($pg_base, $total_pages); ?>"
+                           class="inline-flex items-center justify-center w-8 h-8 rounded-lg border border-gray-200 bg-white text-xs font-medium text-gray-600 hover:bg-indigo-50 hover:text-indigo-600 transition"><?php echo $total_pages; ?></a>
+                    <?php endif;
+
+                    // Next
+                    if ($page < $total_pages): ?>
+                    <a href="<?php echo sprintf($pg_base, $page + 1); ?>"
+                       class="inline-flex items-center justify-center w-8 h-8 rounded-lg border border-gray-200 bg-white text-gray-500 hover:bg-indigo-50 hover:border-indigo-300 hover:text-indigo-600 transition text-xs font-medium">
+                        <i class="fas fa-chevron-right text-[10px]"></i>
+                    </a>
+                    <?php endif; ?>
+                </div>
+            </div>
+            <?php endif; ?>
+
         </div>
     </div>
 
@@ -842,6 +1002,60 @@ $payrolls = mysqli_query($conn, "SELECT p.*, e.name, e.employee_id, e.nationalit
         document.getElementById('breakdownModal').addEventListener('click', function(e) {
             if (e.target === this) closeBreakdown();
         });
+
+        // ── Bulk select ────────────────────────────────────
+        function toggleAllPayroll(checked) {
+            document.querySelectorAll('.payroll-cb').forEach(function(cb) { cb.checked = checked; });
+            // keep both checkboxes in sync
+            document.querySelectorAll('#selectAll, #selectAllTop').forEach(function(el) { el.checked = checked; });
+            updateBulkBar();
+        }
+
+        function updateBulkBar() {
+            var cbs  = document.querySelectorAll('.payroll-cb:checked');
+            var bar  = document.getElementById('bulkBar');
+            var cnt  = document.getElementById('bulkCount');
+            var all  = document.getElementById('selectAll');
+            var allT = document.getElementById('selectAllTop');
+            var total = document.querySelectorAll('.payroll-cb').length;
+
+            cnt.textContent = cbs.length;
+
+            // show bar if any checked
+            if (cbs.length > 0) {
+                bar.classList.remove('hidden');
+                bar.classList.add('flex');
+            } else {
+                bar.classList.add('hidden');
+                bar.classList.remove('flex');
+            }
+
+            // reflect indeterminate state on "select all" checkboxes
+            var allChecked = (cbs.length === total && total > 0);
+            [all, allT].forEach(function(el) {
+                el.checked = allChecked;
+                el.indeterminate = (cbs.length > 0 && !allChecked);
+            });
+        }
+
+        function submitBulkDelete() {
+            var cbs = document.querySelectorAll('.payroll-cb:checked');
+            if (cbs.length === 0) return;
+            if (!confirm('Delete ' + cbs.length + ' selected payroll record(s)? This cannot be undone.')) return;
+
+            var form = document.getElementById('bulkDeleteForm');
+            // remove any previously injected id inputs
+            form.querySelectorAll('input[name="delete_ids[]"]').forEach(function(el) { el.remove(); });
+
+            cbs.forEach(function(cb) {
+                var inp = document.createElement('input');
+                inp.type  = 'hidden';
+                inp.name  = 'delete_ids[]';
+                inp.value = cb.value;
+                form.appendChild(inp);
+            });
+            form.submit();
+        }
     </script>
 </body>
 </html>

@@ -2,11 +2,16 @@
 require_once '../includes/auth.php';
 redirectIfNotLoggedIn();
 require_once '../includes/db.php';
+require_once '../includes/toast_fn.php';
 
-$user_id = $_SESSION['user_id'];
+$user_id = intval($_SESSION['user_id']);
 
 // Handle asset request
 if (isset($_POST['request_asset'])) {
+    if (!validateCsrfToken($_POST['csrf_token'] ?? '')) {
+        showToast('Security error.', 'error');
+        header('Location: assets.php'); exit;
+    }
     $asset_id           = intval($_POST['asset_id']);
     $purpose            = mysqli_real_escape_string($conn, $_POST['purpose']);
     $start_date         = mysqli_real_escape_string($conn, $_POST['start_date']);
@@ -14,16 +19,12 @@ if (isset($_POST['request_asset'])) {
     $quantity_requested = intval($_POST['quantity_requested']);
     mysqli_query($conn, "INSERT INTO asset_requests (employee_id, asset_id, purpose, start_date, end_date, request_date, quantity)
         VALUES ($user_id, $asset_id, '$purpose', '$start_date', '$end_date', CURDATE(), $quantity_requested)");
-    header('Location: assets.php?msg=' . urlencode('Asset request submitted successfully!')); exit();
+    showToast('Asset request submitted successfully!'); header('Location: assets.php'); exit();
 }
-
-// Flash messages
-$_m    = htmlspecialchars($_GET['msg'] ?? '');
-$success = $_m ? '<div class="bg-gradient-to-r from-green-50 to-emerald-50 border-l-4 border-green-500 text-green-700 px-4 py-3 rounded-xl text-sm animate-fadeIn"><i class="fas fa-check-circle mr-2"></i> ✓ ' . $_m . '</div>' : '';
 
 // Search functionality
 $search = isset($_GET['search']) ? $_GET['search'] : '';
-$category_filter = isset($_GET['category']) ? $_GET['category'] : '';
+$category_filter = intval($_GET['category'] ?? 0);
 
 // Get available assets with search and filter
 $query = "SELECT a.*, c.category_name
@@ -50,13 +51,22 @@ $my_assets = mysqli_query($conn, "SELECT a.*, c.category_name, ar.status, ar.sta
     WHERE ar.employee_id = $user_id AND ar.status IN ('approved', 'pending')
     ORDER BY ar.created_at DESC");
 
-// Get request history
+// Get request history (paginated)
+$hist_per_page = in_array((int)($_GET['hist_per_page'] ?? 20), [10, 20, 50]) ? (int)$_GET['hist_per_page'] : 20;
+$hist_page     = max(1, (int)($_GET['hist_page'] ?? 1));
+$hist_total    = (int)mysqli_fetch_assoc(mysqli_query($conn,
+    "SELECT COUNT(*) as c FROM asset_requests WHERE employee_id = $user_id"))['c'];
+$hist_pages    = max(1, (int)ceil($hist_total / $hist_per_page));
+if ($hist_page > $hist_pages) $hist_page = $hist_pages;
+$hist_offset   = ($hist_page - 1) * $hist_per_page;
+
 $request_history = mysqli_query($conn, "SELECT ar.*, a.asset_name, a.asset_code, c.category_name
     FROM asset_requests ar
     JOIN assets a ON ar.asset_id = a.id
     JOIN asset_categories c ON a.category_id = c.id
     WHERE ar.employee_id = $user_id
-    ORDER BY ar.created_at DESC LIMIT 10");
+    ORDER BY ar.created_at DESC
+    LIMIT $hist_per_page OFFSET $hist_offset");
 
 // Get categories for filter
 $categories = mysqli_query($conn, "SELECT * FROM asset_categories ORDER BY category_name");
@@ -64,7 +74,7 @@ $categories = mysqli_query($conn, "SELECT * FROM asset_categories ORDER BY categ
 // Get counts for badges
 $available_count = mysqli_num_rows($assets);
 $my_assets_count = mysqli_num_rows($my_assets);
-$history_count = mysqli_num_rows($request_history);
+$history_count = $hist_total;
 ?>
 <!DOCTYPE html>
 <html lang="en">
@@ -102,6 +112,7 @@ $history_count = mysqli_num_rows($request_history);
     </style>
 </head>
 <body class="bg-gradient-to-br from-gray-50 to-gray-100 min-h-screen pb-20">
+<?php require_once '../includes/toast.php'; ?>
     
 <!-- Premium Header -->
 <div class="bg-[#060912] text-white sticky top-0 z-40 shadow-2xl backdrop-blur-sm">
@@ -148,11 +159,10 @@ $history_count = mysqli_num_rows($request_history);
         
         <!-- Header -->
         <div class="text-center mb-6 animate-fadeInUp">
-            <h1 class="text-2xl font-bold text-gray-800">📦 Asset Tracker</h1>
+            <h1 class="text-2xl font-bold text-gray-800">Asset Tracker</h1>
             <p class="text-sm text-gray-500 mt-1">Request company assets like laptops, phones, IoT devices, and more</p>
         </div>
 
-        <?php if(isset($success)) echo $success; ?>
 
         <!-- Premium Tabs -->
         <div class="flex gap-3 mb-6 bg-white/50 backdrop-blur-sm rounded-2xl p-2 shadow-lg">
@@ -183,12 +193,12 @@ $history_count = mysqli_num_rows($request_history);
                 <form method="GET" action="" class="flex flex-col md:flex-row gap-3">
                     <div class="flex-1 relative">
                         <i class="fas fa-search absolute left-4 top-1/2 -translate-y-1/2 text-gray-400"></i>
-                        <input type="text" name="search" value="<?php echo htmlspecialchars($search); ?>" 
-                               placeholder="Search by name, code, or brand..." 
-                               class="w-full pl-12 pr-4 py-3 border-2 border-gray-200 rounded-xl focus:border-blue-500 focus:outline-none transition">
+                        <input type="text" name="search" value="<?php echo htmlspecialchars($search); ?>"
+                               placeholder="Search by name, code, or brand..."
+                               class="w-full pl-12 pr-4 py-3 border border-gray-200 rounded-xl focus:border-indigo-400 focus:ring-2 focus:ring-indigo-100 outline-none transition">
                     </div>
                     <div class="w-full md:w-56">
-                        <select name="category" class="w-full px-4 py-3 border-2 border-gray-200 rounded-xl focus:border-blue-500 focus:outline-none transition">
+                        <select name="category" class="w-full px-4 py-3 border border-gray-200 rounded-xl focus:border-indigo-400 focus:ring-2 focus:ring-indigo-100 outline-none transition">
                             <option value="">All Categories</option>
                             <?php mysqli_data_seek($categories, 0); ?>
                             <?php while($cat = mysqli_fetch_assoc($categories)): ?>
@@ -222,7 +232,7 @@ $history_count = mysqli_num_rows($request_history);
                                 <div class="flex-1">
                                     <div class="flex justify-between items-start flex-wrap gap-2">
                                         <div>
-                                            <h3 class="font-bold text-gray-800 text-lg"><?php echo $asset['asset_name']; ?></h3>
+                                            <h3 class="font-bold text-gray-800 text-lg"><?php echo htmlspecialchars($asset['asset_name'] ?? '', ENT_QUOTES, 'UTF-8'); ?></h3>
                                             <p class="text-xs text-gray-500"><?php echo $asset['asset_code']; ?></p>
                                         </div>
                                         <div class="text-right">
@@ -231,10 +241,10 @@ $history_count = mysqli_num_rows($request_history);
                                     </div>
                                     <div class="mt-2">
                                         <p class="text-xs text-gray-500">
-                                            <i class="fas fa-tag mr-1"></i> <?php echo $asset['brand']; ?> <?php echo $asset['model']; ?>
+                                            <i class="fas fa-tag mr-1"></i> <?php echo htmlspecialchars($asset['brand'] ?? '', ENT_QUOTES, 'UTF-8'); ?> <?php echo htmlspecialchars($asset['model'] ?? '', ENT_QUOTES, 'UTF-8'); ?>
                                         </p>
                                         <p class="text-xs text-gray-500 mt-1">
-                                            <i class="fas fa-map-marker-alt mr-1"></i> <?php echo $asset['location']; ?>
+                                            <i class="fas fa-map-marker-alt mr-1"></i> <?php echo htmlspecialchars($asset['location'] ?? '', ENT_QUOTES, 'UTF-8'); ?>
                                         </p>
                                         <div class="mt-2 flex items-center justify-between">
                                             <span class="text-xs text-gray-500">Stock: <?php echo $asset['available_quantity']; ?>/<?php echo $asset['quantity']; ?></span>
@@ -280,8 +290,8 @@ $history_count = mysqli_num_rows($request_history);
                             <div class="flex-1">
                                 <div class="flex justify-between items-start flex-wrap gap-2">
                                     <div>
-                                        <h3 class="font-bold text-gray-800"><?php echo $asset['asset_name']; ?></h3>
-                                        <p class="text-xs text-gray-500"><?php echo $asset['asset_code']; ?> • <?php echo $asset['brand']; ?></p>
+                                        <h3 class="font-bold text-gray-800"><?php echo htmlspecialchars($asset['asset_name'] ?? '', ENT_QUOTES, 'UTF-8'); ?></h3>
+                                        <p class="text-xs text-gray-500"><?php echo htmlspecialchars($asset['asset_code'] ?? '', ENT_QUOTES, 'UTF-8'); ?> • <?php echo htmlspecialchars($asset['brand'] ?? '', ENT_QUOTES, 'UTF-8'); ?></p>
                                     </div>
                                     <span class="text-xs px-2 py-1 rounded-full <?php echo $asset['status'] == 'approved' ? 'bg-green-100 text-green-700' : 'bg-yellow-100 text-yellow-700'; ?>">
                                         <i class="fas <?php echo $asset['status'] == 'approved' ? 'fa-check-circle' : 'fa-clock'; ?> mr-1"></i>
@@ -321,7 +331,7 @@ $history_count = mysqli_num_rows($request_history);
                             <div class="flex-1">
                                 <div class="flex items-center gap-2 mb-1">
                                     <i class="fas fa-box text-blue-500"></i>
-                                    <h3 class="font-bold text-gray-800"><?php echo $req['asset_name']; ?></h3>
+                                    <h3 class="font-bold text-gray-800"><?php echo htmlspecialchars($req['asset_name'] ?? '', ENT_QUOTES, 'UTF-8'); ?></h3>
                                 </div>
                                 <p class="text-xs text-gray-500"><?php echo $req['asset_code']; ?></p>
                                 <p class="text-xs text-gray-500 mt-1">
@@ -352,6 +362,40 @@ $history_count = mysqli_num_rows($request_history);
                         <p class="text-xs text-gray-400 mt-1">Your asset requests will appear here</p>
                     </div>
                 <?php endif; ?>
+
+                <?php if($hist_pages > 1): ?>
+                <div class="bg-white rounded-2xl shadow p-4 flex flex-wrap items-center justify-between gap-3">
+                    <p class="text-xs text-gray-500">
+                        Showing <?php echo ($hist_offset + 1); ?>–<?php echo min($hist_offset + $hist_per_page, $hist_total); ?> of <?php echo $hist_total; ?> requests
+                    </p>
+                    <div class="flex items-center gap-1.5 flex-wrap">
+                        <?php
+                        $hpg = '?tab=history&hist_page=%d&hist_per_page=' . $hist_per_page;
+                        if ($hist_page > 1): ?>
+                            <a href="<?php echo sprintf($hpg, $hist_page - 1); ?>"
+                               onclick="showTab('history')"
+                               class="inline-flex items-center justify-center w-8 h-8 rounded-lg border border-gray-200 bg-white text-gray-500 hover:bg-blue-50 hover:text-blue-600 transition text-xs">
+                                <i class="fas fa-chevron-left text-[10px]"></i>
+                            </a>
+                        <?php endif;
+                        for ($i = 1; $i <= $hist_pages; $i++): ?>
+                            <a href="<?php echo sprintf($hpg, $i); ?>"
+                               onclick="showTab('history')"
+                               class="inline-flex items-center justify-center w-8 h-8 rounded-lg border text-xs font-semibold transition
+                                      <?php echo ($i === $hist_page) ? 'bg-blue-600 border-blue-600 text-white shadow' : 'border-gray-200 bg-white text-gray-600 hover:bg-blue-50 hover:text-blue-600'; ?>">
+                                <?php echo $i; ?>
+                            </a>
+                        <?php endfor;
+                        if ($hist_page < $hist_pages): ?>
+                            <a href="<?php echo sprintf($hpg, $hist_page + 1); ?>"
+                               onclick="showTab('history')"
+                               class="inline-flex items-center justify-center w-8 h-8 rounded-lg border border-gray-200 bg-white text-gray-500 hover:bg-blue-50 hover:text-blue-600 transition text-xs">
+                                <i class="fas fa-chevron-right text-[10px]"></i>
+                            </a>
+                        <?php endif; ?>
+                    </div>
+                </div>
+                <?php endif; ?>
             </div>
         </div>
     </div>
@@ -371,6 +415,7 @@ $history_count = mysqli_num_rows($request_history);
                 </div>
             </div>
             <form method="POST" class="p-6 space-y-5">
+                <?php echo csrfField(); ?>
                 <input type="hidden" name="asset_id" id="request_asset_id">
                 
                 <div class="bg-gradient-to-r from-blue-50 to-indigo-50 p-4 rounded-xl text-center">
@@ -381,22 +426,22 @@ $history_count = mysqli_num_rows($request_history);
                 
                 <div>
                     <label class="block text-gray-700 text-sm font-semibold mb-2">Quantity Requested</label>
-                    <input type="number" name="quantity_requested" id="quantity_requested" required min="1" max="1" class="w-full px-4 py-3 border-2 border-gray-200 rounded-xl focus:border-blue-500 focus:outline-none transition">
+                    <input type="number" name="quantity_requested" id="quantity_requested" required min="1" max="1" class="w-full px-4 py-3 border border-gray-200 rounded-xl focus:border-indigo-400 focus:ring-2 focus:ring-indigo-100 outline-none transition">
                 </div>
                 
                 <div>
                     <label class="block text-gray-700 text-sm font-semibold mb-2">Purpose of Request</label>
-                    <textarea name="purpose" rows="3" required placeholder="Why do you need this asset?" class="w-full px-4 py-3 border-2 border-gray-200 rounded-xl focus:border-blue-500 focus:outline-none transition"></textarea>
+                    <textarea name="purpose" rows="3" required placeholder="Why do you need this asset?" class="w-full px-4 py-3 border border-gray-200 rounded-xl focus:border-indigo-400 focus:ring-2 focus:ring-indigo-100 outline-none transition"></textarea>
                 </div>
                 
                 <div class="grid grid-cols-2 gap-3">
                     <div>
                         <label class="block text-gray-700 text-sm font-semibold mb-2">Start Date</label>
-                        <input type="date" name="start_date" required class="w-full px-4 py-3 border-2 border-gray-200 rounded-xl focus:border-blue-500 focus:outline-none transition">
+                        <input type="date" name="start_date" required class="w-full px-4 py-3 border border-gray-200 rounded-xl focus:border-indigo-400 focus:ring-2 focus:ring-indigo-100 outline-none transition">
                     </div>
                     <div>
                         <label class="block text-gray-700 text-sm font-semibold mb-2">End Date</label>
-                        <input type="date" name="end_date" required class="w-full px-4 py-3 border-2 border-gray-200 rounded-xl focus:border-blue-500 focus:outline-none transition">
+                        <input type="date" name="end_date" required class="w-full px-4 py-3 border border-gray-200 rounded-xl focus:border-indigo-400 focus:ring-2 focus:ring-indigo-100 outline-none transition">
                     </div>
                 </div>
                 
@@ -407,27 +452,7 @@ $history_count = mysqli_num_rows($request_history);
         </div>
     </div>
 
-    <!-- Mobile Bottom Navigation -->
-    <div class="fixed bottom-0 left-0 right-0 bg-white border-t border-gray-200 md:hidden shadow-lg z-20">
-        <div class="flex justify-around py-2">
-            <a href="dashboard.php" class="flex flex-col items-center py-1 px-3 text-gray-500">
-                <i class="fas fa-home text-xl"></i>
-                <span class="text-xs mt-1">Home</span>
-            </a>
-            <a href="assets.php" class="flex flex-col items-center py-1 px-3 text-blue-600">
-                <i class="fas fa-boxes text-xl"></i>
-                <span class="text-xs mt-1">Assets</span>
-            </a>
-            <a href="gallery.php" class="flex flex-col items-center py-1 px-3 text-gray-500">
-                <i class="fas fa-images text-xl"></i>
-                <span class="text-xs mt-1">Gallery</span>
-            </a>
-            <a href="profile.php" class="flex flex-col items-center py-1 px-3 text-gray-500">
-                <i class="fas fa-user text-xl"></i>
-                <span class="text-xs mt-1">Profile</span>
-            </a>
-        </div>
-    </div>
+<?php require_once '../includes/employee_bottom_nav_assets.php'; ?>
 
     <script>
         
@@ -463,6 +488,13 @@ $history_count = mysqli_num_rows($request_history);
             }
         }
         
+        // Auto-open correct tab from URL (e.g. after history pagination)
+        (function() {
+            var tab = new URLSearchParams(window.location.search).get('tab');
+            if (tab === 'history') showTab('history');
+            else if (tab === 'myAssets') showTab('myAssets');
+        })();
+
         function openRequestModal(assetId, assetName, availableQty) {
             document.getElementById('request_asset_id').value = assetId;
             document.getElementById('request_asset_name').innerHTML = assetName;

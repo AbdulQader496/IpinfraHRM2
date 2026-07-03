@@ -172,6 +172,19 @@ $assets = mysqli_query($conn, "SELECT a.*, c.category_name,
     LIMIT $offset, $per_page");
 
 $categories = mysqli_query($conn, "SELECT * FROM asset_categories ORDER BY category_name");
+
+// Active assignments — approved requests not yet returned
+$active_assignments = mysqli_query($conn, "
+    SELECT ar.id, ar.quantity, ar.start_date, ar.end_date, ar.purpose, ar.approved_date,
+           e.name, e.employee_id, e.department,
+           a.asset_name, a.asset_code
+    FROM asset_requests ar
+    JOIN employees e ON ar.employee_id = e.id
+    JOIN assets a ON ar.asset_id = a.id
+    WHERE ar.status = 'approved' AND ar.returned_date IS NULL
+    ORDER BY a.asset_name, e.name
+");
+$active_count = mysqli_num_rows($active_assignments);
 ?>
 <!DOCTYPE html>
 <html lang="en">
@@ -285,6 +298,9 @@ $categories = mysqli_query($conn, "SELECT * FROM asset_categories ORDER BY categ
         </button>
         <button onclick="showTab('assets')" id="tabAssets" class="px-5 py-2.5 rounded-lg text-sm font-medium transition-all bg-gray-100 text-gray-700 hover:bg-gray-200">
             <i class="fas fa-boxes mr-1"></i> All Assets
+        </button>
+        <button onclick="showTab('inuse')" id="tabInuse" class="px-5 py-2.5 rounded-lg text-sm font-medium transition-all bg-gray-100 text-gray-700 hover:bg-gray-200">
+            <i class="fas fa-user-check mr-1"></i> In Use (<?php echo $active_count; ?>)
         </button>
         <button onclick="showTab('add')" id="tabAdd" class="px-5 py-2.5 rounded-lg text-sm font-medium transition-all bg-gray-100 text-gray-700 hover:bg-gray-200">
             <i class="fas fa-plus-circle mr-1"></i> Add Asset
@@ -492,6 +508,96 @@ $categories = mysqli_query($conn, "SELECT * FROM asset_categories ORDER BY categ
         <?php endif; ?>
     </div>
 
+    <!-- In Use Tab -->
+    <div id="inuseTab" class="hidden animate-fadeInUp">
+        <?php if ($active_count > 0): ?>
+        <div class="bg-white rounded-xl shadow-md overflow-hidden">
+            <div class="px-4 py-3 bg-gray-50 border-b flex items-center gap-2">
+                <i class="fas fa-user-check text-indigo-500 text-sm"></i>
+                <span class="font-semibold text-gray-800 text-sm">Currently In Use</span>
+                <span class="text-xs text-gray-400"><?php echo $active_count; ?> active assignment<?php echo $active_count > 1 ? 's' : ''; ?></span>
+            </div>
+            <div class="overflow-x-auto">
+                <table class="w-full text-sm">
+                    <thead>
+                        <tr class="bg-gray-50 border-b text-xs font-semibold text-gray-500 uppercase tracking-wide">
+                            <th class="px-4 py-3 text-left">Employee</th>
+                            <th class="px-4 py-3 text-left">Asset</th>
+                            <th class="px-3 py-3 text-center whitespace-nowrap">Qty</th>
+                            <th class="px-3 py-3 text-left whitespace-nowrap">From</th>
+                            <th class="px-3 py-3 text-left whitespace-nowrap">Due Back</th>
+                            <th class="px-3 py-3 text-left">Purpose</th>
+                            <th class="px-3 py-3 text-center">Action</th>
+                        </tr>
+                    </thead>
+                    <tbody class="divide-y divide-gray-100">
+                    <?php while ($asgn = mysqli_fetch_assoc($active_assignments)):
+                        $overdue = $asgn['end_date'] && $asgn['end_date'] < date('Y-m-d');
+                    ?>
+                    <tr class="hover:bg-indigo-50/30 transition-colors">
+                        <td class="px-4 py-3">
+                            <div class="flex items-center gap-2.5">
+                                <div class="w-8 h-8 rounded-full bg-gradient-to-br from-indigo-500 to-purple-600 flex items-center justify-center text-white font-bold text-xs flex-shrink-0">
+                                    <?php echo strtoupper(substr($asgn['name'], 0, 1)); ?>
+                                </div>
+                                <div>
+                                    <p class="font-medium text-gray-800 leading-tight"><?php echo htmlspecialchars($asgn['name']); ?></p>
+                                    <p class="text-xs text-gray-400"><?php echo htmlspecialchars($asgn['employee_id']); ?> &bull; <?php echo htmlspecialchars($asgn['department']); ?></p>
+                                </div>
+                            </div>
+                        </td>
+                        <td class="px-4 py-3">
+                            <p class="font-medium text-gray-800"><?php echo htmlspecialchars($asgn['asset_name']); ?></p>
+                            <p class="text-xs text-gray-400"><?php echo htmlspecialchars($asgn['asset_code']); ?></p>
+                        </td>
+                        <td class="px-3 py-3 text-center">
+                            <span class="font-semibold text-gray-700"><?php echo $asgn['quantity']; ?></span>
+                        </td>
+                        <td class="px-3 py-3 text-gray-600 whitespace-nowrap">
+                            <?php echo $asgn['start_date'] ? date('d M Y', strtotime($asgn['start_date'])) : '—'; ?>
+                        </td>
+                        <td class="px-3 py-3 whitespace-nowrap">
+                            <?php if ($asgn['end_date']): ?>
+                                <span class="<?php echo $overdue ? 'text-red-600 font-semibold' : 'text-gray-600'; ?>">
+                                    <?php echo date('d M Y', strtotime($asgn['end_date'])); ?>
+                                    <?php if ($overdue): ?><span class="ml-1 text-[10px] bg-red-100 text-red-600 px-1.5 py-0.5 rounded-full">Overdue</span><?php endif; ?>
+                                </span>
+                            <?php else: ?>
+                                <span class="text-gray-400">—</span>
+                            <?php endif; ?>
+                        </td>
+                        <td class="px-3 py-3 text-gray-600 max-w-[160px]">
+                            <p class="truncate text-xs"><?php echo htmlspecialchars($asgn['purpose'] ?? '—'); ?></p>
+                        </td>
+                        <td class="px-3 py-3 text-center">
+                            <form method="POST" onsubmit="return false;">
+                                <?php echo csrfField(); ?>
+                                <input type="hidden" name="asset_action" value="return">
+                                <input type="hidden" name="request_id" value="<?php echo $asgn['id']; ?>">
+                                <button type="button"
+                                    onclick="confirmAction('Mark as Returned?','Confirm that <?php echo htmlspecialchars($asgn['name'], ENT_QUOTES); ?> has returned <?php echo htmlspecialchars($asgn['asset_name'], ENT_QUOTES); ?>. The stock will be updated.',function(){this.closest('form').submit();}.bind(this))"
+                                    class="inline-flex items-center gap-1.5 text-xs bg-green-100 hover:bg-green-200 text-green-700 font-semibold px-3 py-1.5 rounded-lg transition whitespace-nowrap">
+                                    <i class="fas fa-undo text-[10px]"></i> Returned
+                                </button>
+                            </form>
+                        </td>
+                    </tr>
+                    <?php endwhile; ?>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+        <?php else: ?>
+        <div class="bg-white rounded-xl shadow-md p-16 text-center">
+            <div class="w-16 h-16 bg-gray-100 rounded-full flex items-center justify-center mx-auto mb-4">
+                <i class="fas fa-check-double text-2xl text-gray-300"></i>
+            </div>
+            <p class="text-gray-500 font-medium">No assets currently in use</p>
+            <p class="text-xs text-gray-400 mt-1">All assets are available or pending return.</p>
+        </div>
+        <?php endif; ?>
+    </div>
+
     <!-- Add Asset Tab -->
     <div id="addTab" class="hidden animate-fadeInUp">
         <div class="bg-white rounded-xl shadow-md p-6 max-w-3xl mx-auto">
@@ -614,47 +720,41 @@ $categories = mysqli_query($conn, "SELECT * FROM asset_categories ORDER BY categ
     document.addEventListener('DOMContentLoaded', function() {
         const urlParams = new URLSearchParams(window.location.search);
         const tab = urlParams.get('tab');
-        if (tab === 'assets') {
-            showTab('assets');
-        } else if (tab === 'add') {
-            showTab('add');
+        if (['assets', 'inuse', 'add'].includes(tab)) {
+            showTab(tab);
         } else {
             showTab('pending');
         }
     });
 
     function showTab(tab) {
-        const pending = document.getElementById('pendingTab');
-        const assets = document.getElementById('assetsTab');
-        const add = document.getElementById('addTab');
-        const tabPending = document.getElementById('tabPending');
-        const tabAssets = document.getElementById('tabAssets');
-        const tabAdd = document.getElementById('tabAdd');
+        const panes = {
+            pending: document.getElementById('pendingTab'),
+            assets:  document.getElementById('assetsTab'),
+            inuse:   document.getElementById('inuseTab'),
+            add:     document.getElementById('addTab'),
+        };
+        const btns = {
+            pending: document.getElementById('tabPending'),
+            assets:  document.getElementById('tabAssets'),
+            inuse:   document.getElementById('tabInuse'),
+            add:     document.getElementById('tabAdd'),
+        };
+        const activeColors = {
+            pending: 'bg-red-600 text-white shadow-sm',
+            assets:  'bg-blue-600 text-white shadow-sm',
+            inuse:   'bg-indigo-600 text-white shadow-sm',
+            add:     'bg-green-600 text-white shadow-sm',
+        };
+        const base = 'px-5 py-2.5 rounded-lg text-sm font-medium transition-all';
 
-        // Reset all tabs
-        const tabs = [tabPending, tabAssets, tabAdd];
-        tabs.forEach(t => {
-            if (t) {
-                t.className = 'px-5 py-2.5 rounded-lg text-sm font-medium transition-all bg-gray-100 text-gray-700 hover:bg-gray-200';
-            }
+        Object.keys(panes).forEach(t => {
+            if (panes[t]) panes[t].classList.add('hidden');
+            if (btns[t])  btns[t].className = base + ' bg-gray-100 text-gray-700 hover:bg-gray-200';
         });
 
-        if (tab === 'pending') {
-            pending.classList.remove('hidden');
-            assets.classList.add('hidden');
-            add.classList.add('hidden');
-            if (tabPending) tabPending.className = 'px-5 py-2.5 rounded-lg text-sm font-medium transition-all bg-red-600 text-white shadow-sm';
-        } else if (tab === 'assets') {
-            pending.classList.add('hidden');
-            assets.classList.remove('hidden');
-            add.classList.add('hidden');
-            if (tabAssets) tabAssets.className = 'px-5 py-2.5 rounded-lg text-sm font-medium transition-all bg-blue-600 text-white shadow-sm';
-        } else {
-            pending.classList.add('hidden');
-            assets.classList.add('hidden');
-            add.classList.remove('hidden');
-            if (tabAdd) tabAdd.className = 'px-5 py-2.5 rounded-lg text-sm font-medium transition-all bg-green-600 text-white shadow-sm';
-        }
+        if (panes[tab]) panes[tab].classList.remove('hidden');
+        if (btns[tab])  btns[tab].className = base + ' ' + (activeColors[tab] || 'bg-gray-600 text-white');
     }
 
     function openQuantityModal(assetId, currentQty, assetName) {
@@ -668,5 +768,6 @@ $categories = mysqli_query($conn, "SELECT * FROM asset_categories ORDER BY categ
         document.getElementById('quantityModal').classList.add('hidden');
     }
 </script>
+<?php require_once '../includes/confirm_modal.php'; ?>
 </body>
 </html>

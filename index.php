@@ -203,13 +203,13 @@ if (isset($_POST['login'])) {
             align-items: center;
             justify-content: center;
             box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+            overflow: hidden;
         }
 
-        .brand-logo-inner span {
-            color: #0a2b3e;
-            font-size: 1.75rem;
-            font-weight: 900;
-            letter-spacing: -0.05em;
+        .brand-logo-inner img {
+            width: 56px;
+            height: 56px;
+            object-fit: contain;
         }
 
         .brand-name {
@@ -444,7 +444,7 @@ if (isset($_POST['login'])) {
                 width: 32px; height: 32px;
                 border-radius: 8px;
             }
-            .brand-logo-inner span { font-size: 1rem; }
+            .brand-logo-inner img { width: 26px; height: 26px; }
 
             .brand-name {
                 font-size: 0.95rem;
@@ -523,7 +523,7 @@ if (isset($_POST['login'])) {
             <!-- Logo -->
             <div class="brand-logo-wrap">
                 <div class="brand-logo-inner">
-                    <span>IN</span>
+                    <img src="uploads/1775551018_4xzREYTcMvK7ReGODviudjeDBIofOQ78mr5DsN9g.jpg" alt="IPINFRA Networks">
                 </div>
             </div>
 

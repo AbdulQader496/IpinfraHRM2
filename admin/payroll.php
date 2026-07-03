@@ -532,36 +532,36 @@ $payrolls = mysqli_query($conn, "SELECT p.*, e.name, e.employee_id, e.nationalit
         <div class="bg-white rounded-xl shadow-md overflow-hidden">
 
             <!-- Filter bar -->
-            <form method="GET" class="bg-gray-50 px-4 py-3 border-b flex flex-wrap items-center gap-3">
-                <div class="flex items-center gap-2 flex-1 min-w-0">
+            <form method="GET" class="bg-gray-50 px-4 py-3 border-b flex flex-wrap items-center gap-2">
+                <div class="flex items-center gap-2 mr-auto">
                     <i class="fas fa-file-invoice-dollar text-indigo-500 text-sm"></i>
                     <p class="font-semibold text-gray-800 text-sm whitespace-nowrap">Payroll Records</p>
                     <span class="text-xs text-gray-400">(<?php echo $total_count; ?> total)</span>
                 </div>
-                <div class="flex flex-wrap items-center gap-2 ml-auto">
-                    <!-- Month filter -->
-                    <select name="month" onchange="this.form.submit()"
-                        class="text-xs border border-gray-200 rounded-lg px-3 py-2 focus:border-indigo-400 focus:outline-none bg-white">
-                        <option value="">All Months</option>
-                        <?php foreach ($available_months as $m): ?>
-                            <option value="<?php echo $m; ?>" <?php echo ($filter_month === $m) ? 'selected' : ''; ?>>
-                                <?php echo date('F Y', strtotime($m . '-01')); ?>
-                            </option>
-                        <?php endforeach; ?>
-                    </select>
-                    <!-- Per-page -->
-                    <select name="per_page" onchange="this.form.submit()"
-                        class="text-xs border border-gray-200 rounded-lg px-3 py-2 focus:border-indigo-400 focus:outline-none bg-white">
-                        <?php foreach ([10, 25, 50, 100] as $pp): ?>
-                            <option value="<?php echo $pp; ?>" <?php echo ($per_page === $pp) ? 'selected' : ''; ?>><?php echo $pp; ?> / page</option>
-                        <?php endforeach; ?>
-                    </select>
-                    <!-- Export -->
-                    <a href="?export=csv<?php echo $filter_month ? '&month='.urlencode($filter_month) : ''; ?>"
-                       class="inline-flex items-center gap-1 text-xs bg-green-100 text-green-700 px-3 py-2 rounded-lg hover:bg-green-200 transition font-semibold whitespace-nowrap">
-                        <i class="fas fa-download"></i> Export CSV
-                    </a>
-                </div>
+                <!-- Month picker -->
+                <input type="month" name="month" value="<?php echo htmlspecialchars($filter_month); ?>"
+                       class="text-xs border border-gray-200 rounded-lg px-3 py-2 focus:border-indigo-400 focus:outline-none bg-white">
+                <!-- Per-page -->
+                <select name="per_page" onchange="this.form.submit()"
+                    class="text-xs border border-gray-200 rounded-lg px-3 py-2 focus:border-indigo-400 focus:outline-none bg-white">
+                    <?php foreach ([10, 25, 50, 100] as $pp): ?>
+                        <option value="<?php echo $pp; ?>" <?php echo ($per_page === $pp) ? 'selected' : ''; ?>><?php echo $pp; ?>/page</option>
+                    <?php endforeach; ?>
+                </select>
+                <!-- Filter + Clear -->
+                <button type="submit" class="text-xs bg-indigo-600 hover:bg-indigo-700 text-white px-3 py-2 rounded-lg font-semibold transition whitespace-nowrap">
+                    <i class="fas fa-search text-[10px] mr-1"></i> Filter
+                </button>
+                <?php if ($filter_month): ?>
+                <a href="?per_page=<?php echo $per_page; ?>" class="text-xs text-gray-500 hover:text-gray-700 bg-gray-200 hover:bg-gray-300 px-3 py-2 rounded-lg transition whitespace-nowrap">
+                    Clear
+                </a>
+                <?php endif; ?>
+                <!-- Export -->
+                <a href="?export=csv<?php echo $filter_month ? '&month='.urlencode($filter_month) : ''; ?>"
+                   class="inline-flex items-center gap-1 text-xs bg-green-100 text-green-700 px-3 py-2 rounded-lg hover:bg-green-200 transition font-semibold whitespace-nowrap">
+                    <i class="fas fa-download"></i> CSV
+                </a>
             </form>
 
             <!-- Bulk action bar (shown when rows are checked) -->

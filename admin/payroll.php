@@ -511,7 +511,7 @@ $payrolls = mysqli_query($conn, "SELECT p.*, e.name, e.employee_id, e.nationalit
             <form method="POST" class="flex gap-2">
                 <?php echo csrfField(); ?>
                 <input type="month" name="month_year" required
-                       class="flex-1 min-w-0 px-3 py-2 border border-gray-200 rounded-lg focus:border-blue-500 focus:outline-none text-sm">
+                       class="w-44 min-w-0 px-3 py-2 border border-gray-200 rounded-lg focus:border-blue-500 focus:outline-none text-sm">
                 <button type="submit" name="generate_payroll"
                         class="flex-shrink-0 bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg text-sm font-semibold transition flex items-center gap-1.5 whitespace-nowrap">
                     <i class="fas fa-sync-alt text-xs"></i> Generate

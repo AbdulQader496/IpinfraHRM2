@@ -502,21 +502,22 @@ $payrolls = mysqli_query($conn, "SELECT p.*, e.name, e.employee_id, e.nationalit
 
         <!-- Generate Payroll Section -->
         <div class="bg-white rounded-xl shadow-md p-4 mb-6 card-hover">
-            <form method="POST" class="flex flex-col sm:flex-row items-center gap-3">
+            <div class="flex items-center gap-2 mb-3">
+                <div class="w-7 h-7 bg-blue-100 rounded-lg flex items-center justify-center flex-shrink-0">
+                    <i class="fas fa-calculator text-blue-600 text-xs"></i>
+                </div>
+                <span class="font-semibold text-gray-800 text-sm">Generate Payroll</span>
+            </div>
+            <form method="POST" class="flex gap-2">
                 <?php echo csrfField(); ?>
-                <div class="w-8 h-8 bg-blue-100 rounded-lg flex items-center justify-center flex-shrink-0">
-                    <i class="fas fa-calculator text-blue-600 text-sm"></i>
-                </div>
-                <span class="font-semibold text-gray-800 text-sm whitespace-nowrap">Generate Payroll</span>
-                <div class="flex-1 relative min-w-0 w-full sm:w-auto">
-                    <i class="fas fa-calendar-alt absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 text-sm pointer-events-none"></i>
-                    <input type="month" name="month_year" required class="w-full pl-9 pr-3 py-2 border border-gray-200 rounded-lg focus:border-blue-500 focus:outline-none text-sm">
-                </div>
-                <button type="submit" name="generate_payroll" class="bg-blue-600 hover:bg-blue-700 text-white px-5 py-2 rounded-lg text-sm font-semibold transition flex items-center gap-2 whitespace-nowrap">
+                <input type="month" name="month_year" required
+                       class="flex-1 min-w-0 px-3 py-2 border border-gray-200 rounded-lg focus:border-blue-500 focus:outline-none text-sm">
+                <button type="submit" name="generate_payroll"
+                        class="flex-shrink-0 bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg text-sm font-semibold transition flex items-center gap-1.5 whitespace-nowrap">
                     <i class="fas fa-sync-alt text-xs"></i> Generate
                 </button>
-                <p class="text-xs text-gray-400 hidden sm:block">Malaysian: EPF, SOCSO, EIS auto-deducted &bull; Interns &amp; non-Malaysians: no statutory deductions</p>
             </form>
+            <p class="text-xs text-gray-400 mt-2">Malaysian employees: EPF, SOCSO, EIS auto-deducted. Interns &amp; non-Malaysians: no statutory deductions.</p>
         </div>
 
         <!-- Hidden bulk-delete form (outside row forms to avoid nesting) -->

@@ -42,7 +42,11 @@ if (isset($_POST['clock_in']) && !$attendance) {
         $error = "Cannot clock in on weekends (Saturday & Sunday)!";
     } else {
         $status = $is_late ? 'late' : 'present';
-        mysqli_query($conn, "INSERT INTO attendance (employee_id, date, clock_in, status) VALUES ($user_id, '$today', '$current_time', '$status')");
+        try {
+            mysqli_query($conn, "INSERT INTO attendance (employee_id, date, clock_in, status) VALUES ($user_id, '$today', '$current_time', '$status')");
+        } catch (Exception $e) {
+            // Already clocked in by a near-simultaneous duplicate request — not fatal.
+        }
         header('Location: clock.php');
         exit();
     }
@@ -65,6 +69,7 @@ if (isset($_POST['clock_out']) && $attendance && !$attendance['clock_out']) {
 // PAGINATION FOR ATTENDANCE HISTORY
 // ========================================
 $page = isset($_GET['page']) ? (int)$_GET['page'] : 1;
+if ($page < 1) $page = 1;
 $per_page = isset($_GET['per_page']) ? intval($_GET['per_page']) : 10;
 $per_page = in_array($per_page, [10, 25, 50]) ? $per_page : 10;
 $month_filter = isset($_GET['month']) ? preg_replace('/[^0-9\-]/', '', $_GET['month']) : '';

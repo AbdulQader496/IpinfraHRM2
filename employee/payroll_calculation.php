@@ -93,8 +93,16 @@ $paid_leave_days = 0;
 $unpaid_leave_days = 0;
 
 while ($leave = mysqli_fetch_assoc($leaves_query)) {
-    // Use stored total_days to match what was actually saved in payroll
-    $days = (float)$leave['total_days'];
+    // Clip to the days that actually fall within this month — a leave spanning a month
+    // boundary must split its days between both months' calculations, not count its full
+    // total_days in each one (matches the LEAST/GREATEST clipping admin/payroll.php uses).
+    if (isset($leave['half_day']) && $leave['half_day'] != 'none') {
+        $days = 0.5;
+    } else {
+        $clip_start = max(strtotime($leave['start_date']), strtotime($month_start));
+        $clip_end   = min(strtotime($leave['end_date']),   strtotime($month_end));
+        $days = ($clip_end - $clip_start) / 86400 + 1;
+    }
 
     // Interns have no annual leave entitlement — deduct annual leave same as unpaid
     if ($leave['leave_type'] == 'unpaid' || ($is_intern && $leave['leave_type'] == 'annual')) {

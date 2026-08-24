@@ -276,7 +276,7 @@ if (isset($_POST['undo_leave'])) {
 if (isset($_POST['adjust_leave'])) {
     if (!validateCsrfToken($_POST['csrf_token'] ?? '')) {
         showToast('Invalid request.', 'error');
-        header('Location: manage_leave.php'); exit();
+        header('Location: manage_leave.php?tab=balances'); exit();
     }
     $employee_id   = intval($_POST['employee_id']);
     $adjust_type   = $_POST['adjust_type'];
@@ -287,12 +287,12 @@ if (isset($_POST['adjust_leave'])) {
 
     $field_map = ['annual_entitlement' => 'annual_leave_entitlement', 'annual_used' => 'used_annual_leave', 'medical_entitlement' => 'medical_leave_entitlement', 'medical_used' => 'used_medical_leave'];
     $key = ($adjust_type == 'annual' ? 'annual' : 'medical') . '_' . $adjust_field;
-    if (!isset($field_map[$key])) { showToast('Invalid field.', 'error'); header('Location: manage_leave.php'); exit(); }
+    if (!isset($field_map[$key])) { showToast('Invalid field.', 'error'); header('Location: manage_leave.php?tab=balances'); exit(); }
     $field = $field_map[$key];
 
     mysqli_query($conn, "UPDATE employees SET $field = $field $op $adjust_amount WHERE id = $employee_id");
     showToast('Leave balance updated.', 'success');
-    header('Location: manage_leave.php'); exit();
+    header('Location: manage_leave.php?tab=balances'); exit();
 }
 
 // ========================================
@@ -301,7 +301,7 @@ if (isset($_POST['adjust_leave'])) {
 if (isset($_POST['reset_leave_balances']) && validateCsrfToken($_POST['csrf_token'] ?? '')) {
     mysqli_query($conn, "UPDATE employees SET used_annual_leave = 0, used_medical_leave = 0 WHERE role = 'employee'");
     showToast('All leave balances reset to 0 for the new year.', 'success');
-    header('Location: manage_leave.php'); exit();
+    header('Location: manage_leave.php?tab=balances'); exit();
 }
 
 // Get all employees with leave balances
@@ -1119,6 +1119,15 @@ $leave_type_options = mysqli_query($conn, "SELECT DISTINCT leave_type FROM leave
         panel.classList.add('scale-95', 'opacity-0');
         setTimeout(function() { modal.classList.add('hidden'); }, 200);
     }
+
+    // Actions on the Balances/Types tabs redirect back here with ?tab=...
+    // so the page reopens on the same tab instead of resetting to Requests.
+    (function() {
+        var wantedTab = new URLSearchParams(location.search).get('tab');
+        if (wantedTab === 'balances' || wantedTab === 'types') {
+            showTab(wantedTab);
+        }
+    })();
 </script>
 
 <!-- ========================================= -->

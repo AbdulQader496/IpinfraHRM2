@@ -58,14 +58,18 @@ if (isset($_POST['change_password'])) {
     $current_password = $_POST['current_password'];
     $new_password     = $_POST['new_password'];
     $confirm_password = $_POST['confirm_password'];
-    if ($employee['password'] != $current_password) {
+    $stored_password  = $employee['password'];
+    $current_ok = (password_get_info($stored_password)['algo'] !== null)
+        ? password_verify($current_password, $stored_password)
+        : hash_equals($stored_password, $current_password); // legacy plaintext account
+    if (!$current_ok) {
         showToast('Current password is incorrect.', 'error'); header('Location: profile.php'); exit();
     } elseif (strlen($new_password) < 6) {
         showToast('New password must be at least 6 characters.', 'error'); header('Location: profile.php'); exit();
     } elseif ($new_password != $confirm_password) {
         showToast('New password and confirm password do not match.', 'error'); header('Location: profile.php'); exit();
     } else {
-        $new_password = mysqli_real_escape_string($conn, $new_password);
+        $new_password = mysqli_real_escape_string($conn, password_hash($new_password, PASSWORD_DEFAULT));
         if (mysqli_query($conn, "UPDATE employees SET password='$new_password' WHERE id=$user_id")) {
             showToast('Password changed successfully!'); header('Location: profile.php'); exit();
         } else {

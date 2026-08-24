@@ -4,37 +4,55 @@ require_once 'includes/db.php';
 
 // Check if user has remember me cookie
 if (!isset($_SESSION['user_id']) && isset($_COOKIE['remember_token'])) {
-    $token = mysqli_real_escape_string($conn, $_COOKIE['remember_token']);
-    $query = "SELECT * FROM employees WHERE remember_token = '$token' AND status = 'active'";
-    $result = mysqli_query($conn, $query);
-    
-    if (mysqli_num_rows($result) == 1) {
-        $user = mysqli_fetch_assoc($result);
-        $_SESSION['user_id'] = $user['id'];
-        $_SESSION['user_name'] = $user['name'];
-        $_SESSION['role'] = $user['role'];
-        $_SESSION['employee_id'] = $user['employee_id'];
-        
-        session_regenerate_id(true);
-        if ($user['role'] == 'admin') {
-            header('Location: admin/dashboard.php');
-        } else {
-            header('Location: employee/dashboard.php');
+    try {
+        $token = mysqli_real_escape_string($conn, $_COOKIE['remember_token']);
+        $query = "SELECT * FROM employees WHERE remember_token = '$token' AND status = 'active'";
+        $result = mysqli_query($conn, $query);
+
+        if (mysqli_num_rows($result) == 1) {
+            $user = mysqli_fetch_assoc($result);
+            $_SESSION['user_id'] = $user['id'];
+            $_SESSION['user_name'] = $user['name'];
+            $_SESSION['role'] = $user['role'];
+            $_SESSION['employee_id'] = $user['employee_id'];
+
+            session_regenerate_id(true);
+            if ($user['role'] == 'admin') {
+                header('Location: admin/dashboard.php');
+            } else {
+                header('Location: employee/dashboard.php');
+            }
+            exit();
         }
-        exit();
+    } catch (Exception $e) {
+        // remember_token column missing/schema drift — fall through to normal login form
     }
 }
 
 if (isset($_POST['login'])) {
     $email = mysqli_real_escape_string($conn, $_POST['email']);
-    $password = mysqli_real_escape_string($conn, $_POST['password']);
+    $password_raw = $_POST['password']; // not escaped for SQL — never concatenated raw, only verified/hashed
     $remember = isset($_POST['remember']) ? true : false;
-    
-    $query = "SELECT * FROM employees WHERE email = '$email' AND password = '$password' AND status = 'active'";
+
+    $query = "SELECT * FROM employees WHERE email = '$email' AND status = 'active'";
     $result = mysqli_query($conn, $query);
-    
-    if (mysqli_num_rows($result) == 1) {
-        $user = mysqli_fetch_assoc($result);
+    $user = (mysqli_num_rows($result) == 1) ? mysqli_fetch_assoc($result) : null;
+
+    // Passwords are stored hashed (password_hash). For any account still holding
+    // a legacy plaintext value (pre-migration or not yet re-saved), fall back to a
+    // direct compare and opportunistically upgrade it to a hash on success.
+    $password_ok = false;
+    if ($user) {
+        if (password_get_info($user['password'])['algo'] !== null) {
+            $password_ok = password_verify($password_raw, $user['password']);
+        } elseif (hash_equals($user['password'], $password_raw)) {
+            $password_ok = true;
+            $new_hash = password_hash($password_raw, PASSWORD_DEFAULT);
+            mysqli_query($conn, "UPDATE employees SET password = '" . mysqli_real_escape_string($conn, $new_hash) . "' WHERE id = {$user['id']}");
+        }
+    }
+
+    if ($password_ok) {
         $_SESSION['user_id'] = $user['id'];
         $_SESSION['user_name'] = $user['name'];
         $_SESSION['role'] = $user['role'];
@@ -44,7 +62,8 @@ if (isset($_POST['login'])) {
         if ($remember) {
             $token = bin2hex(random_bytes(32));
             mysqli_query($conn, "UPDATE employees SET remember_token = '$token' WHERE id = {$user['id']}");
-            setcookie('remember_token', $token, time() + (86400 * 30), "/", "", false, true);
+            $is_https = (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off') || (($_SERVER['HTTP_X_FORWARDED_PROTO'] ?? '') === 'https');
+            setcookie('remember_token', $token, time() + (86400 * 30), "/", "", $is_https, true);
         }
         
         session_regenerate_id(true);

@@ -9,7 +9,9 @@ require_once '../includes/toast_fn.php';
 // PAGINATION & FILTERS
 // ========================================
 $page = isset($_GET['page']) ? (int)$_GET['page'] : 1;
+if ($page < 1) $page = 1;
 $per_page = isset($_GET['per_page']) ? (int)$_GET['per_page'] : 10;
+if ($per_page < 1) $per_page = 10;
 $search = isset($_GET['search']) ? mysqli_real_escape_string($conn, $_GET['search']) : '';
 $allowed_statuses = ['pending', 'approved', 'rejected'];
 $status_filter = isset($_GET['status']) && in_array($_GET['status'], $allowed_statuses) ? $_GET['status'] : (isset($_GET['status']) ? '' : 'pending');
@@ -78,6 +80,11 @@ $claim_types = mysqli_query($conn, "SELECT DISTINCT claim_type FROM claims");
 // BULK APPROVE / REJECT
 // ========================================
 if (isset($_POST['bulk_action']) && !empty($_POST['ids'])) {
+    if (!validateCsrfToken($_POST['csrf_token'] ?? '')) {
+        showToast('Invalid request.', 'error');
+        header("Location: manage_claim.php?page=$page&per_page=$per_page&search=" . urlencode($search) . "&status=$status_filter&type=$type_filter&date_from=$date_from&date_to=$date_to");
+        exit();
+    }
     $bulk_action = $_POST['bulk_action'];
     $bulk_status = ($bulk_action === 'approve') ? 'approved' : 'rejected';
     $ids = array_map('intval', $_POST['ids']);
@@ -86,8 +93,11 @@ if (isset($_POST['bulk_action']) && !empty($_POST['ids'])) {
     $bulk_rows = mysqli_query($conn, "SELECT id, employee_id FROM claims WHERE id IN ($ids_safe) AND status='pending'");
     $affected = 0;
     while ($br = mysqli_fetch_assoc($bulk_rows)) {
-        mysqli_query($conn, "UPDATE claims SET status='$bulk_status', reviewed_at=NOW() WHERE id={$br['id']}");
+        // Atomic guard: only notify/count if this row was still 'pending' at update time.
+        mysqli_query($conn, "UPDATE claims SET status='$bulk_status', reviewed_at=NOW() WHERE id={$br['id']} AND status='pending'");
+        if (mysqli_affected_rows($conn) === 0) continue;
         addNotification($br['employee_id'], 'Claim ' . ucfirst($bulk_status), 'Your claim has been ' . $bulk_status . '.');
+        logAction($bulk_status === 'approved' ? 'approve' : 'reject', 'Bulk ' . $bulk_status . ' claim', $br['id'], 'claim');
         $affected++;
     }
 
@@ -115,9 +125,15 @@ if (isset($_POST['claim_action']) && validateCsrfToken($_POST['csrf_token'] ?? '
         exit();
     }
 
-    mysqli_query($conn, "UPDATE claims SET status='$status', reviewed_at=NOW() WHERE id=$id");
+    // Atomic guard: only proceed if this row was still 'pending' at update time.
+    mysqli_query($conn, "UPDATE claims SET status='$status', reviewed_at=NOW() WHERE id=$id AND status='pending'");
+    if (mysqli_affected_rows($conn) === 0) {
+        header("Location: manage_claim.php?page=$page&per_page=$per_page&search=" . urlencode($search) . "&status=$status_filter&type=$type_filter&date_from=$date_from&date_to=$date_to");
+        exit();
+    }
 
     addNotification($claim['employee_id'], 'Claim ' . ucfirst($status), 'Your claim has been ' . $status);
+    logAction($status === 'approved' ? 'approve' : 'reject', ucfirst($status) . ' claim', $id, 'claim');
 
     if ($status === 'approved') {
         showToast('Claim approved and will be added to next payroll.', 'success');
@@ -133,10 +149,13 @@ if (isset($_POST['claim_action']) && validateCsrfToken($_POST['csrf_token'] ?? '
 // ========================================
 if (isset($_POST['undo_claim']) && validateCsrfToken($_POST['csrf_token'] ?? '')) {
     $id = intval($_POST['undo_claim']);
-    $claim = mysqli_fetch_assoc(mysqli_query($conn, "SELECT id FROM claims WHERE id=$id AND status IN ('approved','rejected')"));
+    $claim = mysqli_fetch_assoc(mysqli_query($conn, "SELECT id, status FROM claims WHERE id=$id AND status IN ('approved','rejected')"));
     if ($claim) {
-        mysqli_query($conn, "UPDATE claims SET status='pending', reviewed_at=NULL WHERE id=$id");
-        showToast('Claim reverted to pending.', 'success');
+        mysqli_query($conn, "UPDATE claims SET status='pending', reviewed_at=NULL WHERE id=$id AND status='{$claim['status']}'");
+        if (mysqli_affected_rows($conn) > 0) {
+            logAction('update', 'Reverted ' . $claim['status'] . ' claim to pending', $id, 'claim');
+            showToast('Claim reverted to pending.', 'success');
+        }
     }
     header("Location: manage_claim.php?page=$page&per_page=$per_page&search=" . urlencode($search) . "&status=$status_filter&type=$type_filter&date_from=$date_from&date_to=$date_to");
     exit();

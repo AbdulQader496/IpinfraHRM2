@@ -139,7 +139,9 @@ if (isset($_POST['delete_leave'])) {
 // PAGINATION FOR LEAVE HISTORY
 // ========================================
 $page = isset($_GET['page']) ? (int)$_GET['page'] : 1;
+if ($page < 1) $page = 1;
 $per_page = isset($_GET['per_page']) ? (int)$_GET['per_page'] : 10;
+if ($per_page < 1) $per_page = 10;
 $allowed_statuses = ['pending', 'approved', 'rejected'];
 $status_filter = isset($_GET['status']) && in_array($_GET['status'], $allowed_statuses) ? $_GET['status'] : '';
 

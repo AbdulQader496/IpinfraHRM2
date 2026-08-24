@@ -9,7 +9,9 @@ require_once '../includes/toast_fn.php';
 // PAGINATION & FILTERS
 // ========================================
 $page = isset($_GET['page']) ? (int)$_GET['page'] : 1;
+if ($page < 1) $page = 1;
 $per_page = isset($_GET['per_page']) ? (int)$_GET['per_page'] : 10;
+if ($per_page < 1) $per_page = 10;
 $search = isset($_GET['search']) ? mysqli_real_escape_string($conn, $_GET['search']) : '';
 $allowed_statuses = ['pending', 'approved', 'rejected'];
 $status_filter = isset($_GET['status']) && in_array($_GET['status'], $allowed_statuses) ? $_GET['status'] : (isset($_GET['status']) ? '' : 'pending');
@@ -109,6 +111,14 @@ if (isset($_POST['add_leave_type'])) {
     $max_consecutive_days = intval($_POST['max_consecutive_days']);
     $color_code           = mysqli_real_escape_string($conn, $_POST['color_code']);
 
+    // leaves.leave_type is a hard ENUM('annual','medical','emergency','unpaid'). A leave_code
+    // outside that set would silently save as a blank leave_type when an employee applies —
+    // reject it here instead of letting the same bug resurface for a new custom type.
+    if (!in_array($leave_code, ['annual', 'medical', 'emergency', 'unpaid'], true)) {
+        showToast('Leave code must be one of: annual, medical, emergency, unpaid (the system only supports these types right now).', 'error');
+        header('Location: manage_leave.php'); exit();
+    }
+
     mysqli_query($conn, "INSERT INTO leave_types (leave_name, leave_code, days_per_year, is_paid, requires_attachment, max_consecutive_days, color_code)
         VALUES ('$leave_name', '$leave_code', $days_per_year, $is_paid, $requires_attachment, $max_consecutive_days, '$color_code')");
     header('Location: manage_leave.php');
@@ -129,6 +139,11 @@ if (isset($_POST['update_leave_type'])) {
     $max_consecutive_days = intval($_POST['max_consecutive_days']);
     $status               = mysqli_real_escape_string($conn, $_POST['status']);
     $color_code           = mysqli_real_escape_string($conn, $_POST['color_code']);
+
+    if (!in_array($leave_code, ['annual', 'medical', 'emergency', 'unpaid'], true)) {
+        showToast('Leave code must be one of: annual, medical, emergency, unpaid (the system only supports these types right now).', 'error');
+        header('Location: manage_leave.php'); exit();
+    }
 
     mysqli_query($conn, "UPDATE leave_types SET
         leave_name='$leave_name', leave_code='$leave_code', days_per_year=$days_per_year,
@@ -154,6 +169,10 @@ if (isset($_POST['delete_type'])) {
 // BULK APPROVE / REJECT LEAVES
 // ========================================
 if (isset($_POST['bulk_leave_action']) && !empty($_POST['ids'])) {
+    if (!validateCsrfToken($_POST['csrf_token'] ?? '')) {
+        showToast('Invalid request.', 'error');
+        header('Location: manage_leave.php'); exit();
+    }
     $bulk_action = $_POST['bulk_leave_action'];
     $bulk_status = ($bulk_action === 'approve') ? 'approved' : 'rejected';
     $ids = array_map('intval', $_POST['ids']);
@@ -170,7 +189,13 @@ if (isset($_POST['bulk_leave_action']) && !empty($_POST['ids'])) {
               : (strtotime($br['end_date']) - strtotime($br['start_date'])) / 86400 + 1;
 
         mysqli_begin_transaction($conn);
-        mysqli_query($conn, "UPDATE leaves SET status='$bulk_status' WHERE id={$br['id']}");
+        // Atomic guard: only proceed if this row was still 'pending' at update time —
+        // prevents double-deducting balances if another request processed it concurrently.
+        mysqli_query($conn, "UPDATE leaves SET status='$bulk_status' WHERE id={$br['id']} AND status='pending'");
+        if (mysqli_affected_rows($conn) === 0) {
+            mysqli_commit($conn);
+            continue;
+        }
         if ($bulk_status === 'approved') {
             if ($br['leave_type'] == 'annual') {
                 mysqli_query($conn, "UPDATE employees SET used_annual_leave = used_annual_leave + $days WHERE id = {$br['employee_id']}");
@@ -183,6 +208,7 @@ if (isset($_POST['bulk_leave_action']) && !empty($_POST['ids'])) {
             mysqli_commit($conn);
             addNotification($br['employee_id'], 'Leave Rejected', 'Your ' . $br['leave_type'] . ' leave has been rejected.');
         }
+        logAction($bulk_status === 'approved' ? 'approve' : 'reject', 'Bulk ' . $bulk_status . ' leave request', $br['id'], 'leave');
         $affected++;
     }
 
@@ -222,7 +248,14 @@ if (isset($_POST['action']) && isset($_POST['id'])) {
               : (strtotime($leave['end_date']) - strtotime($leave['start_date'])) / 86400 + 1;
 
         mysqli_begin_transaction($conn);
-        mysqli_query($conn, "UPDATE leaves SET status='$status' WHERE id=$id");
+        // Atomic guard: only proceed if this row was still 'pending' at update time —
+        // prevents double-deducting balances if another request (e.g. two admin tabs) processed it concurrently.
+        mysqli_query($conn, "UPDATE leaves SET status='$status' WHERE id=$id AND status='pending'");
+        if (mysqli_affected_rows($conn) === 0) {
+            mysqli_commit($conn);
+            showToast('This leave request was already processed.', 'warning');
+            header('Location: manage_leave.php'); exit();
+        }
         if ($status == 'approved') {
             if ($leave['leave_type'] == 'annual') {
                 mysqli_query($conn, "UPDATE employees SET used_annual_leave = used_annual_leave + $days WHERE id = {$leave['employee_id']}");
@@ -237,6 +270,7 @@ if (isset($_POST['action']) && isset($_POST['id'])) {
             addNotification($leave['employee_id'], 'Leave Rejected', 'Your ' . $leave['leave_type'] . ' leave has been rejected.');
             showToast('Leave application rejected.', 'warning');
         }
+        logAction($status === 'approved' ? 'approve' : 'reject', ucfirst($status) . ' ' . $leave['leave_type'] . ' leave request', $id, 'leave');
     }
     header('Location: manage_leave.php');
     exit();
@@ -255,9 +289,17 @@ if (isset($_POST['undo_leave'])) {
     if ($leave) {
         $days = (isset($leave['half_day']) && $leave['half_day'] != 'none') ? 0.5
               : (strtotime($leave['end_date']) - strtotime($leave['start_date'])) / 86400 + 1;
+        $prev_status = $leave['status'];
         mysqli_begin_transaction($conn);
-        mysqli_query($conn, "UPDATE leaves SET status='pending' WHERE id=$id");
-        if ($leave['status'] == 'approved') {
+        // Atomic guard: only proceed if the row was still in the status we just read —
+        // prevents double-restoring the balance if another request reverted it concurrently.
+        mysqli_query($conn, "UPDATE leaves SET status='pending' WHERE id=$id AND status='$prev_status'");
+        if (mysqli_affected_rows($conn) === 0) {
+            mysqli_commit($conn);
+            showToast('This leave request was already changed elsewhere.', 'warning');
+            header('Location: manage_leave.php'); exit();
+        }
+        if ($prev_status == 'approved') {
             if ($leave['leave_type'] == 'annual') {
                 mysqli_query($conn, "UPDATE employees SET used_annual_leave = GREATEST(0, used_annual_leave - $days) WHERE id = {$leave['employee_id']}");
             } elseif ($leave['leave_type'] == 'medical') {
@@ -265,6 +307,7 @@ if (isset($_POST['undo_leave'])) {
             }
         }
         mysqli_commit($conn);
+        logAction('update', 'Reverted ' . $prev_status . ' leave request to pending', $id, 'leave');
         showToast('Leave reverted to pending.', 'success');
     }
     header('Location: manage_leave.php'); exit();
@@ -291,6 +334,7 @@ if (isset($_POST['adjust_leave'])) {
     $field = $field_map[$key];
 
     mysqli_query($conn, "UPDATE employees SET $field = $field $op $adjust_amount WHERE id = $employee_id");
+    logAction('update', "Adjusted $field: $action_type $adjust_amount", $employee_id, 'employee');
     showToast('Leave balance updated.', 'success');
     header('Location: manage_leave.php?tab=balances'); exit();
 }
@@ -300,6 +344,7 @@ if (isset($_POST['adjust_leave'])) {
 // ========================================
 if (isset($_POST['reset_leave_balances']) && validateCsrfToken($_POST['csrf_token'] ?? '')) {
     mysqli_query($conn, "UPDATE employees SET used_annual_leave = 0, used_medical_leave = 0 WHERE role = 'employee'");
+    logAction('update', 'Reset all employee leave balances (new year)', null, 'employee');
     showToast('All leave balances reset to 0 for the new year.', 'success');
     header('Location: manage_leave.php?tab=balances'); exit();
 }

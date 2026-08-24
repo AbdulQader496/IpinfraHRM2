@@ -120,10 +120,10 @@ if ($is_intern) {
     $pcb = calculatePCB($basic_salary, $is_malaysian);
 }
 
-// Approved claims for this month added to salary
+// Approved claims counted in the month they were approved, not the month they were submitted
 $claims_q = mysqli_query($conn, "SELECT COALESCE(SUM(amount),0) as ca FROM claims
     WHERE employee_id = $view_user_id AND status = 'approved'
-    AND DATE_FORMAT(applied_at, '%Y-%m') = '$selected_month'");
+    AND DATE_FORMAT(reviewed_at, '%Y-%m') = '$selected_month'");
 $approved_claims_amount = (float)mysqli_fetch_assoc($claims_q)['ca'];
 
 $total_deductions = $epf + $socso + $eis + $pcb;

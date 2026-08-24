@@ -61,7 +61,7 @@ if (isset($_POST['pay_regenerate']) && validateCsrfToken($_POST['csrf_token'] ??
 ), 0) as ud FROM leaves WHERE employee_id={$regen_row['id']} AND status='approved' AND leave_type $regen_leave_filter AND start_date <= '$month_end' AND end_date >= '$month_start'"));
         $unpaid_deduction = round($per_day * (float)$uq['ud'], 2);
 
-        $cq = mysqli_fetch_assoc(mysqli_query($conn, "SELECT COALESCE(SUM(amount),0) as ca FROM claims WHERE employee_id={$regen_row['id']} AND status='approved' AND DATE_FORMAT(applied_at,'%Y-%m')='$month_year'"));
+        $cq = mysqli_fetch_assoc(mysqli_query($conn, "SELECT COALESCE(SUM(amount),0) as ca FROM claims WHERE employee_id={$regen_row['id']} AND status='approved' AND DATE_FORMAT(reviewed_at,'%Y-%m')='$month_year'"));
         $approved_claims = (float)$cq['ca'];
 
         $net = $basic - $epf_emp - $socso_emp - $eis - $pcb - $unpaid_deduction + $approved_claims;
@@ -311,10 +311,10 @@ if (isset($_POST['generate_payroll'])) {
             $unpaid_days = (float)mysqli_fetch_assoc($unpaid_q)['ud'];
             $unpaid_deduction = round($per_day * $unpaid_days, 2);
 
-            // Approved claims for the month (added to salary)
+            // Approved claims counted in the month they were approved, not the month they were submitted
             $claim_q = mysqli_query($conn, "SELECT COALESCE(SUM(amount),0) as ca FROM claims
                 WHERE employee_id = {$emp['id']} AND status = 'approved'
-                AND DATE_FORMAT(applied_at, '%Y-%m') = '$month_year'");
+                AND DATE_FORMAT(reviewed_at, '%Y-%m') = '$month_year'");
             $approved_claims = (float)mysqli_fetch_assoc($claim_q)['ca'];
 
             // EIS: both employee and employer contribute same rate (0.2%)

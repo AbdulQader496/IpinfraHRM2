@@ -2,6 +2,7 @@
 require_once '../includes/auth.php';
 redirectIfNotAdmin();
 require_once '../includes/db.php';
+require_once '../includes/functions.php';
 
 // Handle resignation request
 if (isset($_POST['add_resignation'])) {
@@ -30,12 +31,18 @@ if (isset($_POST['resign_approve']) && validateCsrfToken($_POST['csrf_token'] ??
     $status = in_array($_POST['status'] ?? '', ['approved', 'rejected']) ? $_POST['status'] : 'rejected';
     $approved_by = intval($_SESSION['user_id']);
 
-    mysqli_query($conn, "UPDATE resignations SET status='$status', approved_by=$approved_by, approved_date=CURDATE() WHERE id=$id");
+    // Only transition a request that's still pending — blocks a double-submit
+    // (or an admin re-approving an already-decided request) from silently
+    // overwriting an already-processed record.
+    mysqli_query($conn, "UPDATE resignations SET status='$status', approved_by=$approved_by, approved_date=CURDATE() WHERE id=$id AND status='pending'");
 
-    if ($status == 'approved') {
-        $res = mysqli_fetch_assoc(mysqli_query($conn, "SELECT employee_id FROM resignations WHERE id=$id"));
-        $emp_id = intval($res['employee_id']);
-        mysqli_query($conn, "UPDATE employees SET employment_status='resigned' WHERE id=$emp_id");
+    if (mysqli_affected_rows($conn) > 0) {
+        logAction($status === 'approved' ? 'approve' : 'reject', ucfirst($status) . ' resignation request', $id, 'resignation');
+        if ($status == 'approved') {
+            $res = mysqli_fetch_assoc(mysqli_query($conn, "SELECT employee_id FROM resignations WHERE id=$id"));
+            $emp_id = intval($res['employee_id']);
+            mysqli_query($conn, "UPDATE employees SET employment_status='resigned' WHERE id=$emp_id");
+        }
     }
 
     header('Location: resignations.php');

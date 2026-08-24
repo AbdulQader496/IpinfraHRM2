@@ -2,6 +2,7 @@
 require_once '../includes/auth.php';
 redirectIfNotAdmin();
 require_once '../includes/db.php';
+require_once '../includes/functions.php';
 require_once '../includes/toast_fn.php';
 
 // Handle Add Employee
@@ -12,7 +13,7 @@ if (isset($_POST['add_employee'])) {
     $passport_no = mysqli_real_escape_string($conn, $_POST['passport_no']);
     $nationality = mysqli_real_escape_string($conn, $_POST['nationality']);
     $email = mysqli_real_escape_string($conn, $_POST['email']);
-    $password = mysqli_real_escape_string($conn, $_POST['password']);
+    $password = mysqli_real_escape_string($conn, password_hash($_POST['password'], PASSWORD_DEFAULT));
     $department = mysqli_real_escape_string($conn, $_POST['department']);
     $position = mysqli_real_escape_string($conn, $_POST['position']);
     $basic_salary = floatval($_POST['basic_salary']);
@@ -121,14 +122,37 @@ if (isset($_POST['update_employee'])) {
 // Handle Delete
 if (isset($_POST['emp_delete']) && validateCsrfToken($_POST['csrf_token'] ?? '')) {
     $id = intval($_POST['emp_delete']);
+
+    // Collect file paths before the rows referencing them are gone, so we can
+    // clean them up on disk too — otherwise they're orphaned forever.
+    $files_to_delete = [];
+    $emp_row = mysqli_fetch_assoc(mysqli_query($conn, "SELECT profile_pic FROM employees WHERE id = $id"));
+    if ($emp_row && !empty($emp_row['profile_pic'])) {
+        $files_to_delete[] = "../uploads/profiles/" . $emp_row['profile_pic'];
+    }
+    try {
+        $doc_res = mysqli_query($conn, "SELECT file_path FROM employee_documents WHERE employee_id = $id");
+        while ($doc_res && ($doc_row = mysqli_fetch_assoc($doc_res))) {
+            foreach (['../uploads/documents/', '../uploads/employee_documents/'] as $dp) {
+                if (file_exists($dp . $doc_row['file_path'])) { $files_to_delete[] = $dp . $doc_row['file_path']; break; }
+            }
+        }
+    } catch (Exception $e) { /* table may not exist in this environment */ }
+
     // Remove related records first to avoid FK constraint failures
-    $related = ['attendance', 'leaves', 'payroll', 'claims', 'notifications', 'employee_of_month', 'asset_requests'];
+    $related = ['attendance', 'leaves', 'payroll', 'claims', 'notifications', 'employee_of_month', 'asset_requests', 'employee_documents'];
     foreach ($related as $tbl) {
         try {
             mysqli_query($conn, "DELETE FROM `$tbl` WHERE employee_id = $id");
         } catch (Exception $e) { /* table may not exist in this environment */ }
     }
     mysqli_query($conn, "DELETE FROM employees WHERE id = $id");
+
+    foreach ($files_to_delete as $fp) {
+        if (file_exists($fp)) @unlink($fp);
+    }
+
+    logAction('delete', 'Deleted employee (and related records)', $id, 'employee');
     showToast('Employee deleted.', 'info');
     header('Location: employees.php');
     exit();
@@ -171,6 +195,7 @@ try {
 
 // Get employees with pagination
 $page = isset($_GET['page']) ? intval($_GET['page']) : 1;
+if ($page < 1) $page = 1;
 $limit = 10;
 $offset = ($page - 1) * $limit;
 

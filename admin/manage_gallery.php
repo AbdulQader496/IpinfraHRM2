@@ -2,6 +2,7 @@
 require_once '../includes/auth.php';
 redirectIfNotAdmin();
 require_once '../includes/db.php';
+require_once '../includes/functions.php';
 require_once '../includes/toast_fn.php';
 
 // Delete photo
@@ -13,14 +14,17 @@ if (isset($_POST['photo_delete']) && validateCsrfToken($_POST['csrf_token'] ?? '
     $result = mysqli_query($conn, $query);
     $photo = mysqli_fetch_assoc($result);
 
-    // Delete file from server
-    $file_path = "../uploads/gallery/" . $photo['image_path'];
-    if (file_exists($file_path)) {
-        unlink($file_path);
-    }
+    if ($photo) {
+        // Delete file from server
+        $file_path = "../uploads/gallery/" . $photo['image_path'];
+        if (file_exists($file_path)) {
+            unlink($file_path);
+        }
 
-    // Delete from database
-    mysqli_query($conn, "DELETE FROM gallery WHERE id = $id");
+        // Delete from database
+        mysqli_query($conn, "DELETE FROM gallery WHERE id = $id");
+        logAction('delete', 'Deleted gallery photo', $id, 'gallery');
+    }
     header('Location: manage_gallery.php');
     exit();
 }

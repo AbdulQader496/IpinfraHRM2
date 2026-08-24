@@ -2,15 +2,20 @@
 require_once '../includes/auth.php';
 redirectIfNotAdmin();
 require_once '../includes/db.php';
+require_once '../includes/functions.php';
+require_once '../includes/toast_fn.php';
 
 // ========================================
 // PAGINATION & FILTERS
 // ========================================
 $page = isset($_GET['page']) ? (int)$_GET['page'] : 1;
+if ($page < 1) $page = 1;
 $per_page = isset($_GET['per_page']) ? (int)$_GET['per_page'] : 10;
+if ($per_page < 1) $per_page = 10;
+if ($per_page > 100) $per_page = 100;
 $search = isset($_GET['search']) ? mysqli_real_escape_string($conn, $_GET['search']) : '';
 $category_filter = isset($_GET['category']) ? intval($_GET['category']) : 0;
-$status_filter = isset($_GET['status']) ? $_GET['status'] : '';
+$status_filter = isset($_GET['status']) && in_array($_GET['status'], ['available', 'outofstock'], true) ? $_GET['status'] : '';
 
 // Build WHERE clause for assets
 $where = "WHERE 1=1";
@@ -89,6 +94,7 @@ if (isset($_POST['delete'])) {
         $error = "Cannot delete asset with existing requests.";
     } else {
         mysqli_query($conn, "DELETE FROM assets WHERE id = $asset_id");
+        logAction('delete', 'Deleted asset', $asset_id, 'asset');
     }
     header('Location: manage_assets.php');
     exit();
@@ -107,19 +113,32 @@ if (isset($_POST['asset_action']) && validateCsrfToken($_POST['csrf_token'] ?? '
     $request_id = intval($_POST['request_id'] ?? 0);
 
     if ($asset_action === 'return') {
-        $req_query = mysqli_query($conn, "SELECT * FROM asset_requests WHERE id = $request_id");
+        $req_query = mysqli_query($conn, "SELECT * FROM asset_requests WHERE id = $request_id AND status = 'approved' AND returned_date IS NULL");
         $request = mysqli_fetch_assoc($req_query);
+        if (!$request) {
+            showToast('Request not found or already processed.', 'error');
+            header('Location: manage_assets.php'); exit();
+        }
 
         mysqli_query($conn, "UPDATE assets SET available_quantity = available_quantity + {$request['quantity']}, status = 'available' WHERE id = {$request['asset_id']}");
         mysqli_query($conn, "UPDATE asset_requests SET status='returned', returned_date=CURDATE() WHERE id=$request_id");
         mysqli_query($conn, "UPDATE asset_assignment_history SET returned_date=CURDATE() WHERE asset_id={$request['asset_id']} AND employee_id={$request['employee_id']} AND returned_date IS NULL");
+        logAction('update', 'Marked asset request as returned', $request_id, 'asset_request');
     } else {
         $status = ($asset_action == 'approve') ? 'approved' : 'rejected';
 
-        $req_query = mysqli_query($conn, "SELECT * FROM asset_requests WHERE id = $request_id");
+        $req_query = mysqli_query($conn, "SELECT * FROM asset_requests WHERE id = $request_id AND status = 'pending'");
         $request = mysqli_fetch_assoc($req_query);
+        if (!$request) {
+            showToast('Request not found or already processed.', 'error');
+            header('Location: manage_assets.php'); exit();
+        }
 
         if ($status == 'approved') {
+            if ($request['quantity'] <= 0) {
+                showToast('Invalid request quantity.', 'error');
+                header('Location: manage_assets.php'); exit();
+            }
             mysqli_query($conn, "UPDATE assets SET available_quantity = available_quantity - {$request['quantity']} WHERE id = {$request['asset_id']} AND available_quantity >= {$request['quantity']}");
             if (mysqli_affected_rows($conn) == 0) {
                 showToast('Insufficient stock to approve this request.', 'error');
@@ -138,6 +157,7 @@ if (isset($_POST['asset_action']) && validateCsrfToken($_POST['csrf_token'] ?? '
             mysqli_query($conn, "INSERT INTO asset_assignment_history (asset_id, employee_id, assigned_date, quantity)
                                 VALUES ({$request['asset_id']}, {$request['employee_id']}, CURDATE(), {$request['quantity']})");
         }
+        logAction($status === 'approved' ? 'approve' : 'reject', ucfirst($status) . ' asset request', $request_id, 'asset_request');
     }
 
     header('Location: manage_assets.php');

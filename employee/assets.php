@@ -17,6 +17,13 @@ if (isset($_POST['request_asset'])) {
     $start_date         = mysqli_real_escape_string($conn, $_POST['start_date']);
     $end_date           = mysqli_real_escape_string($conn, $_POST['end_date']);
     $quantity_requested = intval($_POST['quantity_requested']);
+
+    $asset_row = mysqli_fetch_assoc(mysqli_query($conn, "SELECT available_quantity FROM assets WHERE id = $asset_id"));
+    if ($quantity_requested <= 0 || !$asset_row || $quantity_requested > $asset_row['available_quantity']) {
+        showToast('Invalid quantity requested.', 'error');
+        header('Location: assets.php'); exit();
+    }
+
     mysqli_query($conn, "INSERT INTO asset_requests (employee_id, asset_id, purpose, start_date, end_date, request_date, quantity)
         VALUES ($user_id, $asset_id, '$purpose', '$start_date', '$end_date', CURDATE(), $quantity_requested)");
     showToast('Asset request submitted successfully!'); header('Location: assets.php'); exit();
@@ -52,7 +59,8 @@ $my_assets = mysqli_query($conn, "SELECT a.*, c.category_name, ar.status, ar.sta
     ORDER BY ar.created_at DESC");
 
 // Get request history (paginated)
-$hist_per_page = in_array((int)($_GET['hist_per_page'] ?? 20), [10, 20, 50]) ? (int)$_GET['hist_per_page'] : 20;
+$hist_per_page_raw = (int)($_GET['hist_per_page'] ?? 20);
+$hist_per_page = in_array($hist_per_page_raw, [10, 20, 50]) ? $hist_per_page_raw : 20;
 $hist_page     = max(1, (int)($_GET['hist_page'] ?? 1));
 $hist_total    = (int)mysqli_fetch_assoc(mysqli_query($conn,
     "SELECT COUNT(*) as c FROM asset_requests WHERE employee_id = $user_id"))['c'];

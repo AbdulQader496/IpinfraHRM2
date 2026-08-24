@@ -7,7 +7,8 @@ require_once '../includes/toast_fn.php';
 $user_id = intval($_SESSION['user_id']);
 
 // Pagination
-$per_page   = in_array((int)($_GET['per_page'] ?? 6), [6, 12, 24]) ? (int)$_GET['per_page'] : 6;
+$per_page_raw = (int)($_GET['per_page'] ?? 6);
+$per_page   = in_array($per_page_raw, [6, 12, 24]) ? $per_page_raw : 6;
 $page       = max(1, (int)($_GET['page'] ?? 1));
 $total_rows = (int)mysqli_fetch_assoc(mysqli_query($conn,
     "SELECT COUNT(DISTINCT month_year) as c FROM payroll WHERE employee_id = $user_id"))['c'];

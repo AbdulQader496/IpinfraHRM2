@@ -877,7 +877,7 @@ img[loading="lazy"].img-loaded {
   }
 
   window.gbMarkRead = function(id, el) {
-    fetch('../includes/notifications_api.php?action=mark_read&id=' + id);
+    fetch('../includes/notifications_api.php?action=mark_read&id=' + id, {method: 'POST'});
     el.classList.remove('unread');
     var dot = el.querySelector('.gb-ni-dot');
     if (dot) dot.remove();
@@ -887,7 +887,7 @@ img[loading="lazy"].img-loaded {
   };
 
   window.gbMarkAll = function() {
-    fetch('../includes/notifications_api.php?action=mark_all');
+    fetch('../includes/notifications_api.php?action=mark_all', {method: 'POST'});
     document.querySelectorAll('.gb-ni.unread').forEach(function(el) {
       el.classList.remove('unread');
       var dot = el.querySelector('.gb-ni-dot');

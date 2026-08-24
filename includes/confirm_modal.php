@@ -278,12 +278,19 @@
   /**
    * interceptConfirmLinks()
    *
-   * Scans the DOM for <a> elements with a data-confirm attribute and
-   * replaces the default navigation with the premium modal.
+   * Scans the DOM for <a>, <form>, and <button>/<input type=submit>
+   * elements with a data-confirm attribute and replaces the default
+   * navigation/submit with the premium modal.
    *
-   * Supported data attributes on the <a> tag:
+   * Supported data attributes:
    *   data-confirm="Your message here"   - body text (required to activate)
    *   data-confirm-title="Delete Record" - optional custom title (default: "Are you sure?")
+   *
+   * On a <form data-confirm="...">, the form's own submit is intercepted
+   * and re-triggered (via requestSubmit/submit) after confirmation.
+   * On a <button data-confirm="...">/<input type=submit data-confirm="...">
+   * inside a form WITHOUT its own data-confirm, the button's click is
+   * intercepted and the closest form is submitted after confirmation.
    *
    * Call this after DOM is ready, and again after dynamic content is injected.
    *
@@ -291,10 +298,9 @@
    */
   window.interceptConfirmLinks = function (root) {
     var scope = root || document;
-    var links = scope.querySelectorAll('a[data-confirm]');
 
+    var links = scope.querySelectorAll('a[data-confirm]');
     links.forEach(function (link) {
-      // Avoid double-binding
       if (link.dataset.confirmBound) return;
       link.dataset.confirmBound = '1';
 
@@ -306,6 +312,52 @@
         var href    = link.href;
 
         confirmAction(title, message, href);
+      });
+    });
+
+    var forms = scope.querySelectorAll('form[data-confirm]');
+    forms.forEach(function (form) {
+      if (form.dataset.confirmBound) return;
+      form.dataset.confirmBound = '1';
+
+      form.addEventListener('submit', function (e) {
+        if (form.dataset.confirmed === '1') return; // re-entrant submit after confirmation
+        e.preventDefault();
+
+        var message = form.getAttribute('data-confirm')       || 'This action cannot be undone.';
+        var title   = form.getAttribute('data-confirm-title') || 'Are you sure?';
+
+        confirmAction(title, message, function () {
+          form.dataset.confirmed = '1';
+          if (typeof form.requestSubmit === 'function') {
+            form.requestSubmit();
+          } else {
+            form.submit();
+          }
+        });
+      });
+    });
+
+    var buttons = scope.querySelectorAll('button[data-confirm], input[type="submit"][data-confirm]');
+    buttons.forEach(function (btn) {
+      if (btn.dataset.confirmBound) return;
+      // A form with its own data-confirm already handles this button's submit.
+      var ownerForm = btn.closest('form');
+      if (ownerForm && ownerForm.hasAttribute('data-confirm')) return;
+      btn.dataset.confirmBound = '1';
+
+      btn.addEventListener('click', function (e) {
+        if (!ownerForm) return;
+        if (btn.dataset.confirmed === '1') { btn.dataset.confirmed = ''; return; }
+        e.preventDefault();
+
+        var message = btn.getAttribute('data-confirm')       || 'This action cannot be undone.';
+        var title   = btn.getAttribute('data-confirm-title') || 'Are you sure?';
+
+        confirmAction(title, message, function () {
+          btn.dataset.confirmed = '1';
+          btn.click();
+        });
       });
     });
   };

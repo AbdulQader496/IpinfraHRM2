@@ -6,8 +6,16 @@ function _restoreSessionFromCookie() {
     if (!isset($_COOKIE['remember_token'])) return;
     global $conn;
     try {
-        // Ensure column exists (safe to run every time)
-        mysqli_query($conn, "ALTER TABLE employees ADD COLUMN IF NOT EXISTS remember_token VARCHAR(64) NULL");
+        $col_exists = mysqli_fetch_assoc(mysqli_query($conn, "
+            SELECT COUNT(*) AS cnt
+            FROM INFORMATION_SCHEMA.COLUMNS
+            WHERE TABLE_SCHEMA = DATABASE()
+              AND TABLE_NAME = 'employees'
+              AND COLUMN_NAME = 'remember_token'
+        "));
+        if ((int)($col_exists['cnt'] ?? 0) === 0) {
+            mysqli_query($conn, "ALTER TABLE employees ADD COLUMN remember_token VARCHAR(64) NULL");
+        }
         $token = mysqli_real_escape_string($conn, $_COOKIE['remember_token']);
         $user  = mysqli_fetch_assoc(mysqli_query($conn,
             "SELECT * FROM employees WHERE remember_token='$token' AND status='active'"));

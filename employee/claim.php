@@ -1,8 +1,19 @@
-﻿<?php
+<?php
 require_once '../includes/auth.php';
 redirectIfNotLoggedIn();
 require_once '../includes/db.php';
 require_once '../includes/toast_fn.php';
+
+// Safe bootstrap for claim attachment support on older databases.
+mysqli_query($conn, "CREATE TABLE IF NOT EXISTS claim_attachments (
+    id INT PRIMARY KEY AUTO_INCREMENT,
+    claim_id INT NOT NULL,
+    file_path VARCHAR(255),
+    file_name VARCHAR(255),
+    file_size INT DEFAULT 0,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (claim_id) REFERENCES claims(id) ON DELETE CASCADE
+)");
 
 $user_id = $_SESSION['user_id'];
 $edit_mode = false;

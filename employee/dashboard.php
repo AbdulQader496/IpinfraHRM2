@@ -1,9 +1,12 @@
-﻿<?php
+<?php
 require_once '../includes/auth.php';
 redirectIfNotLoggedIn();
 require_once '../includes/db.php';
 require_once '../includes/toast_fn.php';
 $user_id = $_SESSION['user_id'];
+$app_logo = file_exists(__DIR__ . '/../uploads/1775551018_4xzREYTcMvK7ReGODviudjeDBIofOQ78mr5DsN9g.jpg')
+    ? '../uploads/1775551018_4xzREYTcMvK7ReGODviudjeDBIofOQ78mr5DsN9g.jpg'
+    : '';
 
 $today = date('Y-m-d');
 $current_time = date('H:i:s');
@@ -113,7 +116,11 @@ $announcements = mysqli_query($conn, "SELECT * FROM announcements WHERE is_activ
             <!-- Logo -->
             <div class="relative">
                 <div class="w-10 h-10 bg-gradient-to-br from-blue-500 via-indigo-500 to-purple-600 rounded-xl flex items-center justify-center shadow-lg shadow-indigo-500/20 animate-pulse">
-                    <img src="../uploads/1775551018_4xzREYTcMvK7ReGODviudjeDBIofOQ78mr5DsN9g.jpg" alt="IPINFRA" style="width:28px;height:28px;object-fit:contain;border-radius:4px;background:#fff;">
+                    <?php if ($app_logo): ?>
+                        <img src="<?php echo $app_logo; ?>" alt="IPINFRA" style="width:28px;height:28px;object-fit:contain;border-radius:4px;background:#fff;">
+                    <?php else: ?>
+                        <span class="text-white text-xs font-bold">IN</span>
+                    <?php endif; ?>
                 </div>
                 <div class="absolute -top-1 -right-1 w-3 h-3 bg-green-400 rounded-full border-2 border-slate-900"></div>
             </div>
@@ -144,8 +151,12 @@ $announcements = mysqli_query($conn, "SELECT * FROM announcements WHERE is_activ
         <!-- Welcome Card with Time -->
         <div class="bg-gradient-to-r from-blue-600 to-indigo-700 rounded-2xl p-5 mb-6 text-white shadow-xl">
             <div class="flex items-center gap-4 mb-3">
-                <img src="../uploads/1775551018_4xzREYTcMvK7ReGODviudjeDBIofOQ78mr5DsN9g.jpg" alt="IPINFRA"
-                     style="width:64px;height:64px;object-fit:contain;border-radius:12px;background:#fff;padding:4px;flex-shrink:0;">
+                <?php if ($app_logo): ?>
+                    <img src="<?php echo $app_logo; ?>" alt="IPINFRA"
+                         style="width:64px;height:64px;object-fit:contain;border-radius:12px;background:#fff;padding:4px;flex-shrink:0;">
+                <?php else: ?>
+                    <div class="w-16 h-16 rounded-xl bg-white/15 border border-white/20 flex items-center justify-center text-white text-xl font-bold shrink-0">IN</div>
+                <?php endif; ?>
                 <div>
                     <p class="text-xs font-semibold tracking-widest uppercase opacity-80">IPINFRA Networks Sdn Bhd</p>
                     <p class="text-xs opacity-70">HR Management System</p>
@@ -486,7 +497,17 @@ $announcements = mysqli_query($conn, "SELECT * FROM announcements WHERE is_activ
         
         function updateClock() {
             const now = new Date();
-            let h = now.getHours(), m = now.getMinutes(), s = now.getSeconds();
+            const parts = new Intl.DateTimeFormat('en-GB', {
+                timeZone: 'Asia/Kuala_Lumpur',
+                hour: '2-digit',
+                minute: '2-digit',
+                second: '2-digit',
+                hour12: false
+            }).formatToParts(now);
+            const getPart = type => parts.find(part => part.type === type)?.value || '00';
+            let h = parseInt(getPart('hour'), 10);
+            const m = parseInt(getPart('minute'), 10);
+            const s = parseInt(getPart('second'), 10);
             const ampm = h >= 12 ? 'PM' : 'AM';
             h = h % 12 || 12;
             const pad = n => String(n).padStart(2,'0');

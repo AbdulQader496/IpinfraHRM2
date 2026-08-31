@@ -12,6 +12,7 @@ COPY . /var/www/html
 
 RUN mkdir -p /var/www/html/uploads/profiles \
     /var/www/html/uploads/gallery \
+    /var/www/html/uploads/claims \
     /var/www/html/uploads/documents \
     /var/www/html/uploads/employee_documents \
     && chown -R www-data:www-data /var/www/html/uploads

@@ -3,6 +3,18 @@ session_start();
 require_once 'includes/db.php';
 require_once 'includes/functions.php';
 
+// Safe bootstrap for remember-me support on older databases.
+$col_exists = mysqli_fetch_assoc(mysqli_query($conn, "
+    SELECT COUNT(*) AS cnt
+    FROM INFORMATION_SCHEMA.COLUMNS
+    WHERE TABLE_SCHEMA = DATABASE()
+      AND TABLE_NAME = 'employees'
+      AND COLUMN_NAME = 'remember_token'
+"));
+if ((int)($col_exists['cnt'] ?? 0) === 0) {
+    mysqli_query($conn, "ALTER TABLE employees ADD COLUMN remember_token VARCHAR(64) NULL");
+}
+
 // Check if user has remember me cookie
 if (!isset($_SESSION['user_id']) && isset($_COOKIE['remember_token'])) {
     $token = mysqli_real_escape_string($conn, $_COOKIE['remember_token']);

@@ -3,6 +3,9 @@ require_once '../includes/auth.php';
 redirectIfNotLoggedIn();
 require_once '../includes/db.php';
 require_once '../includes/toast_fn.php';
+$app_logo = file_exists(__DIR__ . '/../uploads/1775551018_4xzREYTcMvK7ReGODviudjeDBIofOQ78mr5DsN9g.jpg')
+    ? '../uploads/1775551018_4xzREYTcMvK7ReGODviudjeDBIofOQ78mr5DsN9g.jpg'
+    : '';
 
 $user_id  = $_SESSION['user_id'];
 $today    = date('Y-m-d');
@@ -65,6 +68,7 @@ foreach ($week_data as $wr) {
     if ($wr['clock_in'] && $wr['clock_out'])
         $week_total_mins += (strtotime($wr['clock_out']) - strtotime($wr['clock_in'])) / 60;
 }
+$week_total_mins = (int) round($week_total_mins);
 $week_h = floor($week_total_mins / 60);
 $week_m = $week_total_mins % 60;
 
@@ -162,28 +166,36 @@ $history     = mysqli_query($conn, "SELECT * FROM attendance $hw ORDER BY date D
 <!-- ══════════════════════════════════════
      HEADER
 ══════════════════════════════════════ -->
-<header class="bg-[#060912] text-white sticky top-0 z-40 shadow-2xl">
-    <div class="flex items-center justify-between px-4 py-3.5 max-w-3xl mx-auto">
+<header class="bg-[#060912] text-white sticky top-0 z-40 shadow-2xl backdrop-blur-sm">
+    <div class="flex items-center justify-between px-5 py-4">
         <div class="flex items-center gap-3">
-            <button onclick="toggleSidebar()" class="w-9 h-9 rounded-xl bg-white/10 flex items-center justify-center hover:bg-white/20 transition">
-                <i class="fas fa-bars"></i>
+            <button onclick="toggleSidebar()" class="relative group">
+                <div class="w-10 h-10 rounded-xl bg-white/10 backdrop-blur-sm flex items-center justify-center group-hover:bg-white/20 transition-all duration-300 group-hover:scale-105">
+                    <i class="fas fa-bars text-lg"></i>
+                </div>
             </button>
-            <div class="w-9 h-9 bg-gradient-to-br from-blue-500 to-indigo-600 rounded-xl flex items-center justify-center shadow-lg">
-                <i class="fas fa-clock text-sm"></i>
+            <div class="relative">
+                <div class="w-10 h-10 bg-gradient-to-br from-blue-500 via-indigo-500 to-purple-600 rounded-xl flex items-center justify-center shadow-lg shadow-indigo-500/20">
+                    <?php if ($app_logo): ?>
+                        <img src="<?php echo $app_logo; ?>" alt="IPINFRA" style="width:28px;height:28px;object-fit:contain;border-radius:4px;background:#fff;">
+                    <?php else: ?>
+                        <span class="text-white text-xs font-bold">IN</span>
+                    <?php endif; ?>
+                </div>
+                <div class="absolute -top-1 -right-1 w-3 h-3 bg-green-400 rounded-full border-2 border-slate-900"></div>
             </div>
             <div class="hidden sm:block">
-                <p class="text-[10px] text-blue-300 font-semibold tracking-widest uppercase">IPINFRA Networks</p>
-                <p class="text-sm font-bold">Attendance</p>
+                <p class="text-xs text-blue-200 font-medium tracking-wide">IPINFRA NETWORKS</p>
+                <p class="text-sm font-bold tracking-tight">Employee Portal</p>
             </div>
         </div>
         <div class="flex items-center gap-2">
-            <span class="hidden sm:block text-xs text-blue-200"><?php echo htmlspecialchars($_SESSION['user_name'], ENT_QUOTES, 'UTF-8'); ?></span>
-            <div class="w-9 h-9 bg-gradient-to-br from-indigo-500 to-purple-600 rounded-full flex items-center justify-center font-bold text-sm shadow-lg">
-                <?php echo strtoupper(substr($_SESSION['user_name'], 0, 1)); ?>
+            <div class="w-8 h-8 rounded-full bg-gradient-to-br from-blue-500 to-indigo-500 flex items-center justify-center shadow-lg">
+                <span class="text-white text-xs font-bold"><?php echo substr($_SESSION['user_name'], 0, 1); ?></span>
             </div>
         </div>
     </div>
-    <div class="h-px bg-gradient-to-r from-transparent via-indigo-400/50 to-transparent"></div>
+    <div class="h-0.5 bg-gradient-to-r from-transparent via-indigo-400 to-transparent"></div>
 </header>
 
 <?php require_once '../includes/employee_sidebar.php'; ?>
@@ -437,6 +449,7 @@ if ($total_mins_worked >= $work_target_h * 60) {
         if ($d_rec && $d_rec['clock_in'] && $d_rec['clock_out']) {
             $d_mins = (strtotime($d_rec['clock_out']) - strtotime($d_rec['clock_in'])) / 60;
         }
+        $d_mins = (int) round($d_mins);
         $d_h = floor($d_mins / 60); $d_m = $d_mins % 60;
         $pct = min(100, ($d_mins / ($work_target_h * 60)) * 100);
 

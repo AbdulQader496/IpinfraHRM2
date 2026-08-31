@@ -4,8 +4,23 @@ redirectIfNotLoggedIn();
 require_once '../includes/db.php';
 require_once '../includes/toast_fn.php';
 
-$user_id = $_SESSION['user_id'];
-$payrolls = mysqli_query($conn, "SELECT * FROM payroll WHERE employee_id = $user_id ORDER BY month_year DESC");
+$user_id = intval($_SESSION['user_id']);
+
+// Pagination
+$per_page_raw = (int)($_GET['per_page'] ?? 6);
+$per_page   = in_array($per_page_raw, [6, 12, 24]) ? $per_page_raw : 6;
+$page       = max(1, (int)($_GET['page'] ?? 1));
+$total_rows = (int)mysqli_fetch_assoc(mysqli_query($conn,
+    "SELECT COUNT(DISTINCT month_year) as c FROM payroll WHERE employee_id = $user_id"))['c'];
+$total_pages = max(1, (int)ceil($total_rows / $per_page));
+if ($page > $total_pages) $page = $total_pages;
+$offset = ($page - 1) * $per_page;
+
+$payrolls = mysqli_query($conn, "SELECT p.* FROM payroll p
+    INNER JOIN (SELECT MAX(id) as max_id FROM payroll WHERE employee_id = $user_id GROUP BY month_year) m
+    ON p.id = m.max_id
+    ORDER BY p.month_year DESC
+    LIMIT $per_page OFFSET $offset");
 
 $emp_data = mysqli_fetch_assoc(mysqli_query($conn, "SELECT nationality, employee_type FROM employees WHERE id = $user_id"));
 $is_malaysian_emp = isset($emp_data['nationality']) && $emp_data['nationality'] == 'Malaysian';
@@ -46,7 +61,7 @@ $show_statutory   = $is_malaysian_emp && !$is_intern_emp;
 </style>
 </head>
 
-<body class="bg-gradient-to-br from-slate-50 via-blue-50 to-indigo-100 min-h-screen pb-24">
+<body class="bg-gradient-to-br from-gray-50 to-gray-100 min-h-screen pb-24">
 <?php require_once '../includes/global_ui.php'; ?>
 <?php require_once '../includes/toast.php'; ?>
 <?php require_once '../includes/confirm_modal.php'; ?>
@@ -96,7 +111,7 @@ $show_statutory   = $is_malaysian_emp && !$is_intern_emp;
     
     <!-- Header -->
     <div class="text-center mb-6 animate-fadeInUp">
-        <h1 class="text-2xl font-bold text-gray-800">💰 Payslip</h1>
+        <h1 class="text-2xl font-bold text-gray-800">Payslip</h1>
         <p class="text-sm text-gray-500 mt-1">View and download your monthly salary</p>
     </div>
 
@@ -222,33 +237,50 @@ $show_statutory   = $is_malaysian_emp && !$is_intern_emp;
         </div>
     <?php endif; ?>
 
+    <?php if($total_pages > 1): ?>
+    <!-- Pagination -->
+    <div class="mt-4 mb-6 bg-white rounded-2xl shadow p-4 flex flex-wrap items-center justify-between gap-3">
+        <p class="text-xs text-gray-500">
+            Showing <?php echo ($offset + 1); ?>–<?php echo min($offset + $per_page, $total_rows); ?> of <?php echo $total_rows; ?> months
+        </p>
+        <div class="flex items-center gap-1.5 flex-wrap">
+            <?php
+            $pg_base = '?page=%d&per_page=' . $per_page;
+            if ($page > 1): ?>
+                <a href="<?php echo sprintf($pg_base, $page - 1); ?>"
+                   class="inline-flex items-center justify-center w-8 h-8 rounded-lg border border-gray-200 bg-white text-gray-500 hover:bg-blue-50 hover:text-blue-600 transition text-xs">
+                    <i class="fas fa-chevron-left text-[10px]"></i>
+                </a>
+            <?php endif;
+            for ($i = 1; $i <= $total_pages; $i++): ?>
+                <a href="<?php echo sprintf($pg_base, $i); ?>"
+                   class="inline-flex items-center justify-center w-8 h-8 rounded-lg border text-xs font-semibold transition
+                          <?php echo ($i === $page) ? 'bg-blue-600 border-blue-600 text-white shadow' : 'border-gray-200 bg-white text-gray-600 hover:bg-blue-50 hover:text-blue-600'; ?>">
+                    <?php echo $i; ?>
+                </a>
+            <?php endfor;
+            if ($page < $total_pages): ?>
+                <a href="<?php echo sprintf($pg_base, $page + 1); ?>"
+                   class="inline-flex items-center justify-center w-8 h-8 rounded-lg border border-gray-200 bg-white text-gray-500 hover:bg-blue-50 hover:text-blue-600 transition text-xs">
+                    <i class="fas fa-chevron-right text-[10px]"></i>
+                </a>
+            <?php endif; ?>
+        </div>
+        <form method="GET" class="flex items-center gap-2">
+            <label class="text-xs text-gray-500">Show:</label>
+            <select name="per_page" onchange="this.form.submit()"
+                class="text-xs border border-gray-200 rounded-lg px-3 py-1.5 bg-white focus:border-blue-400 focus:outline-none">
+                <?php foreach ([6, 12, 24] as $pp): ?>
+                    <option value="<?php echo $pp; ?>" <?php echo ($per_page === $pp) ? 'selected' : ''; ?>><?php echo $pp; ?> / page</option>
+                <?php endforeach; ?>
+            </select>
+        </form>
+    </div>
+    <?php endif; ?>
+
 </div>
 
-<!-- Mobile Bottom Navigation -->
-<div class="bottom-nav fixed bottom-0 left-0 right-0 bg-white border-t border-gray-200 md:hidden shadow-lg z-20">
-    <div class="flex justify-around py-2">
-        <a href="dashboard.php" class="flex flex-col items-center py-1 px-3 text-gray-500">
-            <i class="fas fa-home text-xl"></i>
-            <span class="text-xs mt-1">Home</span>
-        </a>
-        <a href="clock.php" class="flex flex-col items-center py-1 px-3 text-gray-500">
-            <i class="fas fa-clock text-xl"></i>
-            <span class="text-xs mt-1">Clock</span>
-        </a>
-        <a href="leave.php" class="flex flex-col items-center py-1 px-3 text-gray-500">
-            <i class="fas fa-calendar-alt text-xl"></i>
-            <span class="text-xs mt-1">Leave</span>
-        </a>
-        <a href="payslip.php" class="flex flex-col items-center py-1 px-3 text-blue-600">
-            <i class="fas fa-file-invoice-dollar text-xl"></i>
-            <span class="text-xs mt-1">Payslip</span>
-        </a>
-        <a href="profile.php" class="flex flex-col items-center py-1 px-3 text-gray-500">
-            <i class="fas fa-user text-xl"></i>
-            <span class="text-xs mt-1">Profile</span>
-        </a>
-    </div>
-</div>
+<?php require_once '../includes/employee_bottom_nav.php'; ?>
 
 <script>
 

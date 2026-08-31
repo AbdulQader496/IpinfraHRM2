@@ -13,7 +13,7 @@ if (isset($_POST['add_employee'])) {
     $passport_no = mysqli_real_escape_string($conn, $_POST['passport_no']);
     $nationality = mysqli_real_escape_string($conn, $_POST['nationality']);
     $email = mysqli_real_escape_string($conn, $_POST['email']);
-    $password = mysqli_real_escape_string($conn, $_POST['password']);
+    $password = mysqli_real_escape_string($conn, password_hash($_POST['password'], PASSWORD_DEFAULT));
     $department = mysqli_real_escape_string($conn, $_POST['department']);
     $position = mysqli_real_escape_string($conn, $_POST['position']);
     $basic_salary = floatval($_POST['basic_salary']);
@@ -29,32 +29,29 @@ if (isset($_POST['add_employee'])) {
     // Handle profile picture upload
     $profile_pic = '';
     if (isset($_FILES['profile_pic']) && $_FILES['profile_pic']['error'] == 0) {
-        $allowed_img_ext = ['jpg', 'jpeg', 'png', 'gif', 'webp'];
-        $allowed_img_mime = ['image/jpeg', 'image/png', 'image/gif', 'image/webp'];
-        $file_extension = strtolower(pathinfo($_FILES['profile_pic']['name'], PATHINFO_EXTENSION));
-        $mime = mime_content_type($_FILES['profile_pic']['tmp_name']);
-        if (in_array($file_extension, $allowed_img_ext) && in_array($mime, $allowed_img_mime)) {
+        $allowed_ext  = ['jpg','jpeg','png','gif','webp'];
+        $allowed_mime = ['image/jpeg','image/png','image/gif','image/webp'];
+        $pic_ext  = strtolower(pathinfo($_FILES['profile_pic']['name'], PATHINFO_EXTENSION));
+        $finfo    = finfo_open(FILEINFO_MIME_TYPE);
+        $real_mime = finfo_file($finfo, $_FILES['profile_pic']['tmp_name']);
+        finfo_close($finfo);
+        if (in_array($pic_ext, $allowed_ext) && in_array($real_mime, $allowed_mime) && $_FILES['profile_pic']['size'] <= 2097152) {
             $target_dir = "../uploads/profiles/";
             if (!is_dir($target_dir)) mkdir($target_dir, 0777, true);
-            $profile_pic = time() . '_' . $employee_id . '.' . $file_extension;
+            $profile_pic = bin2hex(random_bytes(8)) . '.' . $pic_ext;
             move_uploaded_file($_FILES['profile_pic']['tmp_name'], $target_dir . $profile_pic);
         }
     }
 
     $is_subject = ($nationality == 'Malaysian') ? 1 : 0;
-    
+
     // UPDATED INSERT QUERY with new fields
-    $dup_check = mysqli_fetch_assoc(mysqli_query($conn, "SELECT id FROM employees WHERE employee_id='$employee_id' OR email='$email' LIMIT 1"));
-    if ($dup_check) {
-        $add_error = "Employee ID or email already exists.";
-    } else {
-        $query = "INSERT INTO employees (employee_id, name, ic_number, passport_no, nationality, email, password, department, position, basic_salary, join_date, profile_pic, is_subject_to_statutory, phone, address, bank_name, bank_account, employee_type)
-                  VALUES ('$employee_id', '$name', '$ic_number', '$passport_no', '$nationality', '$email', '$password', '$department', '$position', '$basic_salary', '$join_date', '$profile_pic', '$is_subject', '$phone', '$address', '$bank_name', '$bank_account', '$employee_type')";
-        mysqli_query($conn, $query);
-        logAction('create', 'New employee added: ' . $_POST['name'] . ' (' . $_POST['employee_id'] . ')', mysqli_insert_id($conn), 'employee');
-        header('Location: employees.php');
-        exit();
-    }
+    $query = "INSERT INTO employees (employee_id, name, ic_number, passport_no, nationality, email, password, department, position, basic_salary, join_date, profile_pic, is_subject_to_statutory, phone, address, bank_name, bank_account, employee_type)
+              VALUES ('$employee_id', '$name', '$ic_number', '$passport_no', '$nationality', '$email', '$password', '$department', '$position', '$basic_salary', '$join_date', '$profile_pic', '$is_subject', '$phone', '$address', '$bank_name', '$bank_account', '$employee_type')";
+    mysqli_query($conn, $query);
+    showToast('Employee added successfully!');
+    header('Location: employees.php');
+    exit();
 }
 
 // Handle Update Employee
@@ -80,14 +77,16 @@ if (isset($_POST['update_employee'])) {
     // Handle profile picture upload
     $profile_pic = mysqli_real_escape_string($conn, $_POST['existing_profile_pic']);
     if (isset($_FILES['profile_pic']) && $_FILES['profile_pic']['error'] == 0) {
-        $allowed_img_ext = ['jpg', 'jpeg', 'png', 'gif', 'webp'];
-        $allowed_img_mime = ['image/jpeg', 'image/png', 'image/gif', 'image/webp'];
-        $file_extension = strtolower(pathinfo($_FILES['profile_pic']['name'], PATHINFO_EXTENSION));
-        $mime = mime_content_type($_FILES['profile_pic']['tmp_name']);
-        if (in_array($file_extension, $allowed_img_ext) && in_array($mime, $allowed_img_mime)) {
+        $allowed_ext  = ['jpg','jpeg','png','gif','webp'];
+        $allowed_mime = ['image/jpeg','image/png','image/gif','image/webp'];
+        $pic_ext  = strtolower(pathinfo($_FILES['profile_pic']['name'], PATHINFO_EXTENSION));
+        $finfo    = finfo_open(FILEINFO_MIME_TYPE);
+        $real_mime = finfo_file($finfo, $_FILES['profile_pic']['tmp_name']);
+        finfo_close($finfo);
+        if (in_array($pic_ext, $allowed_ext) && in_array($real_mime, $allowed_mime) && $_FILES['profile_pic']['size'] <= 2097152) {
             $target_dir = "../uploads/profiles/";
             if (!is_dir($target_dir)) mkdir($target_dir, 0777, true);
-            $profile_pic = time() . '_' . intval($_POST['emp_id']) . '.' . $file_extension;
+            $profile_pic = bin2hex(random_bytes(8)) . '.' . $pic_ext;
             move_uploaded_file($_FILES['profile_pic']['tmp_name'], $target_dir . $profile_pic);
         }
     }
@@ -115,30 +114,66 @@ if (isset($_POST['update_employee'])) {
                 employee_type='$employee_type'
               WHERE id=$id";
     mysqli_query($conn, $query);
-    logAction('update', 'Employee record updated: ' . $_POST['name'] . ' (ID ' . $id . ')', $id, 'employee');
+    showToast('Employee updated successfully!');
     header('Location: employees.php');
     exit();
 }
 
 // Handle Delete
-if (isset($_GET['delete'])) {
-    $id = intval($_GET['delete']);
-    $del_emp = mysqli_fetch_assoc(mysqli_query($conn, "SELECT name, employee_id FROM employees WHERE id=$id"));
+if (isset($_POST['emp_delete']) && validateCsrfToken($_POST['csrf_token'] ?? '')) {
+    $id = intval($_POST['emp_delete']);
+
+    // Collect file paths before the rows referencing them are gone, so we can
+    // clean them up on disk too — otherwise they're orphaned forever.
+    $files_to_delete = [];
+    $emp_row = mysqli_fetch_assoc(mysqli_query($conn, "SELECT profile_pic FROM employees WHERE id = $id"));
+    if ($emp_row && !empty($emp_row['profile_pic'])) {
+        $files_to_delete[] = "../uploads/profiles/" . $emp_row['profile_pic'];
+    }
+    try {
+        $doc_res = mysqli_query($conn, "SELECT file_path FROM employee_documents WHERE employee_id = $id");
+        while ($doc_res && ($doc_row = mysqli_fetch_assoc($doc_res))) {
+            foreach (['../uploads/documents/', '../uploads/employee_documents/'] as $dp) {
+                if (file_exists($dp . $doc_row['file_path'])) { $files_to_delete[] = $dp . $doc_row['file_path']; break; }
+            }
+        }
+    } catch (Exception $e) { /* table may not exist in this environment */ }
+
+    // Remove related records first to avoid FK constraint failures
+    $related = ['attendance', 'leaves', 'payroll', 'claims', 'notifications', 'employee_of_month', 'asset_requests', 'employee_documents'];
+    foreach ($related as $tbl) {
+        try {
+            mysqli_query($conn, "DELETE FROM `$tbl` WHERE employee_id = $id");
+        } catch (Exception $e) { /* table may not exist in this environment */ }
+    }
     mysqli_query($conn, "DELETE FROM employees WHERE id = $id");
-    logAction('delete', 'Employee deleted: ' . ($del_emp['name'] ?? 'Unknown') . ' (' . ($del_emp['employee_id'] ?? '') . ')', $id, 'employee');
+
+    foreach ($files_to_delete as $fp) {
+        if (file_exists($fp)) @unlink($fp);
+    }
+
+    logAction('delete', 'Deleted employee (and related records)', $id, 'employee');
+    showToast('Employee deleted.', 'info');
     header('Location: employees.php');
     exit();
 }
 
-// Handle Add Department (only runs if departments table exists)
+// Handle Add Department — supports both AJAX (X-Requested-With) and plain POST
 if (isset($_POST['add_department'])) {
-    $dept_name = trim(mysqli_real_escape_string($conn, $_POST['dept_name']));
+    $is_ajax = strtolower($_SERVER['HTTP_X_REQUESTED_WITH'] ?? '') === 'xmlhttprequest';
+    if (!validateCsrfToken($_POST['csrf_token'] ?? '')) {
+        if ($is_ajax) { http_response_code(403); header('Content-Type: application/json'); echo json_encode(['error' => 'Security error']); exit; }
+        header('Location: employees.php'); exit();
+    }
+    $dept_name = trim(mysqli_real_escape_string($conn, $_POST['dept_name'] ?? ''));
     if ($dept_name !== '') {
         mysqli_query($conn, "CREATE TABLE IF NOT EXISTS departments (id INT PRIMARY KEY AUTO_INCREMENT, dept_name VARCHAR(100) NOT NULL UNIQUE, created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP)");
         try {
             mysqli_query($conn, "INSERT IGNORE INTO departments (dept_name) VALUES ('$dept_name')");
-        } catch (Exception $e) { /* ignore */ }
+        } catch (Exception $e) { /* ignore duplicate */ }
     }
+    if ($is_ajax) { header('Content-Type: application/json'); echo json_encode(['success' => true, 'name' => $dept_name]); exit; }
+    showToast('Department added.');
     header('Location: employees.php');
     exit();
 }
@@ -160,6 +195,7 @@ try {
 
 // Get employees with pagination
 $page = isset($_GET['page']) ? intval($_GET['page']) : 1;
+if ($page < 1) $page = 1;
 $limit = 10;
 $offset = ($page - 1) * $limit;
 
@@ -251,6 +287,24 @@ $employees = mysqli_query($conn, "SELECT * FROM employees WHERE role='employee' 
         #searchClearBtn:hover {
             background: rgba(255,255,255,0.45);
         }
+        /* View Profile Modal Styles */
+        .view-profile-modal {
+            max-height: 90vh;
+            overflow-y: auto;
+        }
+        .info-row {
+            display: flex;
+            justify-content: space-between;
+            padding: 12px 0;
+            border-bottom: 1px solid #e5e7eb;
+        }
+        .info-label {
+            font-weight: 600;
+            color: #4b5563;
+        }
+        .info-value {
+            color: #1f2937;
+        }
     </style>
 </head>
 <body class="bg-gradient-to-br from-slate-50 via-blue-50 to-indigo-50 min-h-screen">
@@ -259,7 +313,7 @@ $employees = mysqli_query($conn, "SELECT * FROM employees WHERE role='employee' 
 <?php require_once '../includes/confirm_modal.php'; ?>
 
 <!-- Mobile Header -->
-<div class="bg-[#060912] text-white sticky top-0 z-40 shadow-2xl">
+<div class="bg-gradient-to-r from-slate-900 via-indigo-900 to-slate-900 text-white sticky top-0 z-40 shadow-2xl">
     <div class="flex justify-between items-center px-4 py-4">
         <div class="flex items-center gap-3">
             <!-- MENU BUTTON - Left side -->
@@ -267,7 +321,7 @@ $employees = mysqli_query($conn, "SELECT * FROM employees WHERE role='employee' 
                 <i class="fas fa-bars text-xl"></i>
             </button>
             <div class="w-10 h-10 bg-gradient-to-br from-blue-500 to-indigo-600 rounded-xl flex items-center justify-center shadow-lg">
-                <img src="../uploads/1775551018_4xzREYTcMvK7ReGODviudjeDBIofOQ78mr5DsN9g.jpg" alt="IPINFRA" style="width:28px;height:28px;object-fit:contain;border-radius:4px;background:#fff;">
+                <span class="text-white font-bold text-sm">IN</span>
             </div>
             <div>
                 <p class="text-xs text-blue-200 font-medium">IPINFRA NETWORKS</p>
@@ -378,10 +432,13 @@ $employees = mysqli_query($conn, "SELECT * FROM employees WHERE role='employee' 
                     <i class="fas fa-plus"></i>
                     <span class="font-semibold">Add New Employee</span>
                 </button>
-                <button onclick="exportEmployees()" class="bg-white text-gray-700 px-4 py-3 rounded-xl shadow-md hover:shadow-lg transition border border-gray-200">
-                    <i class="fas fa-download"></i>
-                    <span class="hidden sm:inline ml-1">Export</span>
-                </button>
+                <form method="POST" action="export_employees.php" style="display:inline">
+                    <?php echo csrfField(); ?>
+                    <button type="submit" class="bg-white text-gray-700 px-4 py-3 rounded-xl shadow-md hover:shadow-lg transition border border-gray-200">
+                        <i class="fas fa-download"></i>
+                        <span class="hidden sm:inline ml-1">Export</span>
+                    </button>
+                </form>
             </div>
             
             <!-- View Toggle -->
@@ -416,7 +473,7 @@ $employees = mysqli_query($conn, "SELECT * FROM employees WHERE role='employee' 
                                 </div>
                             <?php endif; ?>
                             <div>
-                                <a href="view_employee.php?id=<?php echo $row['id']; ?>" class="font-bold employee-name-text hover:text-blue-200 transition"><?php echo htmlspecialchars($row['name']); ?></a>
+                                <h3 class="font-bold employee-name-text"><?php echo htmlspecialchars($row['name']); ?></h3>
                                 <p class="text-xs text-gray-300"><?php echo htmlspecialchars($row['employee_id']); ?></p>
                             </div>
                         </div>
@@ -447,14 +504,21 @@ $employees = mysqli_query($conn, "SELECT * FROM employees WHERE role='employee' 
                         <span class="text-green-600 font-bold">RM <?php echo number_format($row['basic_salary'], 2); ?></span>
                     </div>
                     <div class="flex gap-2 pt-3">
-                        <button onclick='openEditModal(<?php echo json_encode($row); ?>)'
-                                class="flex-1 bg-blue-50 text-blue-600 py-2 rounded-lg hover:bg-blue-100 transition text-sm font-medium">
-                            <i class="fas fa-edit mr-1"></i> View / Edit
+                        <button onclick='openViewModal(<?php echo json_encode($row, JSON_HEX_APOS | JSON_HEX_QUOT | JSON_HEX_TAG); ?>)' 
+                                class="flex-1 bg-purple-50 text-purple-600 py-2 rounded-lg hover:bg-purple-100 transition text-sm font-medium">
+                            <i class="fas fa-eye mr-1"></i> View
                         </button>
-                        <a href="?delete=<?php echo $row['id']; ?>" data-confirm="This will permanently delete the employee and all related records." data-confirm-title="Delete Employee" 
-                           class="flex-1 bg-red-50 text-red-600 py-2 rounded-lg hover:bg-red-100 transition text-sm font-medium text-center">
-                            <i class="fas fa-trash mr-1"></i> Del
-                        </a>
+                        <button onclick='openEditModal(<?php echo json_encode($row, JSON_HEX_APOS | JSON_HEX_QUOT | JSON_HEX_TAG); ?>)' 
+                                class="flex-1 bg-blue-50 text-blue-600 py-2 rounded-lg hover:bg-blue-100 transition text-sm font-medium">
+                            <i class="fas fa-edit mr-1"></i> Edit
+                        </button>
+                        <form method="POST" style="flex:1;" data-confirm="This will permanently delete the employee and all related records." data-confirm-title="Delete Employee">
+                            <?php echo csrfField(); ?>
+                            <input type="hidden" name="emp_delete" value="<?php echo $row['id']; ?>">
+                            <button type="submit" class="w-full bg-red-50 text-red-600 py-2 rounded-lg hover:bg-red-100 transition text-sm font-medium text-center">
+                                <i class="fas fa-trash mr-1"></i> Del
+                            </button>
+                        </form>
                     </div>
                 </div>
             </div>
@@ -495,7 +559,7 @@ $employees = mysqli_query($conn, "SELECT * FROM employees WHERE role='employee' 
                                         </div>
                                     <?php endif; ?>
                                     <div>
-                                        <a href="view_employee.php?id=<?php echo $row['id']; ?>" class="font-semibold text-gray-800 employee-name-text hover:text-blue-600 transition"><?php echo htmlspecialchars($row['name']); ?></a>
+                                        <p class="font-semibold text-gray-800 employee-name-text"><?php echo htmlspecialchars($row['name']); ?></p>
                                         <div class="flex items-center gap-1 mt-1">
                                             <?php if($row['nationality'] != 'Malaysian'): ?>
                                                 <span class="text-xs bg-orange-100 text-orange-700 px-2 py-0.5 rounded-full">Expat</span>
@@ -516,12 +580,19 @@ $employees = mysqli_query($conn, "SELECT * FROM employees WHERE role='employee' 
                             <td class="px-4 py-3 text-right font-bold text-green-600">RM <?php echo number_format($row['basic_salary'], 2); ?></td>
                             <td class="px-4 py-3 text-center">
                                 <div class="flex gap-2 justify-center">
-                                    <button onclick='openEditModal(<?php echo json_encode($row); ?>)' class="text-blue-600 hover:text-blue-800 transition" title="View / Edit">
+                                    <button onclick='openViewModal(<?php echo json_encode($row, JSON_HEX_APOS | JSON_HEX_QUOT | JSON_HEX_TAG); ?>)' class="text-purple-600 hover:text-purple-800 transition" title="View Profile">
+                                        <i class="fas fa-eye"></i>
+                                    </button>
+                                    <button onclick='openEditModal(<?php echo json_encode($row, JSON_HEX_APOS | JSON_HEX_QUOT | JSON_HEX_TAG); ?>)' class="text-blue-600 hover:text-blue-800 transition" title="Edit">
                                         <i class="fas fa-edit"></i>
                                     </button>
-                                    <a href="?delete=<?php echo $row['id']; ?>" data-confirm="This will permanently delete the employee and all related records." data-confirm-title="Delete Employee" class="text-red-500 hover:text-red-700 transition" title="Delete">
-                                        <i class="fas fa-trash"></i>
-                                    </a>
+                                    <form method="POST" style="display:inline;" data-confirm="This will permanently delete the employee and all related records." data-confirm-title="Delete Employee">
+                                        <?php echo csrfField(); ?>
+                                        <input type="hidden" name="emp_delete" value="<?php echo $row['id']; ?>">
+                                        <button type="submit" class="text-red-500 hover:text-red-700 transition" title="Delete">
+                                            <i class="fas fa-trash"></i>
+                                        </button>
+                                    </form>
                                 </div>
                             </td>
                         </tr>
@@ -552,408 +623,405 @@ $employees = mysqli_query($conn, "SELECT * FROM employees WHERE role='employee' 
         <?php endif; ?>
     </div>
 
-<!-- Add Employee Modal - COMPLETE with all fields -->
-<!-- Add Employee Modal -->
-<div id="addModal" class="hidden fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-    <div class="bg-white rounded-2xl w-full max-w-3xl shadow-2xl modal-enter flex flex-col max-h-[92vh]">
-
-        <!-- Fixed Header -->
-        <div class="flex items-center justify-between px-7 py-5 border-b border-gray-100 shrink-0">
-            <div class="flex items-center gap-4">
-                <div class="w-11 h-11 bg-gradient-to-br from-blue-500 to-indigo-600 rounded-xl flex items-center justify-center shadow">
-                    <i class="fas fa-user-plus text-white text-lg"></i>
-                </div>
-                <div>
-                    <h2 class="text-xl font-bold text-gray-900">Add New Employee</h2>
-                    <p class="text-xs text-gray-400 mt-0.5">Fill in all required fields marked with *</p>
+    <!-- View Profile Modal -->
+    <div id="viewModal" class="hidden fixed inset-0 bg-black/50 backdrop-blur-sm z-50 flex items-center justify-center p-4 overflow-y-auto">
+        <div class="bg-white rounded-2xl max-w-2xl w-full modal-enter shadow-2xl">
+            <div class="sticky top-0 bg-gradient-to-r from-blue-600 to-indigo-600 rounded-t-2xl p-5 text-white">
+                <div class="flex justify-between items-center">
+                    <div>
+                        <h2 class="text-xl font-bold">Employee Profile</h2>
+                        <p class="text-xs text-blue-100 mt-1">Complete employee information</p>
+                    </div>
+                    <button onclick="closeViewModal()" class="w-10 h-10 rounded-full bg-white/20 hover:bg-white/30 transition-all flex items-center justify-center">
+                        <i class="fas fa-times text-white text-xl"></i>
+                    </button>
                 </div>
             </div>
-            <button onclick="document.getElementById('addModal').classList.add('hidden')" class="text-gray-400 hover:text-gray-700 hover:bg-gray-100 p-2 rounded-xl transition">
+            <div class="p-6 view-profile-modal">
+                <!-- Profile Header -->
+                <div class="text-center mb-6">
+                    <div id="view_profile_img" class="w-28 h-28 rounded-full bg-gradient-to-br from-blue-500 to-purple-600 flex items-center justify-center mx-auto shadow-lg">
+                        <i class="fas fa-user text-white text-4xl"></i>
+                    </div>
+                    <h3 id="view_name" class="text-xl font-bold text-gray-800 mt-3"></h3>
+                    <p id="view_employee_id" class="text-sm text-gray-500"></p>
+                </div>
+                
+                <!-- Personal Information -->
+                <div class="mb-6">
+                    <h4 class="font-semibold text-gray-800 border-b pb-2 mb-3 flex items-center gap-2">
+                        <i class="fas fa-user-circle text-blue-600"></i> Personal Information
+                    </h4>
+                    <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
+                        <div class="info-row">
+                            <span class="info-label">Full Name:</span>
+                            <span id="view_fullname" class="info-value"></span>
+                        </div>
+                        <div class="info-row">
+                            <span class="info-label">Employee ID:</span>
+                            <span id="view_empid" class="info-value"></span>
+                        </div>
+                        <div class="info-row">
+                            <span class="info-label">Nationality:</span>
+                            <span id="view_nationality" class="info-value"></span>
+                        </div>
+                        <div class="info-row">
+                            <span class="info-label">IC Number:</span>
+                            <span id="view_ic" class="info-value"></span>
+                        </div>
+                        <div class="info-row">
+                            <span class="info-label">Passport No:</span>
+                            <span id="view_passport" class="info-value"></span>
+                        </div>
+                        <div class="info-row">
+                            <span class="info-label">Email:</span>
+                            <span id="view_email" class="info-value"></span>
+                        </div>
+                        <div class="info-row">
+                            <span class="info-label">Phone:</span>
+                            <span id="view_phone" class="info-value"></span>
+                        </div>
+                        <div class="info-row">
+                            <span class="info-label">Join Date:</span>
+                            <span id="view_join_date" class="info-value"></span>
+                        </div>
+                    </div>
+                </div>
+                
+                <!-- Employment Information -->
+                <div class="mb-6">
+                    <h4 class="font-semibold text-gray-800 border-b pb-2 mb-3 flex items-center gap-2">
+                        <i class="fas fa-briefcase text-green-600"></i> Employment Information
+                    </h4>
+                    <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
+                        <div class="info-row">
+                            <span class="info-label">Department:</span>
+                            <span id="view_department" class="info-value"></span>
+                        </div>
+                        <div class="info-row">
+                            <span class="info-label">Position:</span>
+                            <span id="view_position" class="info-value"></span>
+                        </div>
+                        <div class="info-row">
+                            <span class="info-label">Basic Salary:</span>
+                            <span id="view_salary" class="info-value text-green-600 font-bold"></span>
+                        </div>
+                        <div class="info-row">
+                            <span class="info-label">Status:</span>
+                            <span id="view_status" class="info-value"></span>
+                        </div>
+                    </div>
+                </div>
+                
+                <!-- Leave Entitlement -->
+                <div class="mb-6">
+                    <h4 class="font-semibold text-gray-800 border-b pb-2 mb-3 flex items-center gap-2">
+                        <i class="fas fa-calendar-alt text-purple-600"></i> Leave Entitlement
+                    </h4>
+                    <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
+                        <div class="info-row">
+                            <span class="info-label">Annual Leave:</span>
+                            <span id="view_annual_leave" class="info-value"></span>
+                        </div>
+                        <div class="info-row">
+                            <span class="info-label">Medical Leave:</span>
+                            <span id="view_medical_leave" class="info-value"></span>
+                        </div>
+                        <div class="info-row">
+                            <span class="info-label">Used Annual:</span>
+                            <span id="view_used_annual" class="info-value"></span>
+                        </div>
+                        <div class="info-row">
+                            <span class="info-label">Used Medical:</span>
+                            <span id="view_used_medical" class="info-value"></span>
+                        </div>
+                    </div>
+                </div>
+                
+                <!-- Bank Information -->
+                <div class="mb-6">
+                    <h4 class="font-semibold text-gray-800 border-b pb-2 mb-3 flex items-center gap-2">
+                        <i class="fas fa-university text-orange-600"></i> Bank Information
+                    </h4>
+                    <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
+                        <div class="info-row">
+                            <span class="info-label">Bank Name:</span>
+                            <span id="view_bank_name" class="info-value"></span>
+                        </div>
+                        <div class="info-row">
+                            <span class="info-label">Account Number:</span>
+                            <span id="view_bank_account" class="info-value"></span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            <div class="p-5 border-t bg-gray-50 rounded-b-2xl flex justify-end">
+                <button onclick="closeViewModal()" class="bg-gray-600 text-white px-6 py-2 rounded-xl hover:bg-gray-700 transition">
+                    Close
+                </button>
+            </div>
+        </div>
+    </div>
+
+<!-- Add Employee Modal - COMPLETE with all fields -->
+<div id="addModal" class="hidden fixed inset-0 bg-black/50 backdrop-blur-sm z-50 flex items-center justify-center p-4 overflow-y-auto">
+    <div class="bg-white rounded-2xl max-w-md w-full modal-enter shadow-2xl">
+        <div class="sticky top-0 bg-white rounded-t-2xl p-5 border-b border-gray-100 flex justify-between items-center">
+            <div>
+                <h2 class="text-xl font-bold text-gray-800">Add New Employee</h2>
+                <p class="text-xs text-gray-500 mt-1">Fill in the employee details below</p>
+            </div>
+            <button onclick="document.getElementById('addModal').classList.add('hidden')" class="text-gray-400 hover:text-gray-600 transition p-2 rounded-full hover:bg-gray-100">
                 <i class="fas fa-times text-xl"></i>
             </button>
         </div>
-
-        <!-- Form: flex column so fields scroll, footer stays pinned -->
-        <form id="addEmployeeForm" method="POST" enctype="multipart/form-data" class="flex flex-col flex-1 overflow-hidden">
-            <div class="flex-1 overflow-y-auto px-7 py-6 space-y-6">
-
-                <!-- Profile Picture -->
-                <div class="flex items-center gap-5">
-                    <div class="relative shrink-0">
-                        <div id="add_profile_preview" class="w-20 h-20 rounded-2xl bg-gradient-to-br from-blue-500 to-purple-600 flex items-center justify-center shadow-lg overflow-hidden">
-                            <i class="fas fa-camera text-white text-2xl"></i>
-                        </div>
-                        <label class="absolute -bottom-1 -right-1 bg-blue-600 text-white p-1.5 rounded-lg cursor-pointer hover:bg-blue-700 transition shadow">
-                            <i class="fas fa-upload text-xs"></i>
-                            <input type="file" name="profile_pic" id="add_profile_pic" class="hidden" accept="image/*" onchange="previewImage(this, 'add_profile_preview')">
-                        </label>
+        <form method="POST" class="p-5 space-y-4 max-h-[70vh] overflow-y-auto" enctype="multipart/form-data">
+            <!-- Profile Picture -->
+            <div class="text-center mb-4">
+                <div class="relative inline-block">
+                    <div id="add_profile_preview" class="w-24 h-24 rounded-full bg-gradient-to-br from-blue-500 to-purple-600 flex items-center justify-center mx-auto shadow-lg">
+                        <i class="fas fa-camera text-white text-2xl"></i>
                     </div>
-                    <div>
-                        <p class="text-sm font-semibold text-gray-700">Profile Photo</p>
-                        <p class="text-xs text-gray-400 mt-0.5">JPG, PNG up to 5MB (optional)</p>
-                    </div>
+                    <label class="absolute bottom-0 right-0 bg-blue-600 text-white p-1.5 rounded-full cursor-pointer hover:bg-blue-700 transition">
+                        <i class="fas fa-upload text-xs"></i>
+                        <input type="file" name="profile_pic" id="add_profile_pic" class="hidden" accept="image/*" onchange="previewImage(this, 'add_profile_preview')">
+                    </label>
                 </div>
-
-                <!-- Section: Personal Info -->
-                <div>
-                    <div class="flex items-center gap-2 mb-4">
-                        <div class="w-1 h-5 bg-blue-600 rounded-full"></div>
-                        <h3 class="text-sm font-bold text-gray-700 uppercase tracking-wide">Personal Information</h3>
-                    </div>
-                    <div class="grid grid-cols-2 gap-4">
-                        <div>
-                            <label class="block text-sm font-medium text-gray-600 mb-1.5">Employee ID *</label>
-                            <input type="text" name="employee_id" placeholder="e.g. EMP001" required class="w-full px-4 py-2.5 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-gray-50 focus:bg-white transition">
-                        </div>
-                        <div>
-                            <label class="block text-sm font-medium text-gray-600 mb-1.5">Full Name *</label>
-                            <input type="text" name="name" placeholder="As per IC / Passport" required class="w-full px-4 py-2.5 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-gray-50 focus:bg-white transition">
-                        </div>
-                        <div>
-                            <label class="block text-sm font-medium text-gray-600 mb-1.5">Nationality *</label>
-                            <select name="nationality" id="add_nationality" required class="w-full px-4 py-2.5 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 bg-gray-50 focus:bg-white transition" onchange="toggleStatutoryFields('add')">
-                                <option value="Malaysian">Malaysian (EPF / SOCSO / EIS)</option>
-                                <option value="Non-Malaysian">Non-Malaysian / Expat</option>
-                            </select>
-                        </div>
-                        <div id="add_ic_field">
-                            <label class="block text-sm font-medium text-gray-600 mb-1.5">IC Number</label>
-                            <input type="text" name="ic_number" placeholder="e.g. 900101-10-1234" class="w-full px-4 py-2.5 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 bg-gray-50 focus:bg-white transition">
-                        </div>
-                        <div id="add_passport_field" style="display:none;" class="col-span-1">
-                            <label class="block text-sm font-medium text-gray-600 mb-1.5">Passport Number</label>
-                            <input type="text" name="passport_no" placeholder="Passport No." class="w-full px-4 py-2.5 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 bg-gray-50 focus:bg-white transition">
-                        </div>
-                    </div>
-                </div>
-
-                <!-- Section: Contact -->
-                <div>
-                    <div class="flex items-center gap-2 mb-4">
-                        <div class="w-1 h-5 bg-emerald-500 rounded-full"></div>
-                        <h3 class="text-sm font-bold text-gray-700 uppercase tracking-wide">Contact Information</h3>
-                    </div>
-                    <div class="grid grid-cols-2 gap-4">
-                        <div>
-                            <label class="block text-sm font-medium text-gray-600 mb-1.5">Email Address *</label>
-                            <input type="email" name="email" placeholder="name@company.com" required class="w-full px-4 py-2.5 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 bg-gray-50 focus:bg-white transition">
-                        </div>
-                        <div>
-                            <label class="block text-sm font-medium text-gray-600 mb-1.5">Phone Number</label>
-                            <input type="text" name="phone" placeholder="e.g. 012-3456789" class="w-full px-4 py-2.5 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 bg-gray-50 focus:bg-white transition">
-                        </div>
-                        <div class="col-span-2">
-                            <label class="block text-sm font-medium text-gray-600 mb-1.5">Address</label>
-                            <textarea name="address" rows="2" placeholder="Full home address" class="w-full px-4 py-2.5 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 bg-gray-50 focus:bg-white transition resize-none"></textarea>
-                        </div>
-                    </div>
-                </div>
-
-                <!-- Section: Job -->
-                <div>
-                    <div class="flex items-center gap-2 mb-4">
-                        <div class="w-1 h-5 bg-indigo-500 rounded-full"></div>
-                        <h3 class="text-sm font-bold text-gray-700 uppercase tracking-wide">Job Information</h3>
-                    </div>
-                    <div class="grid grid-cols-2 gap-4">
-                        <div>
-                            <div class="flex items-center justify-between mb-1.5">
-                                <label class="text-sm font-medium text-gray-600">Department *</label>
-                                <button type="button" onclick="toggleNewDept('add')" class="text-xs text-blue-600 hover:text-blue-800 font-semibold">+ New</button>
-                            </div>
-                            <select name="department" id="add_department" required class="w-full px-4 py-2.5 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 bg-gray-50 focus:bg-white transition">
-                                <option value="">-- Select Department --</option>
-                                <?php foreach ($departments as $dept): ?>
-                                <option value="<?= htmlspecialchars($dept) ?>"><?= htmlspecialchars($dept) ?></option>
-                                <?php endforeach; ?>
-                            </select>
-                            <div id="add_new_dept_box" class="hidden mt-2">
-                                <div class="flex gap-2">
-                                    <input type="text" id="add_dept_input" placeholder="New department name" class="flex-1 px-3 py-2 border border-blue-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
-                                    <button type="button" onclick="submitNewDept()" class="bg-blue-600 text-white px-3 py-2 rounded-lg text-sm hover:bg-blue-700 transition">Add</button>
-                                </div>
-                            </div>
-                        </div>
-                        <div>
-                            <label class="block text-sm font-medium text-gray-600 mb-1.5">Position / Job Title *</label>
-                            <input type="text" name="position" placeholder="e.g. Software Engineer" required class="w-full px-4 py-2.5 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 bg-gray-50 focus:bg-white transition">
-                        </div>
-                        <div>
-                            <label class="block text-sm font-medium text-gray-600 mb-1.5">Employee Type *</label>
-                            <select name="employee_type" required class="w-full px-4 py-2.5 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 bg-gray-50 focus:bg-white transition">
-                                <option value="regular">Regular Employee</option>
-                                <option value="intern">Intern (No EPF/SOCSO/EIS/PCB)</option>
-                            </select>
-                        </div>
-                        <div>
-                            <label class="block text-sm font-medium text-gray-600 mb-1.5">Date of Joining *</label>
-                            <input type="date" name="join_date" required class="w-full px-4 py-2.5 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 bg-gray-50 focus:bg-white transition">
-                        </div>
-                    </div>
-                </div>
-
-                <!-- Section: Salary & Bank -->
-                <div>
-                    <div class="flex items-center gap-2 mb-4">
-                        <div class="w-1 h-5 bg-amber-500 rounded-full"></div>
-                        <h3 class="text-sm font-bold text-gray-700 uppercase tracking-wide">Salary & Bank</h3>
-                    </div>
-                    <div class="grid grid-cols-2 gap-4">
-                        <div>
-                            <label class="block text-sm font-medium text-gray-600 mb-1.5">Basic Salary (RM) *</label>
-                            <input type="number" step="0.01" name="basic_salary" placeholder="0.00" required class="w-full px-4 py-2.5 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 bg-gray-50 focus:bg-white transition">
-                        </div>
-                        <div>
-                            <label class="block text-sm font-medium text-gray-600 mb-1.5">Bank Name</label>
-                            <input type="text" name="bank_name" placeholder="e.g. Maybank" class="w-full px-4 py-2.5 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 bg-gray-50 focus:bg-white transition">
-                        </div>
-                        <div class="col-span-2">
-                            <label class="block text-sm font-medium text-gray-600 mb-1.5">Bank Account Number</label>
-                            <input type="text" name="bank_account" placeholder="e.g. 1234567890" class="w-full px-4 py-2.5 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 bg-gray-50 focus:bg-white transition">
-                        </div>
-                    </div>
-                </div>
-
-                <!-- Section: Login & Statutory -->
-                <div>
-                    <div class="flex items-center gap-2 mb-4">
-                        <div class="w-1 h-5 bg-rose-500 rounded-full"></div>
-                        <h3 class="text-sm font-bold text-gray-700 uppercase tracking-wide">Login Credentials</h3>
-                    </div>
-                    <div>
-                        <label class="block text-sm font-medium text-gray-600 mb-1.5">Password *</label>
-                        <input type="password" name="password" value="password123" required class="w-full px-4 py-2.5 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 bg-gray-50 focus:bg-white transition">
-                        <p class="text-xs text-gray-400 mt-1.5">Default: <span class="font-mono text-gray-600">password123</span> — employee can change this after logging in</p>
-                    </div>
-                </div>
-
-                <!-- Statutory Note -->
-                <div class="bg-blue-50 border border-blue-100 p-4 rounded-xl" id="add_statutory_note">
-                    <div class="flex items-start gap-3">
-                        <i class="fas fa-info-circle text-blue-500 mt-0.5 text-sm"></i>
-                        <p class="text-xs text-blue-700 leading-relaxed">Malaysian employees are subject to automatic deductions: <strong>EPF 11%</strong>, <strong>SOCSO 0.5%</strong>, <strong>EIS 0.2%</strong>.</p>
-                    </div>
-                </div>
-
+                <p class="text-xs text-gray-500 mt-2">Profile Picture (Optional)</p>
             </div>
-
-            <!-- Footer inside form — pinned at bottom, fields above scroll -->
-            <div class="px-7 py-4 border-t border-gray-100 bg-gray-50/50 rounded-b-2xl flex gap-3 shrink-0">
-                <button type="submit" name="add_employee" class="flex-1 bg-gradient-to-r from-blue-600 to-indigo-600 text-white py-3 rounded-xl font-semibold hover:shadow-lg hover:from-blue-700 hover:to-indigo-700 transition flex items-center justify-center gap-2">
-                    <i class="fas fa-save"></i> Save Employee
+            
+            <!-- Basic Information -->
+            <div class="grid grid-cols-2 gap-3">
+                <input type="text" name="employee_id" placeholder="Employee ID" required class="w-full px-4 py-3 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500">
+                <input type="text" name="name" placeholder="Full Name" required class="w-full px-4 py-3 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500">
+            </div>
+            
+            <!-- Nationality -->
+            <div>
+                <label class="block text-sm font-medium text-gray-700 mb-2">Nationality</label>
+                <select name="nationality" id="add_nationality" required class="w-full px-4 py-3 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500" onchange="toggleStatutoryFields('add')">
+                    <option value="Malaysian">Malaysian (Subject to EPF/SOCSO/EIS)</option>
+                    <option value="Non-Malaysian">Non-Malaysian / Expat</option>
+                </select>
+            </div>
+            
+            <!-- IC / Passport -->
+            <div id="add_ic_field">
+                <input type="text" name="ic_number" placeholder="IC Number" class="w-full px-4 py-3 border border-gray-200 rounded-xl">
+            </div>
+            <div id="add_passport_field" style="display:none;">
+                <input type="text" name="passport_no" placeholder="Passport Number" class="w-full px-4 py-3 border border-gray-200 rounded-xl">
+            </div>
+            
+            <!-- Contact Information -->
+            <div class="border-t border-gray-100 pt-4">
+                <h3 class="font-semibold text-gray-700 mb-3">Contact Information</h3>
+                <input type="email" name="email" placeholder="Email Address" required class="w-full px-4 py-3 border border-gray-200 rounded-xl mb-2">
+                <input type="text" name="phone" placeholder="Phone Number" class="w-full px-4 py-3 border border-gray-200 rounded-xl mb-2">
+                <textarea name="address" rows="2" placeholder="Address" class="w-full px-4 py-3 border border-gray-200 rounded-xl"></textarea>
+            </div>
+            
+            <!-- Job Information -->
+            <div class="border-t border-gray-100 pt-4">
+                <h3 class="font-semibold text-gray-700 mb-3">Job Information</h3>
+                <div class="grid grid-cols-2 gap-3">
+                    <div>
+                        <div class="flex items-center gap-2 mb-1">
+                            <label class="text-sm font-medium text-gray-700">Department</label>
+                            <button type="button" onclick="toggleNewDept('add')" class="text-xs text-blue-600 hover:text-blue-800 font-medium underline underline-offset-2">+ New Dept</button>
+                        </div>
+                        <select name="department" id="add_department" required class="w-full px-4 py-3 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500">
+                            <option value="">-- Select --</option>
+                            <?php foreach ($departments as $dept): ?>
+                            <option value="<?= htmlspecialchars($dept) ?>"><?= htmlspecialchars($dept) ?></option>
+                            <?php endforeach; ?>
+                        </select>
+                        <div id="add_new_dept_box" class="hidden mt-2">
+                            <div class="flex gap-2">
+                                <input type="text" id="add_dept_input" placeholder="New department name" class="flex-1 px-3 py-2 border border-blue-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
+                                <button type="button" onclick="addDeptAjax('add')" class="bg-blue-600 text-white px-3 py-2 rounded-lg text-sm hover:bg-blue-700 transition">Add</button>
+                            </div>
+                        </div>
+                    </div>
+                    <input type="text" name="position" placeholder="Position" required class="w-full px-4 py-3 border border-gray-200 rounded-xl">
+                </div>
+            </div>
+            
+            <!-- Salary & Joining -->
+            <div class="border-t border-gray-100 pt-4">
+                <h3 class="font-semibold text-gray-700 mb-3">Salary & Employment</h3>
+                <div class="mb-3">
+                    <label class="block text-sm font-medium text-gray-700 mb-2">Employee Type</label>
+                    <select name="employee_type" required class="w-full px-4 py-3 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500">
+                        <option value="regular">Regular Employee</option>
+                        <option value="intern">Intern (No EPF/SOCSO/EIS/PCB, No Leave)</option>
+                    </select>
+                </div>
+                <div class="grid grid-cols-2 gap-3">
+                    <input type="number" step="0.01" name="basic_salary" placeholder="Basic Salary (RM)" required class="w-full px-4 py-3 border border-gray-200 rounded-xl">
+                    <input type="date" name="join_date" required class="w-full px-4 py-3 border border-gray-200 rounded-xl">
+                </div>
+                <p class="text-xs text-gray-500 mt-1">📅 Date of Joining: The date employee started working at the company</p>
+            </div>
+            
+            <!-- Bank Information -->
+            <div class="border-t border-gray-100 pt-4">
+                <h3 class="font-semibold text-gray-700 mb-3">Bank Information</h3>
+                <input type="text" name="bank_name" placeholder="Bank Name" class="w-full px-4 py-3 border border-gray-200 rounded-xl mb-2">
+                <input type="text" name="bank_account" placeholder="Bank Account Number" class="w-full px-4 py-3 border border-gray-200 rounded-xl">
+            </div>
+            
+            <!-- Login Information -->
+            <div class="border-t border-gray-100 pt-4">
+                <h3 class="font-semibold text-gray-700 mb-3">Login Information</h3>
+                <input type="text" name="password" placeholder="Password" value="password123" required class="w-full px-4 py-3 border border-gray-200 rounded-xl">
+                <p class="text-xs text-gray-500 mt-1">Default password: password123 (employee can change after login)</p>
+            </div>
+            
+            <!-- Statutory Note -->
+            <div class="bg-gradient-to-r from-blue-50 to-indigo-50 p-4 rounded-xl" id="add_statutory_note">
+                <div class="flex items-start gap-2">
+                    <i class="fas fa-info-circle text-blue-600 mt-0.5"></i>
+                    <p class="text-xs text-blue-800">Malaysian employees: EPF (11%), SOCSO (0.5%), EIS (0.2%) will be deducted automatically.</p>
+                </div>
+            </div>
+            
+            <!-- Buttons -->
+            <div class="flex gap-3 pt-3">
+                <button type="submit" name="add_employee" class="flex-1 bg-gradient-to-r from-blue-600 to-indigo-600 text-white py-3 rounded-xl font-semibold hover:shadow-lg transition transform hover:scale-105">
+                    <i class="fas fa-save mr-2"></i> Save Employee
                 </button>
-                <button type="button" onclick="document.getElementById('addModal').classList.add('hidden')" class="px-6 bg-white border border-gray-200 text-gray-600 py-3 rounded-xl font-semibold hover:bg-gray-100 transition">
+                <button type="button" onclick="document.getElementById('addModal').classList.add('hidden')" class="flex-1 bg-gray-100 text-gray-700 py-3 rounded-xl font-semibold hover:bg-gray-200 transition">
                     Cancel
                 </button>
             </div>
         </form>
     </div>
 </div>
-<!-- Edit Employee Modal -->
-<div id="editModal" class="hidden fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-    <div class="bg-white rounded-2xl w-full max-w-3xl shadow-2xl modal-enter flex flex-col max-h-[92vh]">
-
-        <!-- Fixed Header -->
-        <div class="flex items-center justify-between px-7 py-5 border-b border-gray-100 shrink-0">
-            <div class="flex items-center gap-4">
-                <div class="w-11 h-11 bg-gradient-to-br from-emerald-500 to-teal-600 rounded-xl flex items-center justify-center shadow">
-                    <i class="fas fa-user-edit text-white text-lg"></i>
-                </div>
+    <!-- Edit Employee Modal -->
+    <div id="editModal" class="hidden fixed inset-0 bg-black/50 backdrop-blur-sm z-50 flex items-center justify-center p-4 overflow-y-auto">
+        <div class="bg-white rounded-2xl max-w-md w-full modal-enter shadow-2xl">
+            <div class="sticky top-0 bg-white rounded-t-2xl p-5 border-b border-gray-100 flex justify-between items-center">
                 <div>
-                    <h2 class="text-xl font-bold text-gray-900">Edit Employee</h2>
-                    <p class="text-xs text-gray-400 mt-0.5">Update the employee's information below</p>
+                    <h2 class="text-xl font-bold text-gray-800">Edit Employee</h2>
+                    <p class="text-xs text-gray-500 mt-1">Update employee information</p>
                 </div>
-            </div>
-            <div class="flex items-center gap-2">
-                <a id="editViewProfileLink" href="#" class="text-xs text-blue-600 hover:text-blue-800 border border-blue-200 hover:border-blue-400 px-3 py-1.5 rounded-lg transition hidden">
-                    <i class="fas fa-eye mr-1"></i> Full Profile
-                </a>
-                <button onclick="document.getElementById('editModal').classList.add('hidden')" class="text-gray-400 hover:text-gray-700 hover:bg-gray-100 p-2 rounded-xl transition">
+                <button onclick="document.getElementById('editModal').classList.add('hidden')" class="text-gray-400 hover:text-gray-600 transition p-2 rounded-full hover:bg-gray-100">
                     <i class="fas fa-times text-xl"></i>
                 </button>
             </div>
-        </div>
-
-        <!-- Form: flex column so fields scroll, footer stays pinned -->
-        <form method="POST" enctype="multipart/form-data" id="editForm" class="flex flex-col flex-1 overflow-hidden">
-            <input type="hidden" name="emp_id" id="edit_id">
-            <input type="hidden" name="existing_profile_pic" id="edit_existing_profile_pic">
-            <input type="hidden" name="employee_id" id="edit_employee_id">
-
-            <div class="flex-1 overflow-y-auto px-7 py-6 space-y-6">
-
-                <!-- Profile Picture -->
-                <div class="flex items-center gap-5">
-                    <div class="relative shrink-0">
-                        <div id="edit_profile_preview" class="w-20 h-20 rounded-2xl bg-gradient-to-br from-blue-500 to-purple-600 flex items-center justify-center shadow-lg overflow-hidden">
-                            <i class="fas fa-user text-white text-2xl"></i>
+            <form method="POST" class="p-5 space-y-4 max-h-[70vh] overflow-y-auto" enctype="multipart/form-data" id="editForm">
+                <input type="hidden" name="emp_id" id="edit_id">
+                <input type="hidden" name="existing_profile_pic" id="edit_existing_profile_pic">
+                <input type="hidden" name="employee_id" id="edit_employee_id">
+                
+                <div class="text-center mb-4">
+                    <div class="relative inline-block">
+                        <div id="edit_profile_preview" class="w-24 h-24 rounded-full bg-gradient-to-br from-blue-500 to-purple-600 flex items-center justify-center mx-auto shadow-lg">
+                            <i class="fas fa-user text-white text-3xl"></i>
                         </div>
-                        <label class="absolute -bottom-1 -right-1 bg-blue-600 text-white p-1.5 rounded-lg cursor-pointer hover:bg-blue-700 transition shadow">
+                        <label class="absolute bottom-0 right-0 bg-blue-600 text-white p-1.5 rounded-full cursor-pointer hover:bg-blue-700 transition">
                             <i class="fas fa-upload text-xs"></i>
                             <input type="file" name="profile_pic" id="edit_profile_pic" class="hidden" accept="image/*" onchange="previewImage(this, 'edit_profile_preview')">
                         </label>
                     </div>
+                    <p class="text-xs text-gray-500 mt-2">Click to change profile picture</p>
+                </div>
+                
+                <input type="text" name="name" id="edit_name" placeholder="Full Name" required class="w-full px-4 py-3 border border-gray-200 rounded-xl">
+                
+                <div>
+                    <label class="block text-sm font-medium text-gray-700 mb-2">Nationality</label>
+                    <select name="nationality" id="edit_nationality" required class="w-full px-4 py-3 border border-gray-200 rounded-xl" onchange="toggleStatutoryFields('edit')">
+                        <option value="Malaysian">Malaysian (Subject to EPF/SOCSO/EIS)</option>
+                        <option value="Non-Malaysian">Non-Malaysian / Expat</option>
+                    </select>
+                </div>
+                
+                <div id="edit_ic_field">
+                    <input type="text" name="ic_number" id="edit_ic" placeholder="IC Number" class="w-full px-4 py-3 border border-gray-200 rounded-xl">
+                </div>
+                <div id="edit_passport_field" style="display:none;">
+                    <input type="text" name="passport_no" id="edit_passport" placeholder="Passport Number" class="w-full px-4 py-3 border border-gray-200 rounded-xl">
+                </div>
+                
+                <input type="email" name="email" id="edit_email" placeholder="Email" required class="w-full px-4 py-3 border border-gray-200 rounded-xl">
+                
+                <div class="grid grid-cols-2 gap-3">
                     <div>
-                        <p class="text-sm font-semibold text-gray-700">Profile Photo</p>
-                        <p class="text-xs text-gray-400 mt-0.5">Click the icon to change photo</p>
-                    </div>
-                </div>
-
-                <!-- Section: Personal Info -->
-                <div>
-                    <div class="flex items-center gap-2 mb-4">
-                        <div class="w-1 h-5 bg-blue-600 rounded-full"></div>
-                        <h3 class="text-sm font-bold text-gray-700 uppercase tracking-wide">Personal Information</h3>
-                    </div>
-                    <div class="grid grid-cols-2 gap-4">
-                        <div class="col-span-2">
-                            <label class="block text-sm font-medium text-gray-600 mb-1.5">Full Name *</label>
-                            <input type="text" name="name" id="edit_name" placeholder="As per IC / Passport" required class="w-full px-4 py-2.5 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 bg-gray-50 focus:bg-white transition">
+                        <div class="flex items-center gap-2 mb-1">
+                            <label class="text-sm font-medium text-gray-700">Department</label>
+                            <button type="button" onclick="toggleNewDept('edit')" class="text-xs text-blue-600 hover:text-blue-800 font-medium underline underline-offset-2">+ New Dept</button>
                         </div>
-                        <div>
-                            <label class="block text-sm font-medium text-gray-600 mb-1.5">Nationality *</label>
-                            <select name="nationality" id="edit_nationality" required class="w-full px-4 py-2.5 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 bg-gray-50 focus:bg-white transition" onchange="toggleStatutoryFields('edit')">
-                                <option value="Malaysian">Malaysian (EPF / SOCSO / EIS)</option>
-                                <option value="Non-Malaysian">Non-Malaysian / Expat</option>
-                            </select>
-                        </div>
-                        <div id="edit_ic_field">
-                            <label class="block text-sm font-medium text-gray-600 mb-1.5">IC Number</label>
-                            <input type="text" name="ic_number" id="edit_ic" placeholder="e.g. 900101-10-1234" class="w-full px-4 py-2.5 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 bg-gray-50 focus:bg-white transition">
-                        </div>
-                        <div id="edit_passport_field" style="display:none;" class="col-span-1">
-                            <label class="block text-sm font-medium text-gray-600 mb-1.5">Passport Number</label>
-                            <input type="text" name="passport_no" id="edit_passport" placeholder="Passport No." class="w-full px-4 py-2.5 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 bg-gray-50 focus:bg-white transition">
-                        </div>
-                    </div>
-                </div>
-
-                <!-- Section: Contact -->
-                <div>
-                    <div class="flex items-center gap-2 mb-4">
-                        <div class="w-1 h-5 bg-emerald-500 rounded-full"></div>
-                        <h3 class="text-sm font-bold text-gray-700 uppercase tracking-wide">Contact Information</h3>
-                    </div>
-                    <div class="grid grid-cols-2 gap-4">
-                        <div>
-                            <label class="block text-sm font-medium text-gray-600 mb-1.5">Email Address *</label>
-                            <input type="email" name="email" id="edit_email" placeholder="name@company.com" required class="w-full px-4 py-2.5 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 bg-gray-50 focus:bg-white transition">
-                        </div>
-                        <div>
-                            <label class="block text-sm font-medium text-gray-600 mb-1.5">Phone Number</label>
-                            <input type="text" name="phone" id="edit_phone" placeholder="e.g. 012-3456789" class="w-full px-4 py-2.5 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 bg-gray-50 focus:bg-white transition">
-                        </div>
-                    </div>
-                </div>
-
-                <!-- Section: Job -->
-                <div>
-                    <div class="flex items-center gap-2 mb-4">
-                        <div class="w-1 h-5 bg-indigo-500 rounded-full"></div>
-                        <h3 class="text-sm font-bold text-gray-700 uppercase tracking-wide">Job Information</h3>
-                    </div>
-                    <div class="grid grid-cols-2 gap-4">
-                        <div>
-                            <div class="flex items-center justify-between mb-1.5">
-                                <label class="text-sm font-medium text-gray-600">Department *</label>
-                                <button type="button" onclick="toggleNewDept('edit')" class="text-xs text-blue-600 hover:text-blue-800 font-semibold">+ New</button>
-                            </div>
-                            <select name="department" id="edit_department" required class="w-full px-4 py-2.5 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 bg-gray-50 focus:bg-white transition">
-                                <option value="">-- Select Department --</option>
-                                <?php foreach ($departments as $dept): ?>
-                                <option value="<?= htmlspecialchars($dept) ?>"><?= htmlspecialchars($dept) ?></option>
-                                <?php endforeach; ?>
-                            </select>
-                            <div id="edit_new_dept_box" class="hidden mt-2">
-                                <div class="flex gap-2">
-                                    <input type="text" id="edit_dept_input" placeholder="New department name" class="flex-1 px-3 py-2 border border-blue-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
-                                    <button type="button" onclick="submitNewDept()" class="bg-blue-600 text-white px-3 py-2 rounded-lg text-sm hover:bg-blue-700 transition">Add</button>
-                                </div>
+                        <select name="department" id="edit_department" required class="w-full px-4 py-3 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500">
+                            <option value="">-- Select --</option>
+                            <?php foreach ($departments as $dept): ?>
+                            <option value="<?= htmlspecialchars($dept) ?>"><?= htmlspecialchars($dept) ?></option>
+                            <?php endforeach; ?>
+                        </select>
+                        <div id="edit_new_dept_box" class="hidden mt-2">
+                            <div class="flex gap-2">
+                                <input type="text" id="edit_dept_input" placeholder="New department name" class="flex-1 px-3 py-2 border border-blue-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
+                                <button type="button" onclick="addDeptAjax('edit')" class="bg-blue-600 text-white px-3 py-2 rounded-lg text-sm hover:bg-blue-700 transition">Add</button>
                             </div>
                         </div>
-                        <div>
-                            <label class="block text-sm font-medium text-gray-600 mb-1.5">Position / Job Title *</label>
-                            <input type="text" name="position" id="edit_position" placeholder="e.g. Software Engineer" required class="w-full px-4 py-2.5 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 bg-gray-50 focus:bg-white transition">
-                        </div>
-                        <div>
-                            <label class="block text-sm font-medium text-gray-600 mb-1.5">Employee Type</label>
-                            <select name="employee_type" id="edit_employee_type" class="w-full px-4 py-2.5 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 bg-gray-50 focus:bg-white transition">
-                                <option value="regular">Regular Employee</option>
-                                <option value="intern">Intern (No EPF/SOCSO/EIS/PCB)</option>
-                            </select>
-                        </div>
-                        <div>
-                            <label class="block text-sm font-medium text-gray-600 mb-1.5">Employment Status</label>
-                            <select name="status" id="edit_status" class="w-full px-4 py-2.5 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 bg-gray-50 focus:bg-white transition">
-                                <option value="active">Active</option>
-                                <option value="inactive">Inactive</option>
-                            </select>
-                        </div>
-                        <div>
-                            <label class="block text-sm font-medium text-gray-600 mb-1.5">Date of Joining *</label>
-                            <input type="date" name="join_date" id="edit_join_date" required class="w-full px-4 py-2.5 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 bg-gray-50 focus:bg-white transition">
-                        </div>
-                        <div>
-                            <label class="block text-sm font-medium text-gray-600 mb-1.5">Basic Salary (RM) *</label>
-                            <input type="number" step="0.01" name="basic_salary" id="edit_salary" placeholder="0.00" required class="w-full px-4 py-2.5 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 bg-gray-50 focus:bg-white transition">
-                        </div>
+                    </div>
+                    <input type="text" name="position" id="edit_position" placeholder="Position" required class="w-full px-4 py-3 border border-gray-200 rounded-xl">
+                </div>
+                
+                <div class="grid grid-cols-2 gap-3">
+                    <input type="number" step="0.01" name="basic_salary" id="edit_salary" placeholder="Basic Salary (RM)" required class="w-full px-4 py-3 border border-gray-200 rounded-xl">
+                    <input type="date" name="join_date" id="edit_join_date" required class="w-full px-4 py-3 border border-gray-200 rounded-xl">
+                </div>
+                
+                <div class="border-t border-gray-100 pt-4">
+                    <h3 class="font-semibold text-gray-700 mb-3">Contact Information</h3>
+                    <input type="text" name="phone" id="edit_phone" placeholder="Phone Number" class="w-full px-4 py-3 border border-gray-200 rounded-xl mb-2">
+                    <input type="text" name="bank_name" id="edit_bank" placeholder="Bank Name" class="w-full px-4 py-3 border border-gray-200 rounded-xl mb-2">
+                    <input type="text" name="bank_account" id="edit_account" placeholder="Bank Account Number" class="w-full px-4 py-3 border border-gray-200 rounded-xl">
+                </div>
+                
+                <div class="border-t border-gray-100 pt-4">
+                    <h3 class="font-semibold text-gray-700 mb-3">Leave Entitlement</h3>
+                    <div class="grid grid-cols-2 gap-3">
+                        <input type="number" name="annual_leave_entitlement" id="edit_annual_leave" placeholder="Annual Leave" class="w-full px-4 py-3 border border-gray-200 rounded-xl">
+                        <input type="number" name="medical_leave_entitlement" id="edit_medical_leave" placeholder="Medical Leave" class="w-full px-4 py-3 border border-gray-200 rounded-xl">
                     </div>
                 </div>
-
-                <!-- Section: Bank & Leave -->
-                <div>
-                    <div class="flex items-center gap-2 mb-4">
-                        <div class="w-1 h-5 bg-amber-500 rounded-full"></div>
-                        <h3 class="text-sm font-bold text-gray-700 uppercase tracking-wide">Bank & Leave Entitlement</h3>
+                
+                <div class="border-t border-gray-100 pt-4">
+                    <h3 class="font-semibold text-gray-700 mb-3">Employment Type & Status</h3>
+                    <div class="mb-3">
+                        <label class="block text-sm font-medium text-gray-700 mb-1">Employee Type</label>
+                        <select name="employee_type" id="edit_employee_type" class="w-full px-4 py-3 border border-gray-200 rounded-xl">
+                            <option value="regular">Regular Employee</option>
+                            <option value="intern">Intern (No EPF/SOCSO/EIS/PCB, No Leave)</option>
+                        </select>
                     </div>
-                    <div class="grid grid-cols-2 gap-4">
-                        <div>
-                            <label class="block text-sm font-medium text-gray-600 mb-1.5">Bank Name</label>
-                            <input type="text" name="bank_name" id="edit_bank" placeholder="e.g. Maybank" class="w-full px-4 py-2.5 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 bg-gray-50 focus:bg-white transition">
-                        </div>
-                        <div>
-                            <label class="block text-sm font-medium text-gray-600 mb-1.5">Bank Account Number</label>
-                            <input type="text" name="bank_account" id="edit_account" placeholder="e.g. 1234567890" class="w-full px-4 py-2.5 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 bg-gray-50 focus:bg-white transition">
-                        </div>
-                        <div>
-                            <label class="block text-sm font-medium text-gray-600 mb-1.5">Annual Leave (days)</label>
-                            <input type="number" name="annual_leave_entitlement" id="edit_annual_leave" placeholder="e.g. 14" class="w-full px-4 py-2.5 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 bg-gray-50 focus:bg-white transition">
-                        </div>
-                        <div>
-                            <label class="block text-sm font-medium text-gray-600 mb-1.5">Medical Leave (days)</label>
-                            <input type="number" name="medical_leave_entitlement" id="edit_medical_leave" placeholder="e.g. 14" class="w-full px-4 py-2.5 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 bg-gray-50 focus:bg-white transition">
-                        </div>
+                    <select name="status" id="edit_status" class="w-full px-4 py-3 border border-gray-200 rounded-xl">
+                        <option value="active">Active</option>
+                        <option value="inactive">Inactive</option>
+                    </select>
+                </div>
+                
+                <div class="bg-gradient-to-r from-blue-50 to-indigo-50 p-4 rounded-xl" id="edit_statutory_note">
+                    <div class="flex items-start gap-2">
+                        <i class="fas fa-info-circle text-blue-600 mt-0.5"></i>
+                        <p class="text-xs text-blue-800">Malaysian employees: EPF (11%), SOCSO (0.5%), EIS (0.2%) will be deducted automatically.</p>
                     </div>
                 </div>
-
-                <!-- Statutory Note -->
-                <div class="bg-blue-50 border border-blue-100 p-4 rounded-xl" id="edit_statutory_note">
-                    <div class="flex items-start gap-3">
-                        <i class="fas fa-info-circle text-blue-500 mt-0.5 text-sm"></i>
-                        <p class="text-xs text-blue-700 leading-relaxed">Malaysian employees are subject to automatic deductions: <strong>EPF 11%</strong>, <strong>SOCSO 0.5%</strong>, <strong>EIS 0.2%</strong>.</p>
-                    </div>
+                
+                <div class="flex gap-3 pt-3">
+                    <button type="submit" name="update_employee" class="flex-1 bg-gradient-to-r from-green-600 to-emerald-600 text-white py-3 rounded-xl font-semibold hover:shadow-lg transition transform hover:scale-105">
+                        <i class="fas fa-save mr-2"></i> Update Employee
+                    </button>
+                    <button type="button" onclick="document.getElementById('editModal').classList.add('hidden')" class="flex-1 bg-gray-100 text-gray-700 py-3 rounded-xl font-semibold hover:bg-gray-200 transition">
+                        Cancel
+                    </button>
                 </div>
-
-            </div>
-
-            <!-- Footer inside form — pinned at bottom, fields above scroll -->
-            <div class="px-7 py-4 border-t border-gray-100 bg-gray-50/50 rounded-b-2xl flex gap-3 shrink-0">
-                <button type="submit" name="update_employee" class="flex-1 bg-gradient-to-r from-emerald-600 to-teal-600 text-white py-3 rounded-xl font-semibold hover:shadow-lg hover:from-emerald-700 hover:to-teal-700 transition flex items-center justify-center gap-2">
-                    <i class="fas fa-save"></i> Save Changes
-                </button>
-                <button type="button" onclick="document.getElementById('editModal').classList.add('hidden')" class="px-6 bg-white border border-gray-200 text-gray-600 py-3 rounded-xl font-semibold hover:bg-gray-100 transition">
-                    Cancel
-                </button>
-            </div>
-        </form>
+            </form>
+        </div>
     </div>
-</div>
-
-<!-- Standalone dept form — outside all modals to avoid nested-form parsing issues -->
-<form id="addDeptStandaloneForm" method="POST" data-no-loading style="display:none;">
-    <input type="hidden" name="dept_name" id="addDeptHidden">
-    <input type="hidden" name="add_department" value="1">
-</form>
 
     <!-- Mobile Bottom Navigation -->
     <div class="fixed bottom-0 left-0 right-0 bg-white/95 backdrop-blur-lg border-t border-gray-200 md:hidden shadow-2xl z-30">
@@ -1047,13 +1115,61 @@ $employees = mysqli_query($conn, "SELECT * FROM employees WHERE role='employee' 
         }
         
         // View Profile Modal Functions
-        function openEditModal(employee) {
-            // Wire up "Full Profile" link in edit modal header
-            const profileLink = document.getElementById('editViewProfileLink');
-            if (profileLink && employee.id) {
-                profileLink.href = 'view_employee.php?id=' + employee.id;
-                profileLink.classList.remove('hidden');
+        function openViewModal(employee) {
+            // Set profile image
+            const profilePic = employee.profile_pic ? `../uploads/profiles/${employee.profile_pic}` : null;
+            const previewDiv = document.getElementById('view_profile_img');
+            
+            if (profilePic) {
+                previewDiv.style.backgroundImage = `url(${profilePic})`;
+                previewDiv.style.backgroundSize = 'cover';
+                previewDiv.style.backgroundPosition = 'center';
+                previewDiv.innerHTML = '';
+            } else {
+                previewDiv.style.backgroundImage = '';
+                previewDiv.innerHTML = '<i class="fas fa-user text-white text-4xl"></i>';
             }
+            
+            // Set personal info
+            document.getElementById('view_name').textContent = employee.name || '-';
+            document.getElementById('view_employee_id').textContent = employee.employee_id || '-';
+            document.getElementById('view_fullname').textContent = employee.name || '-';
+            document.getElementById('view_empid').textContent = employee.employee_id || '-';
+            document.getElementById('view_nationality').textContent = employee.nationality || '-';
+            document.getElementById('view_ic').textContent = employee.ic_number || '-';
+            document.getElementById('view_passport').textContent = employee.passport_no || '-';
+            document.getElementById('view_email').textContent = employee.email || '-';
+            document.getElementById('view_phone').textContent = employee.phone || '-';
+            document.getElementById('view_join_date').textContent = employee.join_date ? new Date(employee.join_date).toLocaleDateString('en-MY') : '-';
+
+            // Set employment info
+            document.getElementById('view_department').textContent = employee.department || '-';
+            document.getElementById('view_position').textContent = employee.position || '-';
+            document.getElementById('view_salary').textContent = `RM ${parseFloat(employee.basic_salary).toLocaleString('en-MY', {minimumFractionDigits: 2})}`;
+            
+            const statusHtml = employee.status === 'active' 
+                ? '<span class="text-green-600"><i class="fas fa-check-circle mr-1"></i> Active</span>' 
+                : '<span class="text-red-600"><i class="fas fa-times-circle mr-1"></i> Inactive</span>';
+            document.getElementById('view_status').innerHTML = statusHtml;
+            
+            // Set leave entitlement
+            document.getElementById('view_annual_leave').textContent = employee.annual_leave_entitlement || 0;
+            document.getElementById('view_medical_leave').textContent = employee.medical_leave_entitlement || 0;
+            document.getElementById('view_used_annual').textContent = employee.used_annual_leave || 0;
+            document.getElementById('view_used_medical').textContent = employee.used_medical_leave || 0;
+
+            // Set bank info
+            document.getElementById('view_bank_name').textContent = employee.bank_name || '-';
+            document.getElementById('view_bank_account').textContent = employee.bank_account || '-';
+            
+            document.getElementById('viewModal').classList.remove('hidden');
+        }
+        
+        function closeViewModal() {
+            document.getElementById('viewModal').classList.add('hidden');
+        }
+        
+        function openEditModal(employee) {
             document.getElementById('edit_id').value = employee.id;
             document.getElementById('edit_employee_id').value = employee.employee_id;
             document.getElementById('edit_name').value = employee.name || '';
@@ -1095,8 +1211,30 @@ $employees = mysqli_query($conn, "SELECT * FROM employees WHERE role='employee' 
             document.getElementById('editModal').classList.remove('hidden');
         }
         
-        function exportEmployees() {
-            window.location.href = 'export_employees.php';
+        async function addDeptAjax(context) {
+            const inputEl = document.getElementById(context + '_dept_input');
+            const selectEl = document.getElementById(context + '_department');
+            const deptName = inputEl.value.trim();
+            if (!deptName) { inputEl.focus(); return; }
+            const fd = new FormData();
+            fd.append('add_department', '1');
+            fd.append('dept_name', deptName);
+            fd.append('csrf_token', '<?php echo htmlspecialchars(generateCsrfToken(), ENT_QUOTES); ?>');
+            try {
+                const res = await fetch('employees.php', { method: 'POST', headers: { 'X-Requested-With': 'XMLHttpRequest' }, body: fd });
+                const data = await res.json();
+                if (data.success && data.name) {
+                    const opt = new Option(data.name, data.name, true, true);
+                    selectEl.appendChild(opt);
+                    selectEl.value = data.name;
+                    inputEl.value = '';
+                    document.getElementById(context + '_new_dept_box').classList.add('hidden');
+                } else {
+                    alert(data.error || 'Failed to add department.');
+                }
+            } catch (e) {
+                alert('Failed to add department. Please try again.');
+            }
         }
 
         function toggleNewDept(prefix) {
@@ -1104,21 +1242,10 @@ $employees = mysqli_query($conn, "SELECT * FROM employees WHERE role='employee' 
             if (box) {
                 box.classList.toggle('hidden');
                 if (!box.classList.contains('hidden')) {
-                    const input = document.getElementById(prefix + '_dept_input');
+                    const input = box.querySelector('input[name="dept_name"]');
                     if (input) input.focus();
                 }
             }
-        }
-
-        function submitNewDept() {
-            const addInput  = document.getElementById('add_dept_input');
-            const editInput = document.getElementById('edit_dept_input');
-            const val = (addInput && !document.getElementById('add_new_dept_box').classList.contains('hidden'))
-                ? addInput.value.trim()
-                : (editInput ? editInput.value.trim() : '');
-            if (!val) return;
-            document.getElementById('addDeptHidden').value = val;
-            document.getElementById('addDeptStandaloneForm').submit();
         }
         
         // ── Search-as-you-type ──────────────────────────────────────────────

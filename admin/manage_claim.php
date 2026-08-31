@@ -20,14 +20,15 @@ mysqli_query($conn, "CREATE TABLE IF NOT EXISTS claim_attachments (
 // PAGINATION & FILTERS
 // ========================================
 $page = isset($_GET['page']) ? (int)$_GET['page'] : 1;
+if ($page < 1) $page = 1;
 $per_page = isset($_GET['per_page']) ? (int)$_GET['per_page'] : 10;
+if ($per_page < 1) $per_page = 10;
 $search = isset($_GET['search']) ? mysqli_real_escape_string($conn, $_GET['search']) : '';
-$allowed_statuses = ['pending', 'approved', 'rejected', ''];
-$allowed_types = ['travel', 'meal', 'medical', 'toll', 'parking', 'other', ''];
-$status_filter = in_array($_GET['status'] ?? 'pending', $allowed_statuses) ? ($_GET['status'] ?? 'pending') : 'pending';
-$type_filter   = in_array($_GET['type'] ?? '', $allowed_types) ? ($_GET['type'] ?? '') : '';
-$date_from = isset($_GET['date_from']) ? preg_replace('/[^0-9\-]/', '', $_GET['date_from']) : '';
-$date_to   = isset($_GET['date_to'])   ? preg_replace('/[^0-9\-]/', '', $_GET['date_to'])   : '';
+$allowed_statuses = ['pending', 'approved', 'rejected'];
+$status_filter = isset($_GET['status']) && in_array($_GET['status'], $allowed_statuses) ? $_GET['status'] : (isset($_GET['status']) ? '' : 'pending');
+$type_filter = isset($_GET['type']) ? mysqli_real_escape_string($conn, $_GET['type']) : '';
+$date_from = isset($_GET['date_from']) && preg_match('/^\d{4}-\d{2}-\d{2}$/', $_GET['date_from']) ? $_GET['date_from'] : '';
+$date_to = isset($_GET['date_to']) && preg_match('/^\d{4}-\d{2}-\d{2}$/', $_GET['date_to']) ? $_GET['date_to'] : '';
 
 // Build WHERE clause
 $where = "WHERE 1=1";
@@ -54,14 +55,25 @@ $total_rows = mysqli_fetch_assoc($count_result)['total'];
 $total_pages = ceil($total_rows / $per_page);
 $offset = ($page - 1) * $per_page;
 
-// Get paginated claims with attachment count
-$claims = mysqli_query($conn, "SELECT c.*, e.name, e.employee_id, e.department,
+// Get paginated claims with attachment count (F055: fetch into array for N+1 fix)
+$claims_query = mysqli_query($conn, "SELECT c.*, e.name, e.employee_id, e.department,
     (SELECT COUNT(*) FROM claim_attachments WHERE claim_id = c.id) as attachments_count
-    FROM claims c 
-    JOIN employees e ON c.employee_id = e.id 
-    $where 
-    ORDER BY CASE WHEN c.status='pending' THEN 1 ELSE 2 END, c.applied_at DESC 
+    FROM claims c
+    JOIN employees e ON c.employee_id = e.id
+    $where
+    ORDER BY CASE WHEN c.status='pending' THEN 1 ELSE 2 END, c.applied_at DESC
     LIMIT $offset, $per_page");
+$claims = [];
+while ($r = mysqli_fetch_assoc($claims_query)) { $claims[] = $r; }
+
+// Pre-fetch all attachments in one query (F055)
+$att_map = [];
+$claim_ids = array_column($claims, 'id');
+if (!empty($claim_ids)) {
+    $ids_str = implode(',', array_map('intval', $claim_ids));
+    $att_q = mysqli_query($conn, "SELECT * FROM claim_attachments WHERE claim_id IN ($ids_str)");
+    while ($a = mysqli_fetch_assoc($att_q)) { $att_map[$a['claim_id']][] = $a; }
+}
 
 // Get statistics
 $stats_query = mysqli_query($conn, "SELECT 
@@ -79,6 +91,11 @@ $claim_types = mysqli_query($conn, "SELECT DISTINCT claim_type FROM claims");
 // BULK APPROVE / REJECT
 // ========================================
 if (isset($_POST['bulk_action']) && !empty($_POST['ids'])) {
+    if (!validateCsrfToken($_POST['csrf_token'] ?? '')) {
+        showToast('Invalid request.', 'error');
+        header("Location: manage_claim.php?page=$page&per_page=$per_page&search=" . urlencode($search) . "&status=$status_filter&type=$type_filter&date_from=$date_from&date_to=$date_to");
+        exit();
+    }
     $bulk_action = $_POST['bulk_action'];
     $bulk_status = ($bulk_action === 'approve') ? 'approved' : 'rejected';
     $ids = array_map('intval', $_POST['ids']);
@@ -87,9 +104,11 @@ if (isset($_POST['bulk_action']) && !empty($_POST['ids'])) {
     $bulk_rows = mysqli_query($conn, "SELECT id, employee_id FROM claims WHERE id IN ($ids_safe) AND status='pending'");
     $affected = 0;
     while ($br = mysqli_fetch_assoc($bulk_rows)) {
-        mysqli_query($conn, "UPDATE claims SET status='$bulk_status', reviewed_at=NOW() WHERE id={$br['id']}");
+        // Atomic guard: only notify/count if this row was still 'pending' at update time.
+        mysqli_query($conn, "UPDATE claims SET status='$bulk_status', reviewed_at=NOW() WHERE id={$br['id']} AND status='pending'");
+        if (mysqli_affected_rows($conn) === 0) continue;
         addNotification($br['employee_id'], 'Claim ' . ucfirst($bulk_status), 'Your claim has been ' . $bulk_status . '.');
-        logAction($bulk_action, 'Claim ' . $bulk_status . ' for employee #' . $br['employee_id'], $br['id'], 'claim');
+        logAction($bulk_status === 'approved' ? 'approve' : 'reject', 'Bulk ' . $bulk_status . ' claim', $br['id'], 'claim');
         $affected++;
     }
 
@@ -105,19 +124,27 @@ if (isset($_POST['bulk_action']) && !empty($_POST['ids'])) {
     exit();
 }
 
-// Handle Approve/Reject (uses 'act' param to avoid conflict with 'type' filter)
-if (isset($_GET['action']) && isset($_GET['act'])) {
-    $id = (int)$_GET['action'];
-    $action = $_GET['act'];
+// Handle Approve/Reject via POST with CSRF protection (F039)
+if (isset($_POST['claim_action']) && validateCsrfToken($_POST['csrf_token'] ?? '')) {
+    $id = (int)($_POST['claim_id'] ?? 0);
+    $action = $_POST['claim_action'];
     $status = ($action == 'approve') ? 'approved' : 'rejected';
 
-    mysqli_query($conn, "UPDATE claims SET status='$status', reviewed_at=NOW() WHERE id=$id");
-
-    $claim = mysqli_fetch_assoc(mysqli_query($conn, "SELECT employee_id FROM claims WHERE id=$id"));
-    if ($claim) {
-        addNotification($claim['employee_id'], 'Claim ' . ucfirst($status), 'Your claim has been ' . $status);
-        logAction($action, 'Claim ' . $status . ' for employee #' . $claim['employee_id'], $id, 'claim');
+    $claim = mysqli_fetch_assoc(mysqli_query($conn, "SELECT employee_id FROM claims WHERE id=$id AND status='pending'"));
+    if (!$claim) {
+        header("Location: manage_claim.php?page=$page&per_page=$per_page&search=" . urlencode($search) . "&status=$status_filter&type=$type_filter&date_from=$date_from&date_to=$date_to");
+        exit();
     }
+
+    // Atomic guard: only proceed if this row was still 'pending' at update time.
+    mysqli_query($conn, "UPDATE claims SET status='$status', reviewed_at=NOW() WHERE id=$id AND status='pending'");
+    if (mysqli_affected_rows($conn) === 0) {
+        header("Location: manage_claim.php?page=$page&per_page=$per_page&search=" . urlencode($search) . "&status=$status_filter&type=$type_filter&date_from=$date_from&date_to=$date_to");
+        exit();
+    }
+
+    addNotification($claim['employee_id'], 'Claim ' . ucfirst($status), 'Your claim has been ' . $status);
+    logAction($status === 'approved' ? 'approve' : 'reject', ucfirst($status) . ' claim', $id, 'claim');
 
     if ($status === 'approved') {
         showToast('Claim approved and will be added to next payroll.', 'success');
@@ -125,6 +152,22 @@ if (isset($_GET['action']) && isset($_GET['act'])) {
         showToast('Claim rejected.', 'warning');
     }
 
+    header("Location: manage_claim.php?page=$page&per_page=$per_page&search=" . urlencode($search) . "&status=$status_filter&type=$type_filter&date_from=$date_from&date_to=$date_to");
+    exit();
+}
+// ========================================
+// UNDO (REVERT) CLAIM DECISION
+// ========================================
+if (isset($_POST['undo_claim']) && validateCsrfToken($_POST['csrf_token'] ?? '')) {
+    $id = intval($_POST['undo_claim']);
+    $claim = mysqli_fetch_assoc(mysqli_query($conn, "SELECT id, status FROM claims WHERE id=$id AND status IN ('approved','rejected')"));
+    if ($claim) {
+        mysqli_query($conn, "UPDATE claims SET status='pending', reviewed_at=NULL WHERE id=$id AND status='{$claim['status']}'");
+        if (mysqli_affected_rows($conn) > 0) {
+            logAction('update', 'Reverted ' . $claim['status'] . ' claim to pending', $id, 'claim');
+            showToast('Claim reverted to pending.', 'success');
+        }
+    }
     header("Location: manage_claim.php?page=$page&per_page=$per_page&search=" . urlencode($search) . "&status=$status_filter&type=$type_filter&date_from=$date_from&date_to=$date_to");
     exit();
 }
@@ -165,15 +208,11 @@ if (isset($_GET['action']) && isset($_GET['act'])) {
         /* Bulk action bar */
         #bulkBar {
             transition: transform 0.3s ease, opacity 0.3s ease;
-            bottom: 0;
         }
         #bulkBar.hidden-bar {
             transform: translateY(100%);
             opacity: 0;
             pointer-events: none;
-        }
-        @media (max-width: 767px) {
-            #bulkBar { bottom: 64px; }
         }
         .bulk-check {
             width: 18px; height: 18px;
@@ -189,14 +228,14 @@ if (isset($_GET['action']) && isset($_GET['act'])) {
 <?php require_once '../includes/confirm_modal.php'; ?>
 
 <!-- Premium Mobile Header -->
-<div class="bg-[#060912] text-white sticky top-0 z-40 shadow-2xl">
+<div class="bg-gradient-to-r from-slate-900 via-indigo-900 to-slate-900 text-white sticky top-0 z-40 shadow-2xl">
     <div class="flex justify-between items-center px-4 py-4">
         <div class="flex items-center gap-3">
             <button onclick="toggleSidebar()" class="text-white/80 hover:text-white p-2 rounded-full hover:bg-white/10">
                 <i class="fas fa-bars text-xl"></i>
             </button>
             <div class="w-10 h-10 bg-gradient-to-br from-blue-500 to-indigo-600 rounded-xl flex items-center justify-center shadow-lg">
-                <img src="../uploads/1775551018_4xzREYTcMvK7ReGODviudjeDBIofOQ78mr5DsN9g.jpg" alt="IPINFRA" style="width:28px;height:28px;object-fit:contain;border-radius:4px;background:#fff;">
+                <span class="text-white font-bold text-sm">IN</span>
             </div>
             <div>
                 <p class="text-xs text-blue-200 font-medium">IPINFRA NETWORKS</p>
@@ -315,9 +354,13 @@ if (isset($_GET['action']) && isset($_GET['act'])) {
     </div>
 
     <!-- Results Summary -->
+    <?php
+    $showing_from = $total_rows === 0 ? 0 : $offset + 1;
+    $showing_to   = min($offset + $per_page, $total_rows);
+    ?>
     <div class="flex justify-between items-center mb-4">
         <p class="text-sm text-gray-500">
-            Showing <?php echo $offset + 1; ?> to <?php echo min($offset + $per_page, $total_rows); ?> of <?php echo $total_rows; ?> claims
+            Showing <?php echo $showing_from; ?> to <?php echo $showing_to; ?> of <?php echo $total_rows; ?> claims
         </p>
         <div class="flex items-center gap-2">
             <span class="text-xs text-gray-500">Show:</span>
@@ -331,9 +374,10 @@ if (isset($_GET['action']) && isset($_GET['act'])) {
     </div>
 
     <!-- Claim List -->
-    <?php if (mysqli_num_rows($claims) > 0): ?>
+    <?php if (count($claims) > 0): ?>
         <!-- Bulk form wrapping the entire list -->
         <form id="bulkForm" method="POST">
+            <?php echo csrfField(); ?>
             <input type="hidden" name="bulk_action" id="bulkActionInput" value="">
 
             <!-- Select All header -->
@@ -346,7 +390,7 @@ if (isset($_GET['action']) && isset($_GET['act'])) {
             </div>
 
         <div class="space-y-4">
-            <?php while ($row = mysqli_fetch_assoc($claims)): ?>
+            <?php foreach ($claims as $row): ?>
             <div class="claim-card bg-white rounded-2xl shadow-md overflow-hidden">
                 <div class="p-5">
                     <div class="flex flex-col md:flex-row justify-between gap-4">
@@ -397,13 +441,13 @@ if (isset($_GET['action']) && isset($_GET['act'])) {
                             
                             <!-- Attachments Section -->
                             <?php
-                            $attachments = mysqli_query($conn, "SELECT * FROM claim_attachments WHERE claim_id = {$row['id']}");
-                            if (mysqli_num_rows($attachments) > 0):
+                            $row_attachments = $att_map[$row['id']] ?? [];
+                            if (!empty($row_attachments)):
                             ?>
                             <div class="mt-3">
-                                <p class="text-xs text-gray-500 mb-2"><i class="fas fa-paperclip mr-1"></i> Attachments (<?php echo mysqli_num_rows($attachments); ?> files):</p>
+                                <p class="text-xs text-gray-500 mb-2"><i class="fas fa-paperclip mr-1"></i> Attachments (<?php echo count($row_attachments); ?> files):</p>
                                 <div class="flex flex-wrap gap-2">
-                                    <?php while($att = mysqli_fetch_assoc($attachments)): 
+                                    <?php foreach($row_attachments as $att):
                                         $file_ext = pathinfo($att['file_name'], PATHINFO_EXTENSION);
                                         $is_image = in_array(strtolower($file_ext), ['jpg', 'jpeg', 'png', 'gif', 'webp']);
                                         $is_pdf = strtolower($file_ext) == 'pdf';
@@ -419,15 +463,15 @@ if (isset($_GET['action']) && isset($_GET['act'])) {
                                         <?php else: ?>
                                             <i class="fas fa-file-alt text-gray-500"></i>
                                         <?php endif; ?>
-                                        <span class="text-xs text-gray-600 max-w-[150px] truncate"><?php echo $att['file_name']; ?></span>
-                                        <a href="../uploads/claims/<?php echo $att['file_path']; ?>" target="_blank" class="text-blue-500 hover:text-blue-700" title="View">
+                                        <span class="text-xs text-gray-600 max-w-[150px] truncate"><?php echo htmlspecialchars($att['file_name']); ?></span>
+                                        <a href="../uploads/claims/<?php echo htmlspecialchars($att['file_path']); ?>" target="_blank" class="text-blue-500 hover:text-blue-700" title="View">
                                             <i class="fas fa-eye text-xs"></i>
                                         </a>
-                                        <a href="../uploads/claims/<?php echo $att['file_path']; ?>" download class="text-green-500 hover:text-green-700" title="Download">
+                                        <a href="../uploads/claims/<?php echo htmlspecialchars($att['file_path']); ?>" download class="text-green-500 hover:text-green-700" title="Download">
                                             <i class="fas fa-download text-xs"></i>
                                         </a>
                                     </div>
-                                    <?php endwhile; ?>
+                                    <?php endforeach; ?>
                                 </div>
                             </div>
                             <?php endif; ?>
@@ -435,20 +479,47 @@ if (isset($_GET['action']) && isset($_GET['act'])) {
                         
                         <div class="md:text-right">
                             <!-- Status Badge -->
-                            <span class="badge inline-flex items-center gap-2 px-4 py-2 rounded-full text-sm font-semibold 
-                                <?php echo $row['status'] == 'approved' ? 'bg-green-100 text-green-700' : ($row['status'] == 'rejected' ? 'bg-red-100 text-red-700' : 'bg-yellow-100 text-yellow-700'); ?>">
+                            <?php
+                            $claim_status_class = ($row['status'] == 'approved') ? 'bg-green-100 text-green-700'
+                                : (($row['status'] == 'rejected') ? 'bg-red-100 text-red-700'
+                                : 'bg-amber-100 text-amber-800');
+                            ?>
+                            <span class="badge inline-flex items-center gap-2 px-4 py-2 rounded-full text-sm font-semibold <?php echo $claim_status_class; ?>">
                                 <i class="fas <?php echo $row['status'] == 'approved' ? 'fa-check-circle' : ($row['status'] == 'rejected' ? 'fa-times-circle' : 'fa-clock'); ?>"></i>
                                 <?php echo ucfirst($row['status']); ?>
                             </span>
                             
+                            <?php if ($row['status'] !== 'pending'): ?>
+                                <div class="mt-3">
+                                    <form id="undo_claim_<?php echo $row['id']; ?>" method="POST" onsubmit="return false;">
+                                        <?php echo csrfField(); ?>
+                                        <input type="hidden" name="undo_claim" value="<?php echo $row['id']; ?>">
+                                        <button type="button"
+                                            onclick="confirmAction('Revert to Pending?','This will reset the claim status back to pending so it can be reviewed again.',function(){document.getElementById('undo_claim_<?php echo $row['id']; ?>').submit();})"
+                                            class="inline-flex items-center gap-1.5 text-xs text-gray-500 hover:text-indigo-600 bg-gray-100 hover:bg-indigo-50 border border-gray-200 hover:border-indigo-200 px-2.5 py-1.5 rounded-lg transition font-medium">
+                                            <i class="fas fa-rotate-left text-[10px]"></i> Undo
+                                        </button>
+                                    </form>
+                                </div>
+                            <?php endif; ?>
                             <?php if ($row['status'] == 'pending'): ?>
                                 <div class="flex gap-2 mt-4">
-                                    <a href="?action=<?php echo $row['id']; ?>&act=approve&page=<?php echo $page; ?>&per_page=<?php echo $per_page; ?>&search=<?php echo urlencode($search); ?>&status=<?php echo $status_filter; ?>&type=<?php echo urlencode($type_filter); ?>&date_from=<?php echo $date_from; ?>&date_to=<?php echo $date_to; ?>" class="btn-action flex-1 md:flex-none bg-gradient-to-r from-green-600 to-emerald-600 text-white px-6 py-2 rounded-xl text-sm font-semibold hover:shadow-lg inline-flex items-center justify-center gap-1">
-                                        <i class="fas fa-check"></i> Approve
-                                    </a>
-                                    <a href="?action=<?php echo $row['id']; ?>&act=reject&page=<?php echo $page; ?>&per_page=<?php echo $per_page; ?>&search=<?php echo urlencode($search); ?>&status=<?php echo $status_filter; ?>&type=<?php echo urlencode($type_filter); ?>&date_from=<?php echo $date_from; ?>&date_to=<?php echo $date_to; ?>" class="btn-action flex-1 md:flex-none bg-gradient-to-r from-red-600 to-rose-600 text-white px-6 py-2 rounded-xl text-sm font-semibold hover:shadow-lg inline-flex items-center justify-center gap-1">
-                                        <i class="fas fa-times"></i> Reject
-                                    </a>
+                                    <form method="POST" action="manage_claim.php?page=<?php echo $page; ?>&per_page=<?php echo $per_page; ?>&search=<?php echo urlencode($search); ?>&status=<?php echo $status_filter; ?>&type=<?php echo urlencode($type_filter); ?>&date_from=<?php echo $date_from; ?>&date_to=<?php echo $date_to; ?>" style="display:contents;">
+                                        <?php echo csrfField(); ?>
+                                        <input type="hidden" name="claim_id" value="<?php echo $row['id']; ?>">
+                                        <input type="hidden" name="claim_action" value="approve">
+                                        <button type="submit" class="btn-action flex-1 md:flex-none bg-gradient-to-r from-green-600 to-emerald-600 text-white px-6 py-2 rounded-xl text-sm font-semibold hover:shadow-lg inline-flex items-center justify-center gap-1">
+                                            <i class="fas fa-check"></i> Approve
+                                        </button>
+                                    </form>
+                                    <form method="POST" action="manage_claim.php?page=<?php echo $page; ?>&per_page=<?php echo $per_page; ?>&search=<?php echo urlencode($search); ?>&status=<?php echo $status_filter; ?>&type=<?php echo urlencode($type_filter); ?>&date_from=<?php echo $date_from; ?>&date_to=<?php echo $date_to; ?>" style="display:contents;">
+                                        <?php echo csrfField(); ?>
+                                        <input type="hidden" name="claim_id" value="<?php echo $row['id']; ?>">
+                                        <input type="hidden" name="claim_action" value="reject">
+                                        <button type="submit" class="btn-action flex-1 md:flex-none bg-gradient-to-r from-red-600 to-rose-600 text-white px-6 py-2 rounded-xl text-sm font-semibold hover:shadow-lg inline-flex items-center justify-center gap-1">
+                                            <i class="fas fa-times"></i> Reject
+                                        </button>
+                                    </form>
                                 </div>
                             <?php endif; ?>
                             
@@ -461,7 +532,7 @@ if (isset($_GET['action']) && isset($_GET['act'])) {
                     </div>
                 </div>
             </div>
-            <?php endwhile; ?>
+            <?php endforeach; ?>
         </div><!-- end space-y-4 -->
         </form><!-- end bulkForm -->
 
@@ -469,7 +540,7 @@ if (isset($_GET['action']) && isset($_GET['act'])) {
         <?php if($total_pages > 1): ?>
         <div class="flex justify-between items-center mt-6 bg-white rounded-xl shadow-md px-4 py-3">
             <p class="text-sm text-gray-500">
-                Showing <?php echo $offset + 1; ?> to <?php echo min($offset + $per_page, $total_rows); ?> of <?php echo $total_rows; ?> claims
+                Showing <?php echo $showing_from; ?> to <?php echo $showing_to; ?> of <?php echo $total_rows; ?> claims
             </p>
             <div class="flex gap-1">
                 <?php if($page > 1): ?>
@@ -531,7 +602,7 @@ if (isset($_GET['action']) && isset($_GET['act'])) {
 </div>
 
 <!-- Bulk Action Bar (sticky at bottom, above mobile nav) -->
-<div id="bulkBar" class="fixed left-0 right-0 z-30 hidden-bar">
+<div id="bulkBar" class="fixed bottom-0 left-0 right-0 z-30 hidden-bar" style="bottom: 0;">
     <div class="bg-gradient-to-r from-indigo-700 to-purple-700 text-white px-4 py-3 shadow-2xl flex items-center justify-between flex-wrap gap-2">
         <span class="text-sm font-semibold" id="bulkCountLabel">0 selected</span>
         <div class="flex items-center gap-2">
@@ -574,7 +645,6 @@ if (isset($_GET['action']) && isset($_GET['act'])) {
 </div>
 
 <script>
-
     // ---- Bulk selection ----
     function getCheckedBoxes() {
         return Array.from(document.querySelectorAll('.bulk-check[name="ids[]"]:checked'));
@@ -617,18 +687,10 @@ if (isset($_GET['action']) && isset($_GET['act'])) {
     function submitBulk(action) {
         const checked = getCheckedBoxes();
         if (checked.length === 0) return;
-        const isApprove = action === 'approve';
-        const label     = isApprove ? 'Approve' : 'Reject';
-        const count     = checked.length;
-        const icon      = isApprove ? '✅' : '❌';
-        confirmAction(
-            icon + ' ' + label + ' Claim' + (count > 1 ? 's' : ''),
-            'You are about to ' + label.toLowerCase() + ' <strong>' + count + ' claim' + (count > 1 ? 's' : '') + '</strong>. This will notify the employee' + (count > 1 ? 's' : '') + ' immediately.',
-            function () {
-                document.getElementById('bulkActionInput').value = action;
-                document.getElementById('bulkForm').submit();
-            }
-        );
+        const label = action === 'approve' ? 'approve' : 'reject';
+        if (!confirm('Are you sure you want to ' + label + ' ' + checked.length + ' claim(s)?')) return;
+        document.getElementById('bulkActionInput').value = action;
+        document.getElementById('bulkForm').submit();
     }
 
     function clearSelection() {

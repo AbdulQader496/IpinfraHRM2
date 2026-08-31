@@ -50,6 +50,12 @@ $logs = mysqli_query($conn,
      ORDER BY al.created_at DESC
      LIMIT $per_page OFFSET $offset");
 
+// F054: Fetch all rows once into an array so both desktop and mobile loops share the same data
+$log_rows = [];
+if ($logs) {
+    while ($r = mysqli_fetch_assoc($logs)) { $log_rows[] = $r; }
+}
+
 // ── Distinct action types for filter dropdown ─────────────────────────────────
 $action_types_result = mysqli_query($conn, "SELECT DISTINCT action FROM audit_log ORDER BY action ASC");
 
@@ -235,7 +241,7 @@ function pagUrl($p) {
             </span>
         </div>
 
-        <?php if ($logs && mysqli_num_rows($logs) > 0): ?>
+        <?php if (count($log_rows) > 0): ?>
         <!-- Desktop table -->
         <div class="hidden md:block overflow-x-auto">
             <table class="w-full text-sm">
@@ -249,7 +255,7 @@ function pagUrl($p) {
                     </tr>
                 </thead>
                 <tbody class="divide-y divide-gray-100">
-                    <?php while ($log = mysqli_fetch_assoc($logs)):
+                    <?php foreach ($log_rows as $log):
                         $action_key = strtolower($log['action']);
                         $badge_class = 'badge-default';
                         if (in_array($action_key, ['approve','approved'])) $badge_class = 'badge-approve';
@@ -293,23 +299,14 @@ function pagUrl($p) {
                             <?php echo htmlspecialchars($log['ip_address'] ?: '-'); ?>
                         </td>
                     </tr>
-                    <?php endwhile; ?>
+                    <?php endforeach; ?>
                 </tbody>
             </table>
         </div>
 
         <!-- Mobile cards -->
         <div class="md:hidden divide-y divide-gray-100">
-            <?php
-            // Re-run query for mobile since the pointer is exhausted
-            $logs_mobile = mysqli_query($conn,
-                "SELECT al.*, e.name AS employee_name, e.employee_id AS emp_code
-                 FROM audit_log al
-                 LEFT JOIN employees e ON al.user_id = e.id
-                 $where
-                 ORDER BY al.created_at DESC
-                 LIMIT $per_page OFFSET $offset");
-            while ($log = mysqli_fetch_assoc($logs_mobile)):
+            <?php foreach ($log_rows as $log):
                 $action_key  = strtolower($log['action']);
                 $badge_class = 'badge-default';
                 if (in_array($action_key, ['approve','approved'])) $badge_class = 'badge-approve';
@@ -339,7 +336,7 @@ function pagUrl($p) {
                 </div>
                 <?php endif; ?>
             </div>
-            <?php endwhile; ?>
+            <?php endforeach; ?>
         </div>
 
         <?php else: ?>
@@ -392,12 +389,5 @@ function pagUrl($p) {
 
 </div><!-- /main content -->
 
-<script>
- else {
-        sidebar.classList.remove('-translate-x-full');
-        overlay.classList.remove('hidden');
-    }
-}
-</script>
 </body>
 </html>

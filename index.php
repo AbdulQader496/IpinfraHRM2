@@ -1,7 +1,6 @@
 <?php
 session_start();
 require_once 'includes/db.php';
-require_once 'includes/functions.php';
 
 // Safe bootstrap for remember-me support on older databases.
 $col_exists = mysqli_fetch_assoc(mysqli_query($conn, "
@@ -17,36 +16,55 @@ if ((int)($col_exists['cnt'] ?? 0) === 0) {
 
 // Check if user has remember me cookie
 if (!isset($_SESSION['user_id']) && isset($_COOKIE['remember_token'])) {
-    $token = mysqli_real_escape_string($conn, $_COOKIE['remember_token']);
-    $query = "SELECT * FROM employees WHERE remember_token = '$token' AND status = 'active'";
-    $result = mysqli_query($conn, $query);
-    
-    if (mysqli_num_rows($result) == 1) {
-        $user = mysqli_fetch_assoc($result);
-        $_SESSION['user_id'] = $user['id'];
-        $_SESSION['user_name'] = $user['name'];
-        $_SESSION['role'] = $user['role'];
-        $_SESSION['employee_id'] = $user['employee_id'];
-        
-        if ($user['role'] == 'admin') {
-            header('Location: admin/dashboard.php');
-        } else {
-            header('Location: employee/dashboard.php');
+    try {
+        $token = mysqli_real_escape_string($conn, $_COOKIE['remember_token']);
+        $query = "SELECT * FROM employees WHERE remember_token = '$token' AND status = 'active'";
+        $result = mysqli_query($conn, $query);
+
+        if (mysqli_num_rows($result) == 1) {
+            $user = mysqli_fetch_assoc($result);
+            $_SESSION['user_id'] = $user['id'];
+            $_SESSION['user_name'] = $user['name'];
+            $_SESSION['role'] = $user['role'];
+            $_SESSION['employee_id'] = $user['employee_id'];
+
+            session_regenerate_id(true);
+            if ($user['role'] == 'admin') {
+                header('Location: admin/dashboard.php');
+            } else {
+                header('Location: employee/dashboard.php');
+            }
+            exit();
         }
-        exit();
+    } catch (Exception $e) {
+        // remember_token column missing/schema drift — fall through to normal login form
     }
 }
 
 if (isset($_POST['login'])) {
     $email = mysqli_real_escape_string($conn, $_POST['email']);
-    $password = mysqli_real_escape_string($conn, $_POST['password']);
+    $password_raw = $_POST['password']; // not escaped for SQL — never concatenated raw, only verified/hashed
     $remember = isset($_POST['remember']) ? true : false;
 
-    $query = "SELECT * FROM employees WHERE email = '$email' AND password = '$password' AND status = 'active'";
+    $query = "SELECT * FROM employees WHERE email = '$email' AND status = 'active'";
     $result = mysqli_query($conn, $query);
-    
-    if (mysqli_num_rows($result) == 1) {
-        $user = mysqli_fetch_assoc($result);
+    $user = (mysqli_num_rows($result) == 1) ? mysqli_fetch_assoc($result) : null;
+
+    // Passwords are stored hashed (password_hash). For any account still holding
+    // a legacy plaintext value (pre-migration or not yet re-saved), fall back to a
+    // direct compare and opportunistically upgrade it to a hash on success.
+    $password_ok = false;
+    if ($user) {
+        if (password_get_info($user['password'])['algo'] !== null) {
+            $password_ok = password_verify($password_raw, $user['password']);
+        } elseif (hash_equals($user['password'], $password_raw)) {
+            $password_ok = true;
+            $new_hash = password_hash($password_raw, PASSWORD_DEFAULT);
+            mysqli_query($conn, "UPDATE employees SET password = '" . mysqli_real_escape_string($conn, $new_hash) . "' WHERE id = {$user['id']}");
+        }
+    }
+
+    if ($password_ok) {
         $_SESSION['user_id'] = $user['id'];
         $_SESSION['user_name'] = $user['name'];
         $_SESSION['role'] = $user['role'];
@@ -56,11 +74,11 @@ if (isset($_POST['login'])) {
         if ($remember) {
             $token = bin2hex(random_bytes(32));
             mysqli_query($conn, "UPDATE employees SET remember_token = '$token' WHERE id = {$user['id']}");
-            $secure = isset($_SERVER['HTTPS']) && $_SERVER['HTTPS'] === 'on';
-            setcookie('remember_token', $token, time() + (86400 * 30), "/", "", $secure, true);
+            $is_https = (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off') || (($_SERVER['HTTP_X_FORWARDED_PROTO'] ?? '') === 'https');
+            setcookie('remember_token', $token, time() + (86400 * 30), "/", "", $is_https, true);
         }
         
-        logAction('login', 'User logged in: ' . $user['name'] . ' (' . $user['email'] . ')', $user['id'], 'employee');
+        session_regenerate_id(true);
         if ($user['role'] == 'admin') {
             header('Location: admin/dashboard.php');
         } else {
@@ -216,13 +234,13 @@ if (isset($_POST['login'])) {
             align-items: center;
             justify-content: center;
             box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+            overflow: hidden;
         }
 
-        .brand-logo-inner span {
-            color: #0a2b3e;
-            font-size: 1.75rem;
-            font-weight: 900;
-            letter-spacing: -0.05em;
+        .brand-logo-inner img {
+            width: 56px;
+            height: 56px;
+            object-fit: contain;
         }
 
         .brand-name {
@@ -424,24 +442,80 @@ if (isset($_POST['login'])) {
 
         /* ── Responsive: mobile stacked layout ───────────────────── */
         @media (max-width: 768px) {
-            body {
-                flex-direction: column;
-            }
+            body { flex-direction: column; }
+
+            /* Compact top bar — logo + name side by side */
             .brand-panel {
                 min-height: auto;
-                padding: 2.5rem 1.5rem;
+                padding: 0.9rem 1.25rem;
+                flex-direction: row;
+                justify-content: flex-start;
+                align-items: center;
+                gap: 0.85rem;
             }
-            .brand-tagline { display: none; }
-            .brand-badges  { display: none; }
-            .brand-footer  { position: static; margin-top: 1.25rem; }
+            .brand-panel::before,
+            .brand-panel::after { display: none; }
+            .geo-shape { display: none; }
+
+            .brand-content {
+                display: flex;
+                flex-direction: row;
+                align-items: center;
+                gap: 0.75rem;
+                text-align: left;
+                max-width: none;
+            }
+            .brand-logo-wrap {
+                width: 44px; height: 44px;
+                border-radius: 12px;
+                margin: 0;
+                flex-shrink: 0;
+            }
+            .brand-logo-inner {
+                width: 32px; height: 32px;
+                border-radius: 8px;
+            }
+            .brand-logo-inner img { width: 26px; height: 26px; }
+
+            .brand-name {
+                font-size: 0.95rem;
+                margin-bottom: 0.05rem;
+                line-height: 1.2;
+            }
+            .brand-sub {
+                font-size: 0.6rem;
+                margin-bottom: 0;
+                letter-spacing: 0.06em;
+            }
+
+            /* Hide everything except name + sub on mobile */
+            .brand-divider  { display: none; }
+            .brand-tagline  { display: none; }
+            .brand-badges   { display: none; }
+            .brand-footer   { display: none; }
+
+            /* Form fills remaining space */
             .form-panel {
                 width: 100%;
                 min-width: 0;
-                min-height: auto;
-                padding: 2rem 1.5rem 3.5rem;
+                min-height: 0;
+                flex: 1;
+                padding: 1.75rem 1.25rem 4rem;
                 box-shadow: none;
             }
-            .form-panel-footer { position: fixed; }
+            .form-panel-inner { max-width: 100%; }
+
+            .form-heading    { font-size: 1.3rem; }
+            .form-subheading { margin-bottom: 1.5rem; }
+
+            .form-panel-footer {
+                position: fixed;
+                bottom: 0; left: 0; right: 0;
+                background: #fff;
+                padding: 0.5rem 1rem;
+                font-size: 0.65rem;
+                border-top: 1px solid #f1f5f9;
+            }
         }
 
         @keyframes slideInRight {
@@ -480,7 +554,7 @@ if (isset($_POST['login'])) {
             <!-- Logo -->
             <div class="brand-logo-wrap">
                 <div class="brand-logo-inner">
-                    <img src="uploads/1775551018_4xzREYTcMvK7ReGODviudjeDBIofOQ78mr5DsN9g.jpg" alt="IPINFRA" style="width:28px;height:28px;object-fit:contain;border-radius:4px;background:#fff;">
+                    <img src="uploads/1775551018_4xzREYTcMvK7ReGODviudjeDBIofOQ78mr5DsN9g.jpg" alt="IPINFRA Networks">
                 </div>
             </div>
 
@@ -519,8 +593,8 @@ if (isset($_POST['login'])) {
 
             <!-- Heading -->
             <div style="margin-bottom:2rem;">
-                <h1 class="form-heading">Welcome to IPINFRA Networks Sdn Bhd</h1>
-                <p class="form-subheading">HR Management System — Sign in to your account to continue.</p>
+                <h1 class="form-heading">Welcome back</h1>
+                <p class="form-subheading">Sign in to your HRM account to continue.</p>
             </div>
 
             <!-- Error message -->
@@ -568,7 +642,7 @@ if (isset($_POST['login'])) {
                         <input type="checkbox" name="remember" id="remember" class="checkbox-custom">
                         <span style="font-size:.84rem;color:#4b5563;user-select:none;">Remember me</span>
                     </label>
-                    <a href="mailto:support@ipinfra.com.my?subject=Password%20Reset%20Request" style="font-size:.84rem;color:#2563eb;text-decoration:none;font-weight:500;">Forgot password?</a>
+                    <a href="#" style="font-size:.84rem;color:#2563eb;text-decoration:none;font-weight:500;">Forgot password?</a>
                 </div>
 
                 <!-- Submit -->

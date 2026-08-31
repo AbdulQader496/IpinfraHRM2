@@ -104,7 +104,7 @@ $ml_remain  = ($emp['medical_leave_entitlement'] ?? 0) - ($emp['used_medical_lea
                 <!-- Avatar -->
                 <div class="relative shrink-0">
                     <?php if ($has_profile): ?>
-                        <img src="<?php echo $profile_pic_path; ?>"
+                        <img src="<?php echo htmlspecialchars($profile_pic_path); ?>"
                              class="w-24 h-24 rounded-2xl object-cover border-4 border-white shadow-xl">
                     <?php else: ?>
                         <div class="w-24 h-24 rounded-2xl bg-gradient-to-br from-indigo-500 to-purple-600 flex items-center justify-center border-4 border-white shadow-xl">
@@ -455,8 +455,8 @@ $ml_remain  = ($emp['medical_leave_entitlement'] ?? 0) - ($emp['used_medical_lea
                 </div>
                 <?php if($fp): ?>
                 <div class="flex gap-2 flex-shrink-0">
-                    <a href="<?php echo $fp; ?>" target="_blank" class="text-blue-500 hover:text-blue-700 p-1.5" title="View"><i class="fas fa-eye text-sm"></i></a>
-                    <a href="<?php echo $fp; ?>" download class="text-green-500 hover:text-green-700 p-1.5" title="Download"><i class="fas fa-download text-sm"></i></a>
+                    <a href="<?php echo htmlspecialchars($fp); ?>" target="_blank" class="text-blue-500 hover:text-blue-700 p-1.5" title="View"><i class="fas fa-eye text-sm"></i></a>
+                    <a href="<?php echo htmlspecialchars($fp); ?>" download class="text-green-500 hover:text-green-700 p-1.5" title="Download"><i class="fas fa-download text-sm"></i></a>
                 </div>
                 <?php endif; ?>
             </div>

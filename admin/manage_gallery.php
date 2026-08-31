@@ -2,32 +2,37 @@
 require_once '../includes/auth.php';
 redirectIfNotAdmin();
 require_once '../includes/db.php';
+require_once '../includes/functions.php';
+require_once '../includes/toast_fn.php';
 
 // Delete photo
-if (isset($_GET['delete'])) {
-    $id = intval($_GET['delete']);
+if (isset($_POST['photo_delete']) && validateCsrfToken($_POST['csrf_token'] ?? '')) {
+    $id = intval($_POST['photo_delete']);
 
     // Get image path to delete file
     $query = "SELECT image_path FROM gallery WHERE id = $id";
     $result = mysqli_query($conn, $query);
     $photo = mysqli_fetch_assoc($result);
-    
-    // Delete file from server
-    $file_path = "../uploads/gallery/" . $photo['image_path'];
-    if (file_exists($file_path)) {
-        unlink($file_path);
+
+    if ($photo) {
+        // Delete file from server
+        $file_path = "../uploads/gallery/" . $photo['image_path'];
+        if (file_exists($file_path)) {
+            unlink($file_path);
+        }
+
+        // Delete from database
+        mysqli_query($conn, "DELETE FROM gallery WHERE id = $id");
+        logAction('delete', 'Deleted gallery photo', $id, 'gallery');
     }
-    
-    // Delete from database
-    mysqli_query($conn, "DELETE FROM gallery WHERE id = $id");
     header('Location: manage_gallery.php');
     exit();
 }
 
 // Hide/Show photo
-if (isset($_GET['toggle']) && isset($_GET['id'])) {
-    $id = intval($_GET['id']);
-    $new_status = (($_GET['status'] ?? '') == 'active') ? 'hidden' : 'active';
+if (isset($_POST['photo_toggle']) && validateCsrfToken($_POST['csrf_token'] ?? '')) {
+    $id = intval($_POST['photo_toggle']);
+    $new_status = (($_POST['current_status'] ?? '') == 'active') ? 'hidden' : 'active';
     mysqli_query($conn, "UPDATE gallery SET status = '$new_status' WHERE id = $id");
     header('Location: manage_gallery.php');
     exit();
@@ -42,18 +47,26 @@ if (isset($_POST['upload_photo'])) {
     if (!is_dir($target_dir)) mkdir($target_dir, 0777, true);
     $allowed_ext  = ['jpg','jpeg','png','gif','webp'];
     $allowed_mime = ['image/jpeg','image/png','image/gif','image/webp'];
-    $file_ext  = strtolower(pathinfo($_FILES['photo']['name'], PATHINFO_EXTENSION));
-    $mime      = mime_content_type($_FILES['photo']['tmp_name']);
-    if (!in_array($file_ext, $allowed_ext) || !in_array($mime, $allowed_mime)) {
-        header('Location: manage_gallery.php?err=' . urlencode('Invalid file type. Only JPG, PNG, GIF, WEBP allowed.')); exit();
+    if ($_FILES['photo']['error'] !== UPLOAD_ERR_OK) {
+        showToast('Upload error. Please try again.', 'error'); header('Location: manage_gallery.php'); exit();
     }
-    $image_name = time() . '_admin_' . $admin_id . '.' . $file_ext;
+    if ($_FILES['photo']['size'] > 5 * 1024 * 1024) {
+        showToast('Image must be under 5 MB.', 'error'); header('Location: manage_gallery.php'); exit();
+    }
+    $file_ext  = strtolower(pathinfo($_FILES['photo']['name'], PATHINFO_EXTENSION));
+    $finfo     = finfo_open(FILEINFO_MIME_TYPE);
+    $mime      = finfo_file($finfo, $_FILES['photo']['tmp_name']);
+    finfo_close($finfo);
+    if (!in_array($file_ext, $allowed_ext) || !in_array($mime, $allowed_mime)) {
+        showToast('Invalid file type. Only JPG, PNG, GIF, WEBP allowed.', 'error'); header('Location: manage_gallery.php'); exit();
+    }
+    $image_name = bin2hex(random_bytes(8)) . '.' . $file_ext;
     if (move_uploaded_file($_FILES['photo']['tmp_name'], $target_dir . $image_name)) {
         mysqli_query($conn, "INSERT INTO gallery (employee_id, image_path, caption, activity_date, status)
             VALUES ($admin_id, '$image_name', '$caption', '$activity_date', 'active')");
-        header('Location: manage_gallery.php?msg=' . urlencode('Photo uploaded successfully!')); exit();
+        showToast('Photo uploaded successfully!'); header('Location: manage_gallery.php'); exit();
     } else {
-        header('Location: manage_gallery.php?err=' . urlencode('Upload failed. Please try again.')); exit();
+        showToast('Upload failed. Please try again.', 'error'); header('Location: manage_gallery.php'); exit();
     }
 }
 
@@ -61,11 +74,21 @@ if (isset($_POST['upload_photo'])) {
 $flash_success = htmlspecialchars($_GET['msg'] ?? '');
 $flash_error   = htmlspecialchars($_GET['err'] ?? '');
 
-// Get all gallery photos
-$gallery = mysqli_query($conn, "SELECT g.*, e.name, e.employee_id 
-    FROM gallery g 
-    JOIN employees e ON g.employee_id = e.id 
-    ORDER BY g.created_at DESC");
+// Pagination
+$per_page = in_array((int)($_GET['per_page'] ?? 12), [12, 24, 48, 96]) ? (int)($_GET['per_page'] ?? 12) : 12;
+$page     = max(1, (int)($_GET['page'] ?? 1));
+
+$total_photos  = (int)mysqli_fetch_assoc(mysqli_query($conn, "SELECT COUNT(*) as c FROM gallery"))['c'];
+$active_photos_count = (int)mysqli_fetch_assoc(mysqli_query($conn, "SELECT COUNT(*) as c FROM gallery WHERE status='active'"))['c'];
+$total_pages   = max(1, (int)ceil($total_photos / $per_page));
+if ($page > $total_pages) $page = $total_pages;
+$offset = ($page - 1) * $per_page;
+
+$gallery = mysqli_query($conn, "SELECT g.*, e.name, e.employee_id
+    FROM gallery g
+    JOIN employees e ON g.employee_id = e.id
+    ORDER BY g.created_at DESC
+    LIMIT $per_page OFFSET $offset");
 ?>
 <!DOCTYPE html>
 <html lang="en">
@@ -82,6 +105,7 @@ $gallery = mysqli_query($conn, "SELECT g.*, e.name, e.employee_id
     </style>
 </head>
 <body class="bg-gradient-to-br from-gray-50 to-gray-100 min-h-screen pb-20">
+<?php require_once '../includes/toast.php'; ?>
 <!-- Premium Mobile Header -->
 <div class="bg-[#060912] text-white sticky top-0 z-40 shadow-2xl">
     <div class="flex justify-between items-center px-4 py-4">
@@ -130,28 +154,39 @@ $gallery = mysqli_query($conn, "SELECT g.*, e.name, e.employee_id
         <?php endif; ?>
 
         <!-- Stats -->
-        <?php
-        $total_photos = mysqli_num_rows($gallery);
-        $active_photos = mysqli_num_rows(mysqli_query($conn, "SELECT * FROM gallery WHERE status = 'active'"));
-        ?>
         <div class="grid grid-cols-2 gap-3 mb-6">
             <div class="bg-blue-100 rounded-xl p-3 text-center">
                 <p class="text-2xl font-bold text-blue-700"><?php echo $total_photos; ?></p>
                 <p class="text-xs text-blue-600">Total Photos</p>
             </div>
             <div class="bg-green-100 rounded-xl p-3 text-center">
-                <p class="text-2xl font-bold text-green-700"><?php echo $active_photos; ?></p>
+                <p class="text-2xl font-bold text-green-700"><?php echo $active_photos_count; ?></p>
                 <p class="text-xs text-green-600">Active Photos</p>
             </div>
         </div>
 
+        <!-- Per-page selector + page info -->
+        <div class="flex items-center justify-between flex-wrap gap-3 mb-4">
+            <p class="text-xs text-gray-500">
+                Showing <?php echo $total_photos > 0 ? ($offset + 1) : 0; ?>–<?php echo min($offset + $per_page, $total_photos); ?> of <?php echo $total_photos; ?> photos
+            </p>
+            <form method="GET" class="flex items-center gap-2">
+                <label class="text-xs text-gray-500">Show:</label>
+                <select name="per_page" onchange="this.form.submit()"
+                    class="text-xs border border-gray-200 rounded-lg px-3 py-1.5 bg-white focus:border-indigo-400 focus:outline-none">
+                    <?php foreach ([12, 24, 48, 96] as $pp): ?>
+                        <option value="<?php echo $pp; ?>" <?php echo ($per_page === $pp) ? 'selected' : ''; ?>><?php echo $pp; ?> / page</option>
+                    <?php endforeach; ?>
+                </select>
+            </form>
+        </div>
+
         <!-- Gallery Grid -->
         <div class="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-5">
-            <?php mysqli_data_seek($gallery, 0); ?>
             <?php while($photo = mysqli_fetch_assoc($gallery)): ?>
             <div class="bg-white rounded-xl shadow-md overflow-hidden">
                 <div class="h-48 bg-gray-200 relative">
-                    <?php 
+                    <?php
                     $image_path = "../uploads/gallery/" . $photo['image_path'];
                     if(file_exists($image_path)): ?>
                         <img src="<?php echo $image_path; ?>" alt="<?php echo $photo['caption']; ?>" class="w-full h-full object-cover">
@@ -160,7 +195,7 @@ $gallery = mysqli_query($conn, "SELECT g.*, e.name, e.employee_id
                             <i class="fas fa-image text-5xl text-gray-400"></i>
                         </div>
                     <?php endif; ?>
-                    
+
                     <!-- Status Badge -->
                     <div class="absolute top-2 right-2">
                         <span class="text-xs px-2 py-1 rounded-full <?php echo $photo['status'] == 'active' ? 'bg-green-500 text-white' : 'bg-gray-500 text-white'; ?>">
@@ -169,9 +204,9 @@ $gallery = mysqli_query($conn, "SELECT g.*, e.name, e.employee_id
                     </div>
                 </div>
                 <div class="p-4">
-                    <p class="text-sm text-gray-600 mb-2"><?php echo $photo['caption']; ?></p>
+                    <p class="text-sm text-gray-600 mb-2"><?php echo htmlspecialchars($photo['caption']); ?></p>
                     <div class="flex justify-between items-center text-xs text-gray-500 mb-3">
-                        <span><i class="fas fa-user mr-1"></i> <?php echo $photo['name']; ?></span>
+                        <span><i class="fas fa-user mr-1"></i> <?php echo htmlspecialchars($photo['name']); ?></span>
                         <span><i class="fas fa-calendar mr-1"></i> <?php echo date('d M Y', strtotime($photo['activity_date'])); ?></span>
                     </div>
                     <?php if (file_exists($image_path)): ?>
@@ -182,15 +217,21 @@ $gallery = mysqli_query($conn, "SELECT g.*, e.name, e.employee_id
                     </a>
                     <?php endif; ?>
                     <div class="flex gap-2">
-                        <a href="?toggle=1&id=<?php echo $photo['id']; ?>&status=<?php echo $photo['status']; ?>"
-                           class="flex-1 text-center <?php echo $photo['status'] == 'active' ? 'bg-yellow-500 hover:bg-yellow-600' : 'bg-green-500 hover:bg-green-600'; ?> text-white px-3 py-1 rounded-lg text-xs">
-                            <?php echo $photo['status'] == 'active' ? 'Hide' : 'Show'; ?>
-                        </a>
-                        <a href="?delete=<?php echo $photo['id']; ?>"
-                           data-confirm="Delete this photo permanently?" data-confirm-title="Delete Photo"
-                           class="flex-1 text-center bg-red-500 hover:bg-red-600 text-white px-3 py-1 rounded-lg text-xs">
-                            Delete
-                        </a>
+                        <form method="POST" style="flex:1;">
+                            <?php echo csrfField(); ?>
+                            <input type="hidden" name="photo_toggle" value="<?php echo intval($photo['id']); ?>">
+                            <input type="hidden" name="current_status" value="<?php echo htmlspecialchars($photo['status']); ?>">
+                            <button type="submit" class="w-full text-center <?php echo $photo['status'] == 'active' ? 'bg-yellow-500 hover:bg-yellow-600' : 'bg-green-500 hover:bg-green-600'; ?> text-white px-3 py-1 rounded-lg text-xs">
+                                <?php echo $photo['status'] == 'active' ? 'Hide' : 'Show'; ?>
+                            </button>
+                        </form>
+                        <form method="POST" style="flex:1;" data-confirm="Delete this photo permanently?" data-confirm-title="Delete Photo">
+                            <?php echo csrfField(); ?>
+                            <input type="hidden" name="photo_delete" value="<?php echo intval($photo['id']); ?>">
+                            <button type="submit" class="w-full text-center bg-red-500 hover:bg-red-600 text-white px-3 py-1 rounded-lg text-xs">
+                                Delete
+                            </button>
+                        </form>
                     </div>
                 </div>
             </div>
@@ -202,6 +243,53 @@ $gallery = mysqli_query($conn, "SELECT g.*, e.name, e.employee_id
             </div>
             <?php endif; ?>
         </div>
+
+        <!-- Pagination -->
+        <?php if($total_pages > 1): ?>
+        <div class="mt-6 flex flex-wrap items-center justify-between gap-3">
+            <p class="text-xs text-gray-500">Page <?php echo $page; ?> of <?php echo $total_pages; ?></p>
+            <div class="flex items-center gap-1.5 flex-wrap">
+                <?php
+                $pg_base = '?page=%d&per_page=' . $per_page;
+                if ($page > 1): ?>
+                    <a href="<?php echo sprintf($pg_base, $page - 1); ?>"
+                       class="inline-flex items-center justify-center w-8 h-8 rounded-lg border border-gray-200 bg-white text-gray-500 hover:bg-indigo-50 hover:text-indigo-600 transition text-xs">
+                        <i class="fas fa-chevron-left text-[10px]"></i>
+                    </a>
+                <?php endif;
+
+                $range = 2;
+                $start = max(1, $page - $range);
+                $end   = min($total_pages, $page + $range);
+                if ($start > 1): ?>
+                    <a href="<?php echo sprintf($pg_base, 1); ?>"
+                       class="inline-flex items-center justify-center w-8 h-8 rounded-lg border border-gray-200 bg-white text-xs font-medium text-gray-600 hover:bg-indigo-50 hover:text-indigo-600 transition">1</a>
+                    <?php if ($start > 2): ?><span class="text-gray-400 text-xs px-1">…</span><?php endif; ?>
+                <?php endif;
+
+                for ($i = $start; $i <= $end; $i++): ?>
+                    <a href="<?php echo sprintf($pg_base, $i); ?>"
+                       class="inline-flex items-center justify-center w-8 h-8 rounded-lg border text-xs font-semibold transition
+                              <?php echo ($i === $page) ? 'bg-indigo-600 border-indigo-600 text-white shadow' : 'border-gray-200 bg-white text-gray-600 hover:bg-indigo-50 hover:text-indigo-600'; ?>">
+                        <?php echo $i; ?>
+                    </a>
+                <?php endfor;
+
+                if ($end < $total_pages): ?>
+                    <?php if ($end < $total_pages - 1): ?><span class="text-gray-400 text-xs px-1">…</span><?php endif; ?>
+                    <a href="<?php echo sprintf($pg_base, $total_pages); ?>"
+                       class="inline-flex items-center justify-center w-8 h-8 rounded-lg border border-gray-200 bg-white text-xs font-medium text-gray-600 hover:bg-indigo-50 hover:text-indigo-600 transition"><?php echo $total_pages; ?></a>
+                <?php endif;
+
+                if ($page < $total_pages): ?>
+                    <a href="<?php echo sprintf($pg_base, $page + 1); ?>"
+                       class="inline-flex items-center justify-center w-8 h-8 rounded-lg border border-gray-200 bg-white text-gray-500 hover:bg-indigo-50 hover:text-indigo-600 transition text-xs">
+                        <i class="fas fa-chevron-right text-[10px]"></i>
+                    </a>
+                <?php endif; ?>
+            </div>
+        </div>
+        <?php endif; ?>
     </div>
 
     <!-- Mobile Bottom Navigation -->

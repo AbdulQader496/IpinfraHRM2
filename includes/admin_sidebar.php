@@ -88,6 +88,9 @@ body.asb-open { overflow:hidden; }
 .asb-close:hover { background:#f3f4f6; color:#374151; }
 </style>
 
+<!-- Sentinel: prevents global_ui from injecting a second floating bell on admin pages -->
+<div id="notifWrapper" style="display:none"></div>
+
 <div id="asb" class="fixed top-0 left-0 h-full z-50 -translate-x-full transition-[transform] duration-300 ease-out flex flex-col overflow-hidden"
      style="width:min(260px,78vw);font-family:'Inter',sans-serif;box-shadow:4px 0 24px rgba(0,0,0,.13)">
 

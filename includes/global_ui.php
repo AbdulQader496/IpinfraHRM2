@@ -5,15 +5,9 @@ $_gb_notifs       = [];
 $_gb_admin_items  = [];
 if (isset($_SESSION['user_id']) && isset($conn) && $conn) {
     $uid = (int)$_SESSION['user_id'];
-    try {
-        $r = mysqli_query($conn, "SELECT COUNT(*) as c FROM notifications WHERE employee_id=$uid AND is_read=0");
-        if ($r) $_gb_notif_count = (int)(mysqli_fetch_assoc($r)['c'] ?? 0);
-        $r2 = mysqli_query($conn, "SELECT * FROM notifications WHERE employee_id=$uid ORDER BY created_at DESC LIMIT 15");
-        if ($r2) while ($n = mysqli_fetch_assoc($r2)) $_gb_notifs[] = $n;
-    } catch (Exception $e) { }
 
-    // For admins: also surface pending leaves + claims as action items
     if (isset($_SESSION['role']) && $_SESSION['role'] === 'admin') {
+        // Admins: only show pending leave and claim counts — no general notifications
         try {
             $pl = mysqli_query($conn, "SELECT COUNT(*) as c FROM leaves WHERE status='pending'");
             $pc = mysqli_query($conn, "SELECT COUNT(*) as c FROM claims WHERE status='pending'");
@@ -29,6 +23,14 @@ if (isset($_SESSION['user_id']) && isset($conn) && $conn) {
                     'title'=>$pc_c.' Claim'.($pc_c>1?'s':'').' Pending','link'=>'manage_claim.php'];
                 $_gb_notif_count += $pc_c;
             }
+        } catch (Exception $e) { }
+    } else {
+        // Employees: show their own notifications
+        try {
+            $r = mysqli_query($conn, "SELECT COUNT(*) as c FROM notifications WHERE employee_id=$uid AND is_read=0");
+            if ($r) $_gb_notif_count = (int)(mysqli_fetch_assoc($r)['c'] ?? 0);
+            $r2 = mysqli_query($conn, "SELECT * FROM notifications WHERE employee_id=$uid ORDER BY created_at DESC LIMIT 15");
+            if ($r2) while ($n = mysqli_fetch_assoc($r2)) $_gb_notifs[] = $n;
         } catch (Exception $e) { }
     }
 }
@@ -875,7 +877,7 @@ img[loading="lazy"].img-loaded {
   }
 
   window.gbMarkRead = function(id, el) {
-    fetch('../includes/notifications_api.php?action=mark_read&id=' + id);
+    fetch('../includes/notifications_api.php?action=mark_read&id=' + id, {method: 'POST'});
     el.classList.remove('unread');
     var dot = el.querySelector('.gb-ni-dot');
     if (dot) dot.remove();
@@ -885,7 +887,7 @@ img[loading="lazy"].img-loaded {
   };
 
   window.gbMarkAll = function() {
-    fetch('../includes/notifications_api.php?action=mark_all');
+    fetch('../includes/notifications_api.php?action=mark_all', {method: 'POST'});
     document.querySelectorAll('.gb-ni.unread').forEach(function(el) {
       el.classList.remove('unread');
       var dot = el.querySelector('.gb-ni-dot');
@@ -900,7 +902,7 @@ img[loading="lazy"].img-loaded {
   };
 
   function initNotifBell() {
-    // Skip if this page already has its own bell (admin dashboard)
+    // Skip if this page already has its own bell or the admin sidebar sentinel
     if (document.getElementById('notifWrapper')) return;
     if (!document.body) return;
 
@@ -910,7 +912,6 @@ img[loading="lazy"].img-loaded {
     btn.innerHTML = '<i class="fas fa-bell" style="font-size:15px"></i>' +
       '<span id="gb-notif-badge" style="' + (GB_NOTIF_COUNT > 0 ? '' : 'display:none') + '">' +
       (GB_NOTIF_COUNT > 99 ? '99+' : GB_NOTIF_COUNT) + '</span>';
-    document.body.appendChild(btn);
 
     var panel = document.createElement('div');
     panel.id = 'gb-notif-panel';
@@ -924,6 +925,26 @@ img[loading="lazy"].img-loaded {
     document.addEventListener('click', function(e) {
       if (!panel.contains(e.target) && e.target !== btn) panel.classList.remove('open');
     });
+
+    // Inject bell INTO the sticky header's right-side container so it
+    // sits next to the avatar instead of floating over it
+    var header = document.querySelector('[class*="sticky"][class*="top-0"]');
+    var headerRow = header ? header.children[0] : null;
+    var rightPane = (headerRow && headerRow.children.length > 1)
+      ? headerRow.children[headerRow.children.length - 1]
+      : null;
+
+    if (rightPane) {
+      // Inline inside header — override the fixed-position CSS
+      btn.style.position  = 'relative';
+      btn.style.width     = '34px';
+      btn.style.height    = '34px';
+      btn.style.flexShrink = '0';
+      rightPane.insertBefore(btn, rightPane.firstChild);
+    } else {
+      // Fallback: float at fixed position (pages with no recognisable sticky header)
+      document.body.appendChild(btn);
+    }
   }
 
   /* ================================================================

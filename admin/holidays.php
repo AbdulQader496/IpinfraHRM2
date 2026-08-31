@@ -2,22 +2,23 @@
 require_once '../includes/auth.php';
 redirectIfNotAdmin();
 require_once '../includes/db.php';
-require_once '../includes/functions.php';
 
 if (isset($_POST['add_holiday'])) {
+    if (!validateCsrfToken($_POST['csrf_token'] ?? '')) { header('Location: holidays.php'); exit; }
     $date = mysqli_real_escape_string($conn, $_POST['holiday_date']);
     $name = mysqli_real_escape_string($conn, $_POST['holiday_name']);
-    mysqli_query($conn, "INSERT INTO holidays (holiday_date, holiday_name) VALUES ('$date', '$name')");
-    logAction('create', 'Holiday added: ' . $_POST['holiday_name'] . ' on ' . $_POST['holiday_date'], mysqli_insert_id($conn), 'holiday');
-    header('Location: holidays.php');
-    exit();
+    if (!preg_match('/^\d{4}-\d{2}-\d{2}$/', $date)) {
+        $error = 'Invalid date format.';
+    } else {
+        mysqli_query($conn, "INSERT INTO holidays (holiday_date, holiday_name) VALUES ('$date', '$name')");
+        header('Location: holidays.php');
+        exit();
+    }
 }
 
-if (isset($_GET['delete'])) {
-    $id = intval($_GET['delete']);
-    $hol = mysqli_fetch_assoc(mysqli_query($conn, "SELECT holiday_name, holiday_date FROM holidays WHERE id=$id"));
+if (isset($_POST['delete']) && validateCsrfToken($_POST['csrf_token'] ?? '')) {
+    $id = intval($_POST['delete']);
     mysqli_query($conn, "DELETE FROM holidays WHERE id = $id");
-    logAction('delete', 'Holiday deleted: ' . ($hol['holiday_name'] ?? 'Unknown') . ' (' . ($hol['holiday_date'] ?? '') . ')', $id, 'holiday');
     header('Location: holidays.php');
     exit();
 }
@@ -39,7 +40,7 @@ $holidays = mysqli_query($conn, "SELECT * FROM holidays ORDER BY holiday_date DE
 </head>
 <body class="bg-gradient-to-br from-gray-50 to-gray-100 min-h-screen pb-20">
 <!-- Premium Mobile Header -->
-<div class="bg-[#060912] text-white sticky top-0 z-40 shadow-2xl">
+<div class="bg-gradient-to-r from-slate-900 via-indigo-900 to-slate-900 text-white sticky top-0 z-40 shadow-2xl">
     <div class="flex justify-between items-center px-4 py-4">
         <div class="flex items-center gap-3">
             <!-- MENU BUTTON - Left side -->
@@ -47,7 +48,7 @@ $holidays = mysqli_query($conn, "SELECT * FROM holidays ORDER BY holiday_date DE
                 <i class="fas fa-bars text-xl"></i>
             </button>
             <div class="w-10 h-10 bg-gradient-to-br from-blue-500 to-indigo-600 rounded-xl flex items-center justify-center shadow-lg">
-                <img src="../uploads/1775551018_4xzREYTcMvK7ReGODviudjeDBIofOQ78mr5DsN9g.jpg" alt="IPINFRA" style="width:28px;height:28px;object-fit:contain;border-radius:4px;background:#fff;">
+                <span class="text-white font-bold text-sm">IN</span>
             </div>
             <div>
                 <p class="text-xs text-blue-200 font-medium">IPINFRA NETWORKS</p>
@@ -57,6 +58,7 @@ $holidays = mysqli_query($conn, "SELECT * FROM holidays ORDER BY holiday_date DE
         <!-- No back button - just empty space or nothing -->
     </div>
 </div>
+<?php require_once '../includes/global_ui.php'; ?>
 <?php require_once '../includes/admin_sidebar.php'; ?>
 
     <!-- Main Content -->
@@ -69,6 +71,7 @@ $holidays = mysqli_query($conn, "SELECT * FROM holidays ORDER BY holiday_date DE
                 <i class="fas fa-plus-circle text-green-600"></i> Add New Holiday
             </h2>
             <form method="POST" class="flex flex-col gap-3">
+                <?php echo csrfField(); ?>
                 <input type="date" name="holiday_date" required class="px-4 py-3 border border-gray-200 rounded-xl">
                 <input type="text" name="holiday_name" placeholder="Holiday Name" required class="px-4 py-3 border border-gray-200 rounded-xl">
                 <button type="submit" name="add_holiday" class="bg-green-600 text-white py-3 rounded-xl">Add Holiday</button>
@@ -84,12 +87,14 @@ $holidays = mysqli_query($conn, "SELECT * FROM holidays ORDER BY holiday_date DE
                 <?php while ($row = mysqli_fetch_assoc($holidays)): ?>
                 <div class="flex justify-between items-center p-4">
                     <div>
-                        <p class="font-medium text-gray-800"><?php echo $row['holiday_name']; ?></p>
+                        <p class="font-medium text-gray-800"><?php echo htmlspecialchars($row['holiday_name']); ?></p>
                         <p class="text-xs text-gray-500"><?php echo date('l, d F Y', strtotime($row['holiday_date'])); ?></p>
                     </div>
-                    <a href="?delete=<?php echo $row['id']; ?>" data-confirm="Delete this holiday from the calendar?" data-confirm-title="Delete Holiday" class="text-red-500">
-                        <i class="fas fa-trash text-lg"></i>
-                    </a>
+                    <form method="post" style="display:inline" onsubmit="return confirm('Delete this holiday?')">
+                        <?php echo csrfField(); ?>
+                        <input type="hidden" name="delete" value="<?php echo intval($row['id']); ?>">
+                        <button type="submit" class="text-red-500"><i class="fas fa-trash text-lg"></i></button>
+                    </form>
                 </div>
                 <?php endwhile; ?>
                 <?php if (mysqli_num_rows($holidays) == 0): ?>

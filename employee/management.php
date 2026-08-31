@@ -3,8 +3,9 @@ require_once '../includes/auth.php';
 redirectIfNotLoggedIn();
 require_once '../includes/db.php';
 require_once '../includes/functions.php';
+require_once '../includes/toast_fn.php';
 
-$user_id    = $_SESSION['user_id'];
+$user_id    = intval($_SESSION['user_id']);
 $valid_tabs = ['documents', 'upload', 'resignation', 'warnings'];
 $active_tab = in_array($_GET['tab'] ?? '', $valid_tabs) ? $_GET['tab'] : 'documents';
 
@@ -14,21 +15,21 @@ if (isset($_POST['submit_resignation'])) {
     $reason            = mysqli_real_escape_string($conn, $_POST['reason'] ?? '');
     $check = mysqli_query($conn, "SELECT id FROM employee_resignations WHERE employee_id=$user_id AND status='pending'");
     if (mysqli_num_rows($check) > 0) {
-        header('Location: management.php?tab=resignation&err=' . urlencode('You already have a pending resignation request.')); exit();
+        showToast('You already have a pending resignation request.', 'error'); header('Location: management.php?tab=resignation'); exit();
     }
     mysqli_query($conn, "INSERT INTO employee_resignations (employee_id, requested_date, last_working_date, reason, status)
         VALUES ($user_id, CURDATE(), '$last_working_date', '$reason', 'pending')");
     $admin_q = mysqli_query($conn, "SELECT id FROM employees WHERE role='admin' LIMIT 1");
     if ($admin = mysqli_fetch_assoc($admin_q))
         addNotification($admin['id'], 'New Resignation Request', $_SESSION['user_name'] . ' has submitted a resignation request.');
-    header('Location: management.php?tab=resignation&msg=' . urlencode('Resignation request submitted successfully!')); exit();
+    showToast('Resignation request submitted successfully!'); header('Location: management.php?tab=resignation'); exit();
 }
 
 // ── Cancel resignation ──────────────────────────────────────────────────────
 if (isset($_GET['cancel_resignation'])) {
     $id = intval($_GET['cancel_resignation']);
     mysqli_query($conn, "UPDATE employee_resignations SET status='cancelled' WHERE id=$id AND employee_id=$user_id");
-    header('Location: management.php?tab=resignation&msg=' . urlencode('Resignation request cancelled.')); exit();
+    showToast('Resignation request cancelled.', 'info'); header('Location: management.php?tab=resignation'); exit();
 }
 
 // ── Document upload ─────────────────────────────────────────────────────────
@@ -45,27 +46,27 @@ if (isset($_POST['upload_document'])) {
     $file_name = basename($_FILES['document_file']['name'] ?? '');
     $file_size = intval($_FILES['document_file']['size'] ?? 0);
     $file_ext  = strtolower(pathinfo($file_name, PATHINFO_EXTENSION));
-    $mime      = isset($_FILES['document_file']['tmp_name']) ? mime_content_type($_FILES['document_file']['tmp_name']) : '';
-    $file_path = time() . '_' . $user_id . '_' . preg_replace('/[^a-zA-Z0-9._-]/', '', $file_name);
+    $finfo     = finfo_open(FILEINFO_MIME_TYPE);
+    $mime      = ($finfo && isset($_FILES['document_file']['tmp_name'])) ? finfo_file($finfo, $_FILES['document_file']['tmp_name']) : '';
+    if ($finfo) finfo_close($finfo);
+    $file_path = bin2hex(random_bytes(8)) . '.' . $file_ext;
     if (!in_array($file_ext, $allowed_ext) || !in_array($mime, $allowed_mime)) {
-        header('Location: management.php?tab=upload&err=' . urlencode('Invalid file type. Only PDF, DOC, DOCX, JPG, PNG, XLS, XLSX are allowed.')); exit();
+        showToast('Invalid file type. Only PDF, DOC, DOCX, JPG, PNG, XLS, XLSX are allowed.', 'error'); header('Location: management.php?tab=upload'); exit();
     } elseif ($file_size > 5 * 1024 * 1024) {
-        header('Location: management.php?tab=upload&err=' . urlencode('File size exceeds the 5 MB limit.')); exit();
+        showToast('File size exceeds the 5 MB limit.', 'error'); header('Location: management.php?tab=upload'); exit();
     } elseif (move_uploaded_file($_FILES['document_file']['tmp_name'], $target_dir . $file_path)) {
         mysqli_query($conn, "INSERT INTO employee_documents (employee_id,document_title,document_type,file_path,file_name,file_size,upload_date,notes,uploaded_by)
             VALUES ($user_id,'$document_title','$document_type','$file_path','$file_name',$file_size,CURDATE(),'$notes',$user_id)");
         $admin_q = mysqli_query($conn, "SELECT id FROM employees WHERE role='admin' LIMIT 1");
         if ($admin = mysqli_fetch_assoc($admin_q))
             addNotification($admin['id'], 'New Document Uploaded', $_SESSION['user_name'] . ' uploaded: ' . $_POST['document_title']);
-        header('Location: management.php?tab=upload&msg=' . urlencode('Document sent to HR successfully!')); exit();
+        showToast('Document sent to HR successfully!'); header('Location: management.php?tab=upload'); exit();
     } else {
-        header('Location: management.php?tab=upload&err=' . urlencode('Upload failed. Please try again.')); exit();
+        showToast('Upload failed. Please try again.', 'error'); header('Location: management.php?tab=upload'); exit();
     }
 }
 
 // ── Flash messages from redirect ────────────────────────────────────────────
-$success    = isset($_GET['msg']) ? htmlspecialchars($_GET['msg']) : '';
-$error      = isset($_GET['err']) ? htmlspecialchars($_GET['err']) : '';
 $active_tab = in_array($_GET['tab'] ?? '', $valid_tabs) ? $_GET['tab'] : $active_tab;
 
 // ── Data ────────────────────────────────────────────────────────────────────
@@ -184,18 +185,6 @@ $initials = strtoupper(substr($me['name'],0,1) . (strpos($me['name'],' ')!==fals
         </div>
     </div>
 
-    <?php if ($success): ?>
-    <div class="fade-up bg-green-50 border border-green-200 rounded-2xl px-5 py-3.5 flex items-center gap-3">
-        <div class="w-8 h-8 rounded-full bg-green-100 flex items-center justify-center shrink-0"><i class="fas fa-check text-green-600 text-sm"></i></div>
-        <p class="text-sm font-medium text-green-700"><?php echo htmlspecialchars($success); ?></p>
-    </div>
-    <?php endif; ?>
-    <?php if ($error): ?>
-    <div class="fade-up bg-red-50 border border-red-200 rounded-2xl px-5 py-3.5 flex items-center gap-3">
-        <div class="w-8 h-8 rounded-full bg-red-100 flex items-center justify-center shrink-0"><i class="fas fa-exclamation text-red-500 text-sm"></i></div>
-        <p class="text-sm font-medium text-red-600"><?php echo htmlspecialchars($error); ?></p>
-    </div>
-    <?php endif; ?>
 
     <?php if ($termination): ?>
     <div class="fade-up bg-red-50 border border-red-200 rounded-2xl px-5 py-4">

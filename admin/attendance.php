@@ -9,6 +9,10 @@ require_once '../includes/toast_fn.php';
 // MANUAL ATTENDANCE ENTRY
 // ========================================
 if (isset($_POST['add_manual_attendance'])) {
+    if (!validateCsrfToken($_POST['csrf_token'] ?? '')) {
+        showToast('Invalid request.', 'error');
+        header('Location: attendance.php'); exit();
+    }
     $employee_id = intval($_POST['manual_employee_id']);
     $attendance_date = mysqli_real_escape_string($conn, $_POST['attendance_date']);
     $clock_in = mysqli_real_escape_string($conn, $_POST['clock_in']);
@@ -44,9 +48,13 @@ if (isset($_POST['add_manual_attendance'])) {
 // ========================================
 // DELETE ATTENDANCE RECORD
 // ========================================
-if (isset($_GET['delete_attendance'])) {
-    $attendance_id = intval($_GET['delete_attendance']);
-    $safe_date = preg_replace('/[^0-9\-]/', '', $_GET['date'] ?? date('Y-m-d'));
+if (isset($_POST['delete_attendance'])) {
+    if (!validateCsrfToken($_POST['csrf_token'] ?? '')) {
+        showToast('Invalid request.', 'error');
+        header('Location: attendance.php'); exit();
+    }
+    $attendance_id = intval($_POST['delete_attendance']);
+    $safe_date = preg_replace('/[^0-9\-]/', '', $_POST['date'] ?? date('Y-m-d'));
     mysqli_query($conn, "DELETE FROM attendance WHERE id = $attendance_id");
     header("Location: attendance.php?date=" . $safe_date);
     exit();
@@ -56,6 +64,10 @@ if (isset($_GET['delete_attendance'])) {
 // EDIT ATTENDANCE
 // ========================================
 if (isset($_POST['edit_attendance'])) {
+    if (!validateCsrfToken($_POST['csrf_token'] ?? '')) {
+        showToast('Invalid request.', 'error');
+        header('Location: attendance.php'); exit();
+    }
     $attendance_id = intval($_POST['attendance_id']);
     $clock_in = mysqli_real_escape_string($conn, $_POST['clock_in']);
     $clock_out = mysqli_real_escape_string($conn, $_POST['clock_out']);
@@ -70,9 +82,9 @@ if (isset($_POST['edit_attendance'])) {
                      clock_out = " . ($clock_out ? "'$clock_out'" : "NULL") . ",
                      status = '$status'
                      WHERE id = $attendance_id";
-    $safe_date = preg_replace('/[^0-9\-]/', '', $_GET['date'] ?? date('Y-m-d'));
+    $redirect_date = isset($_POST['date']) ? preg_replace('/[^0-9\-]/', '', $_POST['date']) : date('Y-m-d');
     mysqli_query($conn, $update_query);
-    header("Location: attendance.php?date=" . $safe_date);
+    header("Location: attendance.php?date=" . $redirect_date);
     exit();
 }
 
@@ -149,9 +161,11 @@ if (isset($_GET['export']) && $_GET['export'] === 'csv') {
 // ========================================
 // PAGINATION WITH LOAD MORE
 // ========================================
-$date = isset($_GET['date']) ? $_GET['date'] : date('Y-m-d');
+$date = isset($_GET['date']) ? preg_replace('/[^0-9\-]/', '', $_GET['date']) : date('Y-m-d');
+if (!preg_match('/^\d{4}-\d{2}-\d{2}$/', $date)) $date = date('Y-m-d');
 $search = isset($_GET['search']) ? mysqli_real_escape_string($conn, $_GET['search']) : '';
 $page = isset($_GET['page']) ? (int)$_GET['page'] : 1;
+if ($page < 1) $page = 1;
 $per_page = 10; // 10 employees per page
 
 $selected_date = $date;
@@ -476,10 +490,10 @@ $all_employees = mysqli_query($conn, "SELECT id, name, employee_id FROM employee
                                     <div class="w-9 h-9 rounded-full bg-gradient-to-br from-blue-100 to-blue-200 flex items-center justify-center">
                                         <i class="fas fa-user text-blue-600 text-sm"></i>
                                     </div>
-                                    <span class="font-medium text-slate-800 text-sm"><?php echo $row['name']; ?></span>
+                                    <span class="font-medium text-slate-800 text-sm"><?php echo htmlspecialchars($row['name'], ENT_QUOTES, 'UTF-8'); ?></span>
                                 </div>
                             </td>
-                            <td class="p-4 text-sm text-slate-500 font-mono"><?php echo $row['employee_id']; ?></td>
+                            <td class="p-4 text-sm text-slate-500 font-mono"><?php echo htmlspecialchars($row['employee_id'], ENT_QUOTES, 'UTF-8'); ?></td>
                             
                             <?php if(!$is_weekend): ?>
                             <td class="p-4">
@@ -553,16 +567,19 @@ $all_employees = mysqli_query($conn, "SELECT id, name, employee_id FROM employee
                             </td>
                             
                             <td class="p-4 text-center">
-                                <button onclick="openEditModal(<?php echo htmlspecialchars(json_encode($row)); ?>, '<?php echo $date; ?>')" 
+                                <button onclick="openEditModal(<?php echo json_encode($row, JSON_HEX_APOS | JSON_HEX_QUOT | JSON_HEX_TAG); ?>, '<?php echo $date; ?>')"
                                         class="text-blue-600 hover:text-blue-800 transition" title="Edit Attendance">
                                     <i class="fas fa-edit"></i>
                                 </button>
                                 <?php if($attendance_id): ?>
-                                <a href="?delete_attendance=<?php echo $attendance_id; ?>&date=<?php echo $date; ?>" 
-                                   data-confirm="Delete this attendance record?" data-confirm-title="Delete Record"
-                                   class="text-red-500 hover:text-red-700 transition ml-2" title="Delete">
-                                    <i class="fas fa-trash"></i>
-                                </a>
+                                <form method="POST" style="display:inline" onsubmit="return confirm('Delete this attendance record?')">
+                                    <?php echo csrfField(); ?>
+                                    <input type="hidden" name="delete_attendance" value="<?php echo $attendance_id; ?>">
+                                    <input type="hidden" name="date" value="<?php echo htmlspecialchars($date, ENT_QUOTES, 'UTF-8'); ?>">
+                                    <button type="submit" class="text-red-500 hover:text-red-700 transition ml-2" title="Delete">
+                                        <i class="fas fa-trash"></i>
+                                    </button>
+                                </form>
                                 <?php endif; ?>
                              </tr>
                         <?php endforeach; ?>
@@ -612,15 +629,16 @@ $all_employees = mysqli_query($conn, "SELECT id, name, employee_id FROM employee
         <?php if(isset($manual_message)) echo $manual_message; ?>
         
         <form method="POST" action="" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-4">
+            <?php echo csrfField(); ?>
             <div class="lg:col-span-2">
                 <label class="block text-gray-700 text-sm font-semibold mb-2">Select Employee</label>
                 <select name="manual_employee_id" required class="w-full px-4 py-2.5 border-2 border-gray-200 rounded-xl focus:border-green-500 focus:outline-none">
                     <option value="">-- Select Employee --</option>
-                    <?php 
+                    <?php
                     mysqli_data_seek($all_employees, 0);
                     while($emp = mysqli_fetch_assoc($all_employees)):
                     ?>
-                        <option value="<?php echo $emp['id']; ?>"><?php echo $emp['name']; ?> (<?php echo $emp['employee_id']; ?>)</option>
+                        <option value="<?php echo (int)$emp['id']; ?>"><?php echo htmlspecialchars($emp['name'], ENT_QUOTES, 'UTF-8'); ?> (<?php echo htmlspecialchars($emp['employee_id'], ENT_QUOTES, 'UTF-8'); ?>)</option>
                     <?php endwhile; ?>
                 </select>
             </div>
@@ -666,6 +684,7 @@ $all_employees = mysqli_query($conn, "SELECT id, name, employee_id FROM employee
             </div>
         </div>
         <form method="POST" class="p-6 space-y-4" action="">
+            <?php echo csrfField(); ?>
             <input type="hidden" name="attendance_id" id="editAttendanceId">
             <input type="hidden" name="date" value="<?php echo $date; ?>">
             

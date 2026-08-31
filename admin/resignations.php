@@ -2,56 +2,68 @@
 require_once '../includes/auth.php';
 redirectIfNotAdmin();
 require_once '../includes/db.php';
+require_once '../includes/functions.php';
 
 // Handle resignation request
 if (isset($_POST['add_resignation'])) {
-    $employee_id = $_POST['employee_id'];
-    $resignation_date = $_POST['resignation_date'];
-    $last_working_date = $_POST['last_working_date'];
+    if (!validateCsrfToken($_POST['csrf_token'] ?? '')) { header('Location: resignations.php'); exit; }
+    $employee_id = intval($_POST['employee_id']);
+    $resignation_date = mysqli_real_escape_string($conn, $_POST['resignation_date']);
+    $last_working_date = mysqli_real_escape_string($conn, $_POST['last_working_date']);
     $reason = mysqli_real_escape_string($conn, $_POST['reason']);
-    $type = $_POST['type'];
-    
-    $query = "INSERT INTO resignations (employee_id, resignation_date, last_working_date, reason, type, status) 
+    $allowed_types = ['resignation', 'termination', 'contract_end'];
+    $type = in_array($_POST['type'] ?? '', $allowed_types) ? $_POST['type'] : 'resignation';
+
+    $query = "INSERT INTO resignations (employee_id, resignation_date, last_working_date, reason, type, status)
               VALUES ($employee_id, '$resignation_date', '$last_working_date', '$reason', '$type', 'pending')";
     mysqli_query($conn, $query);
     $resign_id = mysqli_insert_id($conn);
-    
-    mysqli_query($conn, "UPDATE employees SET resignation_id = $resign_id, employment_status = 'on_leave' WHERE id = $employee_id");
-    
+
+    mysqli_query($conn, "UPDATE employees SET resignation_id = $resign_id WHERE id = $employee_id");
+
     header('Location: resignations.php');
     exit();
 }
 
-// Approve/Reject
-if (isset($_GET['approve'])) {
-    $id = $_GET['approve'];
-    $status = $_GET['status'];
-    
-    mysqli_query($conn, "UPDATE resignations SET status='$status', approved_by={$_SESSION['user_id']}, approved_date=CURDATE() WHERE id=$id");
-    
-    if ($status == 'approved') {
-        $res = mysqli_fetch_assoc(mysqli_query($conn, "SELECT employee_id FROM resignations WHERE id=$id"));
-        mysqli_query($conn, "UPDATE employees SET employment_status='resigned' WHERE id={$res['employee_id']}");
+// Approve/Reject — F025: converted from GET to POST with CSRF validation
+if (isset($_POST['resign_approve']) && validateCsrfToken($_POST['csrf_token'] ?? '')) {
+    $id = intval($_POST['resign_approve']);
+    $status = in_array($_POST['status'] ?? '', ['approved', 'rejected']) ? $_POST['status'] : 'rejected';
+    $approved_by = intval($_SESSION['user_id']);
+
+    // Only transition a request that's still pending — blocks a double-submit
+    // (or an admin re-approving an already-decided request) from silently
+    // overwriting an already-processed record.
+    mysqli_query($conn, "UPDATE resignations SET status='$status', approved_by=$approved_by, approved_date=CURDATE() WHERE id=$id AND status='pending'");
+
+    if (mysqli_affected_rows($conn) > 0) {
+        logAction($status === 'approved' ? 'approve' : 'reject', ucfirst($status) . ' resignation request', $id, 'resignation');
+        if ($status == 'approved') {
+            $res = mysqli_fetch_assoc(mysqli_query($conn, "SELECT employee_id FROM resignations WHERE id=$id"));
+            $emp_id = intval($res['employee_id']);
+            mysqli_query($conn, "UPDATE employees SET employment_status='resigned' WHERE id=$emp_id");
+        }
     }
-    
+
     header('Location: resignations.php');
     exit();
 }
 
 // Update clearance
 if (isset($_POST['update_clearance'])) {
-    $id = $_POST['resign_id'];
-    $clearance_status = $_POST['clearance_status'];
+    if (!validateCsrfToken($_POST['csrf_token'] ?? '')) { header('Location: resignations.php'); exit; }
+    $id = intval($_POST['resign_id']);
+    $clearance_status = mysqli_real_escape_string($conn, $_POST['clearance_status']);
     $remarks = mysqli_real_escape_string($conn, $_POST['remarks']);
-    
+
     mysqli_query($conn, "UPDATE resignations SET clearance_status='$clearance_status', remarks='$remarks' WHERE id=$id");
     header('Location: resignations.php');
     exit();
 }
 
-$resignations = mysqli_query($conn, "SELECT r.*, e.name, e.employee_id, e.department 
-    FROM resignations r 
-    JOIN employees e ON r.employee_id = e.id 
+$resignations = mysqli_query($conn, "SELECT r.*, e.name, e.employee_id, e.department
+    FROM resignations r
+    JOIN employees e ON r.employee_id = e.id
     ORDER BY r.created_at DESC");
 
 $employees = mysqli_query($conn, "SELECT id, name, employee_id FROM employees WHERE role='employee' AND employment_status='active'");
@@ -141,8 +153,8 @@ $completed = mysqli_fetch_assoc(mysqli_query($conn, "SELECT COUNT(*) as count FR
                     <?php while($row = mysqli_fetch_assoc($resignations)): ?>
                     <tr class="hover:bg-gray-50">
                         <td class="p-3">
-                            <p class="font-semibold"><?php echo $row['name']; ?></p>
-                            <p class="text-xs text-gray-500"><?php echo $row['employee_id']; ?></p>
+                            <p class="font-semibold"><?php echo htmlspecialchars($row['name'] ?? '', ENT_QUOTES, 'UTF-8'); ?></p>
+                            <p class="text-xs text-gray-500"><?php echo htmlspecialchars($row['employee_id'] ?? '', ENT_QUOTES, 'UTF-8'); ?></p>
                         </td>
                         <td class="p-3"><?php echo date('d M Y', strtotime($row['resignation_date'])); ?></td>
                         <td class="p-3"><?php echo date('d M Y', strtotime($row['last_working_date'])); ?></td>
@@ -162,10 +174,20 @@ $completed = mysqli_fetch_assoc(mysqli_query($conn, "SELECT COUNT(*) as count FR
                             </span>
                         </td>
                         <td class="p-3">
-                            <button onclick='openClearanceModal(<?php echo json_encode($row); ?>)' class="text-blue-600 text-sm mr-2">Clearance</button>
+                            <button onclick='openClearanceModal(<?php echo json_encode(['id' => $row['id'], 'name' => $row['name'], 'employee_id' => $row['employee_id'], 'clearance_status' => $row['clearance_status'], 'remarks' => $row['remarks']], JSON_HEX_APOS | JSON_HEX_QUOT | JSON_HEX_TAG); ?>)' class="text-blue-600 text-sm mr-2">Clearance</button>
                             <?php if($row['status'] == 'pending'): ?>
-                                <a href="?approve=<?php echo $row['id']; ?>&status=approved" class="text-green-600 text-sm mr-2">Approve</a>
-                                <a href="?approve=<?php echo $row['id']; ?>&status=rejected" class="text-red-600 text-sm">Reject</a>
+                                <form method="POST" style="display:inline;">
+                                    <?php echo csrfField(); ?>
+                                    <input type="hidden" name="resign_approve" value="<?php echo intval($row['id']); ?>">
+                                    <input type="hidden" name="status" value="approved">
+                                    <button type="submit" class="text-green-600 text-sm mr-2">Approve</button>
+                                </form>
+                                <form method="POST" style="display:inline;">
+                                    <?php echo csrfField(); ?>
+                                    <input type="hidden" name="resign_approve" value="<?php echo intval($row['id']); ?>">
+                                    <input type="hidden" name="status" value="rejected">
+                                    <button type="submit" class="text-red-600 text-sm">Reject</button>
+                                </form>
                             <?php endif; ?>
                         </td>
                     </tr>
@@ -184,12 +206,13 @@ $completed = mysqli_fetch_assoc(mysqli_query($conn, "SELECT COUNT(*) as count FR
             <button onclick="document.getElementById('addModal').classList.add('hidden')" class="text-gray-500">&times;</button>
         </div>
         <form method="POST" class="p-4 space-y-4">
+            <?php echo csrfField(); ?>
             <div>
                 <label class="block text-sm font-medium mb-1">Employee</label>
                 <select name="employee_id" required class="w-full px-4 py-2 border rounded-xl">
                     <option value="">Select Employee</option>
                     <?php while($emp = mysqli_fetch_assoc($employees)): ?>
-                        <option value="<?php echo $emp['id']; ?>"><?php echo $emp['name']; ?> (<?php echo $emp['employee_id']; ?>)</option>
+                        <option value="<?php echo intval($emp['id']); ?>"><?php echo htmlspecialchars($emp['name'] ?? '', ENT_QUOTES, 'UTF-8'); ?> (<?php echo htmlspecialchars($emp['employee_id'] ?? '', ENT_QUOTES, 'UTF-8'); ?>)</option>
                     <?php endwhile; ?>
                 </select>
             </div>
@@ -226,6 +249,7 @@ $completed = mysqli_fetch_assoc(mysqli_query($conn, "SELECT COUNT(*) as count FR
             <button onclick="document.getElementById('clearanceModal').classList.add('hidden')" class="text-gray-500">&times;</button>
         </div>
         <form method="POST" class="p-4 space-y-4">
+            <?php echo csrfField(); ?>
             <input type="hidden" name="resign_id" id="clearance_resign_id">
             <div>
                 <label class="block text-sm font-medium mb-1">Clearance Status</label>
@@ -245,7 +269,7 @@ $completed = mysqli_fetch_assoc(mysqli_query($conn, "SELECT COUNT(*) as count FR
 </div>
 
 <script>
-    
+
     function openClearanceModal(resignation) {
         document.getElementById('clearance_resign_id').value = resignation.id;
         document.getElementById('clearance_status').value = resignation.clearance_status;

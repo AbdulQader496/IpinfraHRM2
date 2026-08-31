@@ -4,8 +4,11 @@ redirectIfNotLoggedIn();
 require_once '../includes/db.php';
 require_once '../includes/functions.php';
 
-$user_id = $_SESSION['user_id'];
+$user_id = intval($_SESSION['user_id']);
 $selected_month = isset($_GET['month']) ? $_GET['month'] : date('Y-m');
+if (!preg_match('/^\d{4}-\d{2}$/', $selected_month)) {
+    $selected_month = date('Y-m');
+}
 
 // Admin can view any employee's calculation by passing emp_id (employee_id string)
 if (isAdmin() && isset($_GET['emp_id'])) {
@@ -23,6 +26,11 @@ $month_start = date('Y-m-01', strtotime($selected_month . '-01'));
 $month_end = date('Y-m-t', strtotime($selected_month . '-01'));
 $month_name = date('F Y', strtotime($selected_month . '-01'));
 $working_days_in_month = date('t', strtotime($selected_month . '-01'));
+if ($working_days_in_month <= 0) $working_days_in_month = 30;
+
+// Determine employee type early (needed for leave categorization below)
+$is_malaysian = ($employee['nationality'] == 'Malaysian');
+$is_intern = isset($employee['employee_type']) && $employee['employee_type'] == 'intern';
 
 // Get all approved leave dates for this month to avoid double-counting absences
 $leave_dates = [];
@@ -54,7 +62,11 @@ while ($att = mysqli_fetch_assoc($attendance_query)) {
     $attendance_records[] = $att;
 
     if ($att['clock_in']) {
-        $present_days++;
+        if ($att['status'] == 'half_day') {
+            $half_days++;
+        } else {
+            $present_days++;
+        }
         if ($att['status'] == 'late') $late_days++;
 
         if ($att['clock_in'] && $att['clock_out']) {
@@ -75,18 +87,25 @@ while ($att = mysqli_fetch_assoc($attendance_query)) {
 $leaves_query = mysqli_query($conn, "SELECT * FROM leaves
     WHERE employee_id = $view_user_id
     AND status = 'approved'
-    AND ((start_date BETWEEN '$month_start' AND '$month_end')
-    OR (end_date BETWEEN '$month_start' AND '$month_end'))");
+    AND start_date <= '$month_end' AND end_date >= '$month_start'");
 
 $paid_leave_days = 0;
 $unpaid_leave_days = 0;
 
 while ($leave = mysqli_fetch_assoc($leaves_query)) {
-    $leave_start = max(strtotime($leave['start_date']), strtotime($month_start));
-    $leave_end = min(strtotime($leave['end_date']), strtotime($month_end));
-    $days = ($leave_end - $leave_start) / 86400 + 1;
-    
-    if ($leave['leave_type'] == 'unpaid') {
+    // Clip to the days that actually fall within this month — a leave spanning a month
+    // boundary must split its days between both months' calculations, not count its full
+    // total_days in each one (matches the LEAST/GREATEST clipping admin/payroll.php uses).
+    if (isset($leave['half_day']) && $leave['half_day'] != 'none') {
+        $days = 0.5;
+    } else {
+        $clip_start = max(strtotime($leave['start_date']), strtotime($month_start));
+        $clip_end   = min(strtotime($leave['end_date']),   strtotime($month_end));
+        $days = ($clip_end - $clip_start) / 86400 + 1;
+    }
+
+    // Interns have no annual leave entitlement — deduct annual leave same as unpaid
+    if ($leave['leave_type'] == 'unpaid' || ($is_intern && $leave['leave_type'] == 'annual')) {
         $unpaid_leave_days += $days;
     } else {
         $paid_leave_days += $days;
@@ -94,15 +113,12 @@ while ($leave = mysqli_fetch_assoc($leaves_query)) {
 }
 
 // Calculations
-$total_unpaid_days = $unpaid_leave_days + $absent_days + ($half_days * 0.5);
+$total_unpaid_days = $unpaid_leave_days + $absent_days;
 $basic_salary   = $employee['basic_salary'];
 $per_day_salary = $basic_salary / $working_days_in_month;
 $unpaid_deduction = $per_day_salary * $total_unpaid_days;
 
 // Statutory deductions (interns are exempt)
-$is_malaysian = ($employee['nationality'] == 'Malaysian');
-$is_intern = isset($employee['employee_type']) && $employee['employee_type'] == 'intern';
-
 if ($is_intern) {
     $epf = 0; $socso = 0; $eis = 0; $pcb = 0;
 } else {
@@ -112,10 +128,10 @@ if ($is_intern) {
     $pcb = calculatePCB($basic_salary, $is_malaysian);
 }
 
-// Approved claims for this month added to salary
+// Approved claims counted in the month they were approved, not the month they were submitted
 $claims_q = mysqli_query($conn, "SELECT COALESCE(SUM(amount),0) as ca FROM claims
     WHERE employee_id = $view_user_id AND status = 'approved'
-    AND DATE_FORMAT(applied_at, '%Y-%m') = '$selected_month'");
+    AND DATE_FORMAT(reviewed_at, '%Y-%m') = '$selected_month'");
 $approved_claims_amount = (float)mysqli_fetch_assoc($claims_q)['ca'];
 
 $total_deductions = $epf + $socso + $eis + $pcb;
@@ -169,8 +185,8 @@ $net_salary = $basic_salary - $unpaid_deduction + $approved_claims_amount - $tot
             <div class="p-6 border-b">
                 <div class="flex justify-between items-start flex-wrap gap-4">
                     <div>
-                        <h2 class="text-xl font-bold text-gray-800"><?php echo $employee['name']; ?></h2>
-                        <p class="text-gray-500 text-sm"><?php echo $employee['employee_id']; ?> • <?php echo $employee['department']; ?> • <?php echo $employee['position']; ?></p>
+                        <h2 class="text-xl font-bold text-gray-800"><?php echo htmlspecialchars($employee['name']); ?></h2>
+                        <p class="text-gray-500 text-sm"><?php echo htmlspecialchars($employee['employee_id']); ?> • <?php echo htmlspecialchars($employee['department']); ?> • <?php echo htmlspecialchars($employee['position']); ?></p>
                     </div>
                     <div class="text-right">
                         <p class="text-sm text-gray-500">Pay Period</p>
@@ -227,7 +243,7 @@ $net_salary = $basic_salary - $unpaid_deduction + $approved_claims_amount - $tot
                 </div>
                 <div class="mt-3 p-3 bg-gray-100 rounded-lg">
                     <p class="text-sm"><strong>Total Unpaid Days:</strong> <?php echo number_format($total_unpaid_days, 2); ?> days</p>
-                    <p class="text-xs text-gray-500">(Unpaid Leaves: <?php echo $unpaid_leave_days; ?> + Absent: <?php echo $absent_days; ?> + Half Days: <?php echo $half_days * 0.5; ?>)</p>
+                    <p class="text-xs text-gray-500">(Unpaid Leaves: <?php echo $unpaid_leave_days; ?> + Absent: <?php echo $absent_days; ?>)</p>
                 </div>
             </div>
 

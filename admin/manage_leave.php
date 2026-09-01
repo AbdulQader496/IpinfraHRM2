@@ -328,12 +328,34 @@ if (isset($_POST['adjust_leave'])) {
     $adjust_amount = floatval($_POST['adjust_amount']);
     $op            = ($action_type == 'add') ? '+' : '-';
 
+    // A blank/non-numeric amount silently becomes 0 via floatval(), which would run a
+    // no-op update ("field = field + 0") and still show success — surface that instead.
+    if ($adjust_amount <= 0) {
+        showToast('Enter an amount greater than 0.', 'error');
+        header('Location: manage_leave.php?tab=balances'); exit();
+    }
+
     $field_map = ['annual_entitlement' => 'annual_leave_entitlement', 'annual_used' => 'used_annual_leave', 'medical_entitlement' => 'medical_leave_entitlement', 'medical_used' => 'used_medical_leave'];
     $key = ($adjust_type == 'annual' ? 'annual' : 'medical') . '_' . $adjust_field;
     if (!isset($field_map[$key])) { showToast('Invalid field.', 'error'); header('Location: manage_leave.php?tab=balances'); exit(); }
     $field = $field_map[$key];
 
-    mysqli_query($conn, "UPDATE employees SET $field = $field $op $adjust_amount WHERE id = $employee_id");
+    // Clamp used-leave subtraction at 0 (matches the leave-approval undo logic elsewhere)
+    // instead of letting it go negative.
+    if ($op === '-') {
+        mysqli_query($conn, "UPDATE employees SET $field = GREATEST(0, $field - $adjust_amount) WHERE id = $employee_id AND role='employee'");
+    } else {
+        mysqli_query($conn, "UPDATE employees SET $field = $field + $adjust_amount WHERE id = $employee_id AND role='employee'");
+    }
+
+    // employee_id came from a hidden field populated by JS off the row's data — confirm
+    // it actually matched a real employee instead of silently reporting success either way.
+    $exists = mysqli_fetch_assoc(mysqli_query($conn, "SELECT id FROM employees WHERE id=$employee_id AND role='employee'"));
+    if (!$exists) {
+        showToast('Could not find that employee — please refresh and try again.', 'error');
+        header('Location: manage_leave.php?tab=balances'); exit();
+    }
+
     logAction('update', "Adjusted $field: $action_type $adjust_amount", $employee_id, 'employee');
     showToast('Leave balance updated.', 'success');
     header('Location: manage_leave.php?tab=balances'); exit();

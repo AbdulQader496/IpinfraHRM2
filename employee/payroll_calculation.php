@@ -128,11 +128,19 @@ if ($is_intern) {
     $pcb = calculatePCB($basic_salary, $is_malaysian);
 }
 
-// Approved claims counted in the month they were approved, not the month they were submitted
-$claims_q = mysqli_query($conn, "SELECT COALESCE(SUM(amount),0) as ca FROM claims
-    WHERE employee_id = $view_user_id AND status = 'approved'
-    AND DATE_FORMAT(reviewed_at, '%Y-%m') = '$selected_month'");
-$approved_claims_amount = (float)mysqli_fetch_assoc($claims_q)['ca'];
+// A generated payroll row already locked in which claims it paid out — use that figure
+// so a past month's calculation always matches the payslip that was actually issued.
+// Otherwise (this month hasn't been run yet), preview the pool of approved-but-unpaid
+// claims, since those are what the next payroll run will sweep in.
+$existing_payroll_q = mysqli_query($conn, "SELECT approved_claims FROM payroll WHERE employee_id = $view_user_id AND month_year = '$selected_month'");
+$existing_payroll = mysqli_fetch_assoc($existing_payroll_q);
+if ($existing_payroll) {
+    $approved_claims_amount = (float)$existing_payroll['approved_claims'];
+} else {
+    $claims_q = mysqli_query($conn, "SELECT COALESCE(SUM(amount),0) as ca FROM claims
+        WHERE employee_id = $view_user_id AND status = 'approved' AND payroll_id IS NULL");
+    $approved_claims_amount = (float)mysqli_fetch_assoc($claims_q)['ca'];
+}
 
 $total_deductions = $epf + $socso + $eis + $pcb;
 $net_salary = $basic_salary - $unpaid_deduction + $approved_claims_amount - $total_deductions;

@@ -9,6 +9,86 @@ $edit_mode = false;
 $edit_claim_id = 0;
 
 // ========================================
+// SHARED ATTACHMENT UPLOAD HANDLER
+// ========================================
+// PHP's own upload_max_filesize/post_max_size ini limits are enforced before this code
+// runs at all — a file rejected there just shows up with a non-zero error code here.
+// Previously all failures (oversized file, disallowed type, missing fileinfo extension,
+// unwritable folder) were skipped silently, so a claim could "save" with attachments
+// quietly missing. This now reports every failure back to the user.
+function handleClaimAttachments($conn, $claim_id) {
+    $result = ['uploaded' => 0, 'failed' => []];
+    if (!isset($_FILES['attachments']) || empty($_FILES['attachments']['name'][0])) {
+        return $result;
+    }
+
+    $target_dir = "../uploads/claims/";
+    if (!is_dir($target_dir)) { @mkdir($target_dir, 0777, true); }
+    $dir_ok = is_dir($target_dir) && is_writable($target_dir);
+
+    $att_ok_ext  = ['jpg','jpeg','png','pdf','doc','docx','zip','rar'];
+    $att_ok_mime = ['image/jpeg','image/png','application/pdf','application/msword',
+                    'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+                    'application/zip','application/x-zip-compressed',
+                    'application/x-rar-compressed','application/vnd.rar','application/x-rar'];
+    $fileinfo_available = function_exists('finfo_open');
+
+    $total_files = count($_FILES['attachments']['name']);
+    for ($i = 0; $i < $total_files; $i++) {
+        $file_name = basename($_FILES['attachments']['name'][$i]);
+        $error = $_FILES['attachments']['error'][$i];
+
+        if ($error !== UPLOAD_ERR_OK) {
+            $reason = ($error == UPLOAD_ERR_INI_SIZE || $error == UPLOAD_ERR_FORM_SIZE)
+                ? 'file is larger than this server allows' : 'upload error';
+            $result['failed'][] = "$file_name ($reason)";
+            continue;
+        }
+        if (!$dir_ok) {
+            $result['failed'][] = "$file_name (server storage folder not writable)";
+            continue;
+        }
+
+        $file_ext = strtolower(pathinfo($file_name, PATHINFO_EXTENSION));
+        if (!in_array($file_ext, $att_ok_ext)) {
+            $result['failed'][] = "$file_name (file type not allowed)";
+            continue;
+        }
+
+        // If the fileinfo extension isn't installed on this server, fall back to
+        // extension-only validation instead of rejecting every single upload.
+        $mime_ok = true;
+        if ($fileinfo_available) {
+            $att_finfo = finfo_open(FILEINFO_MIME_TYPE);
+            if ($att_finfo) {
+                $att_mime = finfo_file($att_finfo, $_FILES['attachments']['tmp_name'][$i]);
+                finfo_close($att_finfo);
+                $mime_ok = in_array($att_mime, $att_ok_mime);
+            }
+        }
+        if (!$mime_ok) {
+            $result['failed'][] = "$file_name (file content doesn't match its extension)";
+            continue;
+        }
+        if ($_FILES['attachments']['size'][$i] > 10485760) {
+            $result['failed'][] = "$file_name (exceeds 10MB)";
+            continue;
+        }
+
+        $new_file_name = time() . '_' . $claim_id . '_' . $i . '.' . $file_ext;
+        if (move_uploaded_file($_FILES['attachments']['tmp_name'][$i], $target_dir . $new_file_name)) {
+            $file_size = $_FILES['attachments']['size'][$i];
+            mysqli_query($conn, "INSERT INTO claim_attachments (claim_id, file_path, file_name, file_size)
+                VALUES ($claim_id, '$new_file_name', '$file_name', $file_size)");
+            $result['uploaded']++;
+        } else {
+            $result['failed'][] = "$file_name (could not save file on server)";
+        }
+    }
+    return $result;
+}
+
+// ========================================
 // HANDLE EDIT CLAIM (Load data for editing)
 // ========================================
 if (isset($_GET['edit'])) {
@@ -39,35 +119,12 @@ if (isset($_POST['update_claim'])) {
                          WHERE id = $claim_id";
         
         if (mysqli_query($conn, $update_query)) {
-            // Handle new attachments
-            if (isset($_FILES['attachments']) && !empty($_FILES['attachments']['name'][0])) {
-                $target_dir = "../uploads/claims/";
-                if (!is_dir($target_dir)) mkdir($target_dir, 0777, true);
-
-                $total_files = count($_FILES['attachments']['name']);
-                $att_ok_ext  = ['jpg','jpeg','png','pdf','doc','docx','zip','rar'];
-                $att_ok_mime = ['image/jpeg','image/png','application/pdf','application/msword',
-                                'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
-                                'application/zip','application/x-zip-compressed',
-                                'application/x-rar-compressed','application/vnd.rar'];
-                for ($i = 0; $i < $total_files; $i++) {
-                    if ($_FILES['attachments']['error'][$i] == 0) {
-                        $file_name = basename($_FILES['attachments']['name'][$i]);
-                        $file_ext  = strtolower(pathinfo($file_name, PATHINFO_EXTENSION));
-                        $att_finfo = finfo_open(FILEINFO_MIME_TYPE);
-                        $att_mime  = finfo_file($att_finfo, $_FILES['attachments']['tmp_name'][$i]);
-                        finfo_close($att_finfo);
-                        if (in_array($file_ext, $att_ok_ext) && in_array($att_mime, $att_ok_mime) && $_FILES['attachments']['size'][$i] <= 10485760) {
-                            $new_file_name = time() . '_' . $claim_id . '_' . $i . '.' . $file_ext;
-                            if (move_uploaded_file($_FILES['attachments']['tmp_name'][$i], $target_dir . $new_file_name)) {
-                                mysqli_query($conn, "INSERT INTO claim_attachments (claim_id, file_path, file_name, file_size)
-                                    VALUES ($claim_id, '$new_file_name', '$file_name', {$_FILES['attachments']['size'][$i]})");
-                            }
-                        }
-                    }
-                }
+            $att_result = handleClaimAttachments($conn, $claim_id);
+            if ($att_result['failed']) {
+                showToast('Claim updated, but ' . count($att_result['failed']) . ' attachment(s) failed: ' . implode('; ', $att_result['failed']), 'warning');
+            } else {
+                showToast('Claim updated successfully!');
             }
-            showToast('Claim updated successfully!');
             header("Location: claim.php");
             exit();
         }
@@ -129,41 +186,13 @@ if (isset($_POST['apply_claim'])) {
     
     if (mysqli_query($conn, $query)) {
         $claim_id = mysqli_insert_id($conn);
-        
-        $uploaded_files = 0;
-        $target_dir = "../uploads/claims/";
-        if (!is_dir($target_dir)) mkdir($target_dir, 0777, true);
-        
-        if (isset($_FILES['attachments']) && !empty($_FILES['attachments']['name'][0])) {
-            $total_files = count($_FILES['attachments']['name']);
-            $att_ok_ext  = ['jpg','jpeg','png','pdf','doc','docx','zip','rar'];
-            $att_ok_mime = ['image/jpeg','image/png','application/pdf','application/msword',
-                            'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
-                            'application/zip','application/x-zip-compressed',
-                            'application/x-rar-compressed','application/vnd.rar'];
-            for ($i = 0; $i < $total_files; $i++) {
-                if ($_FILES['attachments']['error'][$i] == 0) {
-                    $file_name = basename($_FILES['attachments']['name'][$i]);
-                    $file_size = $_FILES['attachments']['size'][$i];
-                    $file_ext  = strtolower(pathinfo($file_name, PATHINFO_EXTENSION));
-                    $att_finfo = finfo_open(FILEINFO_MIME_TYPE);
-                    $att_mime  = finfo_file($att_finfo, $_FILES['attachments']['tmp_name'][$i]);
-                    finfo_close($att_finfo);
-                    if (in_array($file_ext, $att_ok_ext) && in_array($att_mime, $att_ok_mime) && $file_size <= 10485760) {
-                        $new_file_name = time() . '_' . $claim_id . '_' . $i . '.' . $file_ext;
-                        $file_path = $target_dir . $new_file_name;
-                        if (move_uploaded_file($_FILES['attachments']['tmp_name'][$i], $file_path)) {
-                            $attach_query = "INSERT INTO claim_attachments (claim_id, file_path, file_name, file_size)
-                                             VALUES ($claim_id, '$new_file_name', '$file_name', $file_size)";
-                            mysqli_query($conn, $attach_query);
-                            $uploaded_files++;
-                        }
-                    }
-                }
-            }
+
+        $att_result = handleClaimAttachments($conn, $claim_id);
+        if ($att_result['failed']) {
+            showToast('Claim submitted, but ' . count($att_result['failed']) . ' attachment(s) failed: ' . implode('; ', $att_result['failed']), 'warning');
+        } else {
+            showToast('Claim submitted successfully!');
         }
-        
-        showToast('Claim submitted successfully!');
         header("Location: claim.php");
         exit();
     }

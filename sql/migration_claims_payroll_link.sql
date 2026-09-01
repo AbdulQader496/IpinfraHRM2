@@ -1,5 +1,3 @@
-USE hrmmanagement;
-
 -- reviewed_at was already in use by the app code but was never added via a tracked
 -- migration in this repo (it exists on production already) — included here so a
 -- fresh database stays in sync.

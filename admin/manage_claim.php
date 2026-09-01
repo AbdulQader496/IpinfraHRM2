@@ -57,9 +57,11 @@ $offset = ($page - 1) * $per_page;
 
 // Get paginated claims with attachment count (F055: fetch into array for N+1 fix)
 $claims_query = mysqli_query($conn, "SELECT c.*, e.name, e.employee_id, e.department,
-    (SELECT COUNT(*) FROM claim_attachments WHERE claim_id = c.id) as attachments_count
+    (SELECT COUNT(*) FROM claim_attachments WHERE claim_id = c.id) as attachments_count,
+    p.month_year as paid_month_year
     FROM claims c
     JOIN employees e ON c.employee_id = e.id
+    LEFT JOIN payroll p ON c.payroll_id = p.id
     $where
     ORDER BY CASE WHEN c.status='pending' THEN 1 ELSE 2 END, c.applied_at DESC
     LIMIT $offset, $per_page");
@@ -160,8 +162,10 @@ if (isset($_POST['claim_action']) && validateCsrfToken($_POST['csrf_token'] ?? '
 // ========================================
 if (isset($_POST['undo_claim']) && validateCsrfToken($_POST['csrf_token'] ?? '')) {
     $id = intval($_POST['undo_claim']);
-    $claim = mysqli_fetch_assoc(mysqli_query($conn, "SELECT id, status FROM claims WHERE id=$id AND status IN ('approved','rejected')"));
-    if ($claim) {
+    $claim = mysqli_fetch_assoc(mysqli_query($conn, "SELECT id, status, payroll_id FROM claims WHERE id=$id AND status IN ('approved','rejected')"));
+    if ($claim && $claim['payroll_id']) {
+        showToast('This claim was already paid out in a payroll run — delete or regenerate that payroll first.', 'warning');
+    } elseif ($claim) {
         mysqli_query($conn, "UPDATE claims SET status='pending', reviewed_at=NULL WHERE id=$id AND status='{$claim['status']}'");
         if (mysqli_affected_rows($conn) > 0) {
             logAction('update', 'Reverted ' . $claim['status'] . ' claim to pending', $id, 'claim');
@@ -526,6 +530,12 @@ if (isset($_POST['undo_claim']) && validateCsrfToken($_POST['csrf_token'] ?? '')
                             <?php if($row['reviewed_at'] && $row['reviewed_at'] != '0000-00-00 00:00:00'): ?>
                                 <p class="text-xs text-gray-400 mt-3">
                                     <i class="fas fa-clock mr-1"></i> Reviewed: <?php echo date('d M Y', strtotime($row['reviewed_at'])); ?>
+                                </p>
+                            <?php endif; ?>
+                            <?php if($row['status'] == 'approved'): ?>
+                                <p class="text-xs mt-1 <?php echo $row['paid_month_year'] ? 'text-green-600' : 'text-amber-600'; ?>">
+                                    <i class="fas fa-money-bill-wave mr-1"></i>
+                                    <?php echo $row['paid_month_year'] ? 'Paid in ' . date('M Y', strtotime($row['paid_month_year'] . '-01')) . ' payroll' : 'Awaiting next payroll run'; ?>
                                 </p>
                             <?php endif; ?>
                         </div>

@@ -135,17 +135,19 @@ while ($dr = mysqli_fetch_assoc($dept_result)) {
 $recent_employees = mysqli_query($conn, "SELECT * FROM employees WHERE role='employee' ORDER BY id DESC LIMIT 5");
 
 // ── Employee of the Month (admin-selected) ────────────────────────────
-@mysqli_query($conn, "CREATE TABLE IF NOT EXISTS employee_of_month (
-    id INT PRIMARY KEY AUTO_INCREMENT,
-    employee_id INT NOT NULL,
-    month_year VARCHAR(7) NOT NULL,
-    note VARCHAR(255),
-    selected_by INT NULL,
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    UNIQUE KEY uq_month (month_year),
-    FOREIGN KEY (employee_id) REFERENCES employees(id) ON DELETE CASCADE,
-    FOREIGN KEY (selected_by) REFERENCES employees(id) ON DELETE SET NULL
-)");
+try {
+    mysqli_query($conn, "CREATE TABLE IF NOT EXISTS employee_of_month (
+        id INT PRIMARY KEY AUTO_INCREMENT,
+        employee_id INT NOT NULL,
+        month_year VARCHAR(7) NOT NULL,
+        note VARCHAR(255),
+        selected_by INT NULL,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        UNIQUE KEY uq_month (month_year),
+        FOREIGN KEY (employee_id) REFERENCES employees(id) ON DELETE CASCADE,
+        FOREIGN KEY (selected_by) REFERENCES employees(id) ON DELETE SET NULL
+    )");
+} catch (Exception $e) { /* table already exists in an incompatible shape — ALTERs below still try to fix it up */ }
 try { mysqli_query($conn, "ALTER TABLE employee_of_month ADD COLUMN note VARCHAR(255)"); } catch (Exception $e) {}
 try { mysqli_query($conn, "ALTER TABLE employee_of_month ADD COLUMN selected_by INT NULL"); } catch (Exception $e) {}
 

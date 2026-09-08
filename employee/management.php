@@ -11,6 +11,9 @@ $active_tab = in_array($_GET['tab'] ?? '', $valid_tabs) ? $_GET['tab'] : 'docume
 
 // ── Resignation submit ──────────────────────────────────────────────────────
 if (isset($_POST['submit_resignation'])) {
+    if (!validateCsrfToken($_POST['csrf_token'] ?? '')) {
+        showToast('Security error.', 'error'); header('Location: management.php?tab=resignation'); exit();
+    }
     $last_working_date = mysqli_real_escape_string($conn, $_POST['last_working_date'] ?? '');
     $reason            = mysqli_real_escape_string($conn, $_POST['reason'] ?? '');
     $check = mysqli_query($conn, "SELECT id FROM employee_resignations WHERE employee_id=$user_id AND status='pending'");
@@ -26,14 +29,20 @@ if (isset($_POST['submit_resignation'])) {
 }
 
 // ── Cancel resignation ──────────────────────────────────────────────────────
-if (isset($_GET['cancel_resignation'])) {
-    $id = intval($_GET['cancel_resignation']);
-    mysqli_query($conn, "UPDATE employee_resignations SET status='cancelled' WHERE id=$id AND employee_id=$user_id");
+if (isset($_POST['cancel_resignation'])) {
+    if (!validateCsrfToken($_POST['csrf_token'] ?? '')) {
+        showToast('Security error.', 'error'); header('Location: management.php?tab=resignation'); exit();
+    }
+    $id = intval($_POST['cancel_resignation']);
+    mysqli_query($conn, "UPDATE employee_resignations SET status='cancelled' WHERE id=$id AND employee_id=$user_id AND status='pending'");
     showToast('Resignation request cancelled.', 'info'); header('Location: management.php?tab=resignation'); exit();
 }
 
 // ── Document upload ─────────────────────────────────────────────────────────
 if (isset($_POST['upload_document'])) {
+    if (!validateCsrfToken($_POST['csrf_token'] ?? '')) {
+        showToast('Security error.', 'error'); header('Location: management.php?tab=upload'); exit();
+    }
     $document_title = mysqli_real_escape_string($conn, $_POST['document_title'] ?? '');
     $document_type  = mysqli_real_escape_string($conn, $_POST['document_type']  ?? '');
     $notes          = mysqli_real_escape_string($conn, $_POST['notes']          ?? '');
@@ -156,8 +165,8 @@ $initials = strtoupper(substr($me['name'],0,1) . (strpos($me['name'],' ')!==fals
     <div class="fade-up relative overflow-hidden rounded-2xl bg-gradient-to-br from-indigo-600 via-blue-600 to-purple-700 text-white shadow-xl">
         <div class="absolute inset-0 opacity-10" style="background-image:radial-gradient(circle at 80% 20%,#fff 0%,transparent 50%)"></div>
         <div class="relative px-6 py-6 flex items-center gap-5 flex-wrap">
-            <?php if (!empty($me['profile_pic']) && file_exists('../uploads/profile_pics/' . $me['profile_pic'])): ?>
-                <img src="../uploads/profile_pics/<?php echo htmlspecialchars($me['profile_pic']); ?>" class="w-16 h-16 rounded-2xl object-cover ring-4 ring-white/30 shadow-lg">
+            <?php if (!empty($me['profile_pic']) && file_exists('../uploads/profiles/' . $me['profile_pic'])): ?>
+                <img src="../uploads/profiles/<?php echo htmlspecialchars($me['profile_pic']); ?>" class="w-16 h-16 rounded-2xl object-cover ring-4 ring-white/30 shadow-lg">
             <?php else: ?>
                 <div class="avatar w-16 h-16 bg-white/20 backdrop-blur text-white text-2xl ring-4 ring-white/20 rounded-2xl shadow-lg"><?php echo $initials; ?></div>
             <?php endif; ?>
@@ -307,6 +316,7 @@ $initials = strtoupper(substr($me['name'],0,1) . (strpos($me['name'],' ')!==fals
                 </div>
             </div>
             <form method="POST" enctype="multipart/form-data" class="space-y-4">
+                <?php echo csrfField(); ?>
                 <div>
                     <label class="block text-xs font-semibold text-gray-600 uppercase tracking-wide mb-1.5">Document Type</label>
                     <select name="document_type" required class="form-input">
@@ -394,11 +404,14 @@ $initials = strtoupper(substr($me['name'],0,1) . (strpos($me['name'],' ')!==fals
                         </div>
                         <?php endif; ?>
                         <div class="mt-4">
-                            <a href="?cancel_resignation=<?php echo $resignation['id']; ?>&tab=resignation"
-                               data-confirm="Cancel your resignation request? You will remain active." data-confirm-title="Cancel Resignation"
+                            <form method="POST" data-confirm="Cancel your resignation request? You will remain active." data-confirm-title="Cancel Resignation">
+                            <?php echo csrfField(); ?>
+                            <input type="hidden" name="cancel_resignation" value="<?php echo (int)$resignation['id']; ?>">
+                            <button type="submit"
                                class="inline-flex items-center gap-2 px-4 py-2 bg-red-50 hover:bg-red-100 text-red-600 rounded-xl text-sm font-semibold transition">
                                 <i class="fas fa-times-circle"></i>Cancel Resignation
-                            </a>
+                            </button>
+                            </form>
                         </div>
                     </div>
                 </div>
@@ -485,6 +498,7 @@ $initials = strtoupper(substr($me['name'],0,1) . (strpos($me['name'],' ')!==fals
                 <span>Please ensure you have reviewed your employment contract regarding notice period requirements before submitting.</span>
             </div>
             <form method="POST" id="resignForm" class="space-y-4">
+                <?php echo csrfField(); ?>
                 <div>
                     <label class="block text-xs font-semibold text-gray-600 uppercase tracking-wide mb-1.5">Last Working Day <span class="text-red-400">*</span></label>
                     <input type="date" name="last_working_date" required class="form-input"

@@ -37,8 +37,10 @@ $recent_payroll = mysqli_query($conn, "
 
 // Employee documents
 $emp_docs = [];
-$doc_res = @mysqli_query($conn, "SELECT * FROM employee_documents WHERE employee_id=$id ORDER BY created_at DESC");
-if ($doc_res) while ($d = mysqli_fetch_assoc($doc_res)) $emp_docs[] = $d;
+try {
+    $doc_res = mysqli_query($conn, "SELECT * FROM employee_documents WHERE employee_id=$id ORDER BY created_at DESC");
+    while ($d = mysqli_fetch_assoc($doc_res)) $emp_docs[] = $d;
+} catch (Exception $e) { /* table may not exist in this environment */ }
 
 // Employee warnings
 $emp_warnings = [];

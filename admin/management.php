@@ -68,14 +68,19 @@ if (isset($_POST['approve_resignation']) && validateCsrfToken($_POST['csrf_token
     $status = in_array($_POST['status'] ?? '', ['approved', 'rejected']) ? $_POST['status'] : 'rejected';
     $admin_notes = isset($_POST['admin_notes']) ? mysqli_real_escape_string($conn, $_POST['admin_notes']) : '';
 
-    mysqli_query($conn, "UPDATE employee_resignations SET status='$status', admin_notes='$admin_notes', approved_by={$_SESSION['user_id']}, approved_date=CURDATE() WHERE id=$id");
-
-    $res = mysqli_fetch_assoc(mysqli_query($conn, "SELECT employee_id FROM employee_resignations WHERE id=$id"));
-    if ($status == 'approved') {
-        mysqli_query($conn, "UPDATE employees SET employment_status='resigned' WHERE id={$res['employee_id']}");
-        addNotification($res['employee_id'], 'Resignation Approved', 'Your resignation has been approved.');
-    } else {
-        addNotification($res['employee_id'], 'Resignation Rejected', 'Your resignation request has been rejected. Reason: ' . $admin_notes);
+    // Atomic guard: only transition a still-pending request, and fetch the employee_id
+    // from the same pre-update state instead of assuming the row exists afterward.
+    $res = mysqli_fetch_assoc(mysqli_query($conn, "SELECT employee_id FROM employee_resignations WHERE id=$id AND status='pending'"));
+    if ($res) {
+        mysqli_query($conn, "UPDATE employee_resignations SET status='$status', admin_notes='$admin_notes', approved_by={$_SESSION['user_id']}, approved_date=CURDATE() WHERE id=$id AND status='pending'");
+        if (mysqli_affected_rows($conn) > 0) {
+            if ($status == 'approved') {
+                mysqli_query($conn, "UPDATE employees SET employment_status='resigned' WHERE id={$res['employee_id']}");
+                addNotification($res['employee_id'], 'Resignation Approved', 'Your resignation has been approved.');
+            } else {
+                addNotification($res['employee_id'], 'Resignation Rejected', 'Your resignation request has been rejected. Reason: ' . $admin_notes);
+            }
+        }
     }
     header('Location: management.php');
     exit();
@@ -85,6 +90,7 @@ if (isset($_POST['approve_resignation']) && validateCsrfToken($_POST['csrf_token
 // HANDLE TERMINATION
 // ========================================
 if (isset($_POST['send_termination'])) {
+    if (!validateCsrfToken($_POST['csrf_token'] ?? '')) { header('Location: management.php'); exit(); }
     $employee_id = intval($_POST['termination_employee_id']);
     $termination_date = $_POST['termination_date'];
     $effective_date = $_POST['effective_date'];
@@ -110,6 +116,7 @@ if (isset($_POST['send_termination'])) {
 // HANDLE DOCUMENT UPLOAD
 // ========================================
 if (isset($_POST['upload_document'])) {
+    if (!validateCsrfToken($_POST['csrf_token'] ?? '')) { header('Location: management.php'); exit(); }
     $employee_id = intval($_POST['employee_id']);
     $document_title = mysqli_real_escape_string($conn, $_POST['document_title']);
     $document_type = $_POST['document_type'];
@@ -374,6 +381,7 @@ $pending_count = mysqli_fetch_assoc(mysqli_query($conn, "SELECT COUNT(*) as coun
                     </div>
                 </div>
                 <form method="POST" id="termination-form" class="space-y-4">
+                    <?php echo csrfField(); ?>
                     <div>
                         <label class="block text-sm font-semibold text-gray-700 mb-2">Employee</label>
                         <select name="termination_employee_id" required class="w-full px-4 py-2.5 border-2 border-gray-200 rounded-xl focus:border-red-500 focus:outline-none">
@@ -593,6 +601,7 @@ $pending_count = mysqli_fetch_assoc(mysqli_query($conn, "SELECT COUNT(*) as coun
                 <div class="bg-green-100 border-l-4 border-green-500 text-green-700 p-3 rounded-xl mb-4"><?php echo htmlspecialchars($success, ENT_QUOTES, 'UTF-8'); ?></div>
             <?php endif; ?>
             <form method="POST" enctype="multipart/form-data" class="space-y-4">
+                <?php echo csrfField(); ?>
                 <div>
                     <label class="block text-sm font-semibold text-gray-700 mb-2">Employee</label>
                     <select name="employee_id" required class="w-full px-4 py-2.5 border-2 border-gray-200 rounded-xl focus:border-blue-500 focus:outline-none">

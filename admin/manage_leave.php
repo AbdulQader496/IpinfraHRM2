@@ -335,8 +335,13 @@ if (isset($_POST['adjust_leave'])) {
         header('Location: manage_leave.php?tab=balances'); exit();
     }
 
+    if (!in_array($adjust_type, ['annual', 'medical'], true)) {
+        showToast('Invalid leave type.', 'error');
+        header('Location: manage_leave.php?tab=balances'); exit();
+    }
+
     $field_map = ['annual_entitlement' => 'annual_leave_entitlement', 'annual_used' => 'used_annual_leave', 'medical_entitlement' => 'medical_leave_entitlement', 'medical_used' => 'used_medical_leave'];
-    $key = ($adjust_type == 'annual' ? 'annual' : 'medical') . '_' . $adjust_field;
+    $key = $adjust_type . '_' . $adjust_field;
     if (!isset($field_map[$key])) { showToast('Invalid field.', 'error'); header('Location: manage_leave.php?tab=balances'); exit(); }
     $field = $field_map[$key];
 

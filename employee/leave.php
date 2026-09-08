@@ -59,48 +59,48 @@ if (isset($_POST['update_leave'])) {
     if ($is_intern && !in_array($leave_type, ['medical', 'unpaid'])) {
         $error = 'Interns can only apply for Medical or Unpaid Leave.';
     } else {
-    // Check if leave is still pending
-    $check_query = mysqli_query($conn, "SELECT id FROM leaves WHERE id = $leave_id AND employee_id = $user_id AND status = 'pending'");
-    if (mysqli_num_rows($check_query) > 0) {
-        $update_query = "UPDATE leaves SET
-                            leave_type = '$leave_type',
-                            half_day = '$half_day',
-                            start_date = '$start_date',
-                            end_date = '$end_date',
-                            total_days = $total_days,
-                            reason = '$reason'
-                         WHERE id = $leave_id";
+    // Atomic guard: re-check status='pending' in the UPDATE itself, not just an earlier
+    // SELECT — otherwise an admin approving this exact request between the check and the
+    // write could have it flip to approved (with a balance deduction already applied to
+    // the original dates/type) right before this silently overwrites those fields anyway.
+    $update_query = "UPDATE leaves SET
+                        leave_type = '$leave_type',
+                        half_day = '$half_day',
+                        start_date = '$start_date',
+                        end_date = '$end_date',
+                        total_days = $total_days,
+                        reason = '$reason'
+                     WHERE id = $leave_id AND employee_id = $user_id AND status = 'pending'";
+    mysqli_query($conn, $update_query);
+    if (mysqli_affected_rows($conn) > 0) {
+        // Handle new attachment if uploaded
+        if (isset($_FILES['attachment']) && $_FILES['attachment']['error'] == 0) {
+            $target_dir = "../uploads/";
+            if (!is_dir($target_dir)) mkdir($target_dir, 0777, true);
 
-        if (mysqli_query($conn, $update_query)) {
-            // Handle new attachment if uploaded
-            if (isset($_FILES['attachment']) && $_FILES['attachment']['error'] == 0) {
-                $target_dir = "../uploads/";
-                if (!is_dir($target_dir)) mkdir($target_dir, 0777, true);
-
-                $att_ext      = strtolower(pathinfo($_FILES['attachment']['name'], PATHINFO_EXTENSION));
-                $att_finfo    = finfo_open(FILEINFO_MIME_TYPE);
-                $att_mime     = finfo_file($att_finfo, $_FILES['attachment']['tmp_name']);
-                finfo_close($att_finfo);
-                $att_ok_ext   = ['jpg','jpeg','png','gif','webp','pdf','doc','docx'];
-                $att_ok_mime  = ['image/jpeg','image/png','image/gif','image/webp','application/pdf',
-                                 'application/msword','application/vnd.openxmlformats-officedocument.wordprocessingml.document'];
-                if (in_array($att_ext, $att_ok_ext) && in_array($att_mime, $att_ok_mime) && $_FILES['attachment']['size'] <= 5242880) {
-                    // Delete old attachment
-                    $old_attach = mysqli_fetch_assoc(mysqli_query($conn, "SELECT attachment FROM leaves WHERE id = $leave_id"));
-                    if (!empty($old_attach['attachment']) && file_exists($target_dir . $old_attach['attachment'])) {
-                        unlink($target_dir . $old_attach['attachment']);
-                    }
-                    $attachment = bin2hex(random_bytes(8)) . '.' . $att_ext;
-                    move_uploaded_file($_FILES['attachment']['tmp_name'], $target_dir . $attachment);
-                    mysqli_query($conn, "UPDATE leaves SET attachment = '$attachment' WHERE id = $leave_id");
+            $att_ext      = strtolower(pathinfo($_FILES['attachment']['name'], PATHINFO_EXTENSION));
+            $att_finfo    = finfo_open(FILEINFO_MIME_TYPE);
+            $att_mime     = finfo_file($att_finfo, $_FILES['attachment']['tmp_name']);
+            finfo_close($att_finfo);
+            $att_ok_ext   = ['jpg','jpeg','png','gif','webp','pdf','doc','docx'];
+            $att_ok_mime  = ['image/jpeg','image/png','image/gif','image/webp','application/pdf',
+                             'application/msword','application/vnd.openxmlformats-officedocument.wordprocessingml.document'];
+            if (in_array($att_ext, $att_ok_ext) && in_array($att_mime, $att_ok_mime) && $_FILES['attachment']['size'] <= 5242880) {
+                // Delete old attachment
+                $old_attach = mysqli_fetch_assoc(mysqli_query($conn, "SELECT attachment FROM leaves WHERE id = $leave_id"));
+                if (!empty($old_attach['attachment']) && file_exists($target_dir . $old_attach['attachment'])) {
+                    unlink($target_dir . $old_attach['attachment']);
                 }
+                $attachment = bin2hex(random_bytes(8)) . '.' . $att_ext;
+                move_uploaded_file($_FILES['attachment']['tmp_name'], $target_dir . $attachment);
+                mysqli_query($conn, "UPDATE leaves SET attachment = '$attachment' WHERE id = $leave_id");
             }
-
-            showToast('Leave application updated successfully!');
-            header('Location: leave.php'); exit();
-        } else {
-            $error = 'Error updating leave application.';
         }
+
+        showToast('Leave application updated successfully!');
+        header('Location: leave.php'); exit();
+    } else {
+        $error = 'This leave request is no longer pending and can\'t be edited.';
     }
     } // end intern check
     } // end date validation check
@@ -115,21 +115,25 @@ if (isset($_POST['delete_leave'])) {
         header('Location: leave.php'); exit;
     }
     $leave_id = intval($_POST['leave_id'] ?? 0);
-    
-    // Check if leave is pending
-    $check_query = mysqli_query($conn, "SELECT attachment FROM leaves WHERE id = $leave_id AND employee_id = $user_id AND status = 'pending'");
-    if (mysqli_num_rows($check_query) > 0) {
-        $leave_data = mysqli_fetch_assoc($check_query);
-        // Delete attachment file if exists
-        if (!empty($leave_data['attachment'])) {
-            $file_path = "../uploads/" . $leave_data['attachment'];
-            if (file_exists($file_path)) {
-                unlink($file_path);
+
+    // Fetch the attachment path first (read-only), but the actual delete below re-checks
+    // status='pending' atomically so a concurrent admin approval can't have this delete an
+    // already-approved (balance-deducted) leave out from under it.
+    $leave_data = mysqli_fetch_assoc(mysqli_query($conn, "SELECT attachment FROM leaves WHERE id = $leave_id AND employee_id = $user_id AND status = 'pending'"));
+    if ($leave_data) {
+        mysqli_query($conn, "DELETE FROM leaves WHERE id = $leave_id AND employee_id = $user_id AND status = 'pending'");
+        if (mysqli_affected_rows($conn) > 0) {
+            if (!empty($leave_data['attachment'])) {
+                $file_path = "../uploads/" . $leave_data['attachment'];
+                if (file_exists($file_path)) {
+                    unlink($file_path);
+                }
             }
+            showToast('Leave application deleted.', 'info');
+            header('Location: leave.php'); exit();
+        } else {
+            $error = 'This leave request is no longer pending and can\'t be deleted.';
         }
-        mysqli_query($conn, "DELETE FROM leaves WHERE id = $leave_id");
-        showToast('Leave application deleted.', 'info');
-        header('Location: leave.php'); exit();
     } else {
         $error = 'Cannot delete leave that is already processed.';
     }

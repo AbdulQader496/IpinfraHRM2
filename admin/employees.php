@@ -166,9 +166,14 @@ if (isset($_POST['add_department'])) {
     }
     $dept_name = trim(mysqli_real_escape_string($conn, $_POST['dept_name'] ?? ''));
     if ($dept_name !== '') {
-        mysqli_query($conn, "CREATE TABLE IF NOT EXISTS departments (id INT PRIMARY KEY AUTO_INCREMENT, name VARCHAR(100) NOT NULL UNIQUE, created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP)");
+        // The real departments table (from sql/migration_missing_tables.sql) uses dept_name,
+        // not name — this CREATE TABLE is only a fallback for a fresh install missing the
+        // table entirely, so it must match that same column name or every INSERT/SELECT
+        // against the real table silently fails (caught below, or falls back to reading
+        // distinct employees.department instead of the managed list).
+        mysqli_query($conn, "CREATE TABLE IF NOT EXISTS departments (id INT PRIMARY KEY AUTO_INCREMENT, dept_name VARCHAR(100) NOT NULL UNIQUE, created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP)");
         try {
-            mysqli_query($conn, "INSERT IGNORE INTO departments (name) VALUES ('$dept_name')");
+            mysqli_query($conn, "INSERT IGNORE INTO departments (dept_name) VALUES ('$dept_name')");
         } catch (Exception $e) { /* ignore duplicate */ }
     }
     if ($is_ajax) { header('Content-Type: application/json'); echo json_encode(['success' => true, 'name' => $dept_name]); exit; }
@@ -180,9 +185,9 @@ if (isset($_POST['add_department'])) {
 // Fetch managed department list (falls back to distinct values from employees if table missing)
 $departments = [];
 try {
-    $dept_result = mysqli_query($conn, "SELECT name FROM departments ORDER BY name ASC");
+    $dept_result = mysqli_query($conn, "SELECT dept_name FROM departments WHERE dept_name IS NOT NULL ORDER BY dept_name ASC");
     while ($row = mysqli_fetch_assoc($dept_result)) {
-        $departments[] = $row['name'];
+        $departments[] = $row['dept_name'];
     }
 } catch (Exception $e) {
     // departments table not yet created — seed from existing employee data

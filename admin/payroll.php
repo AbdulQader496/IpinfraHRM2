@@ -35,20 +35,6 @@ if (isset($_POST['pay_regenerate']) && validateCsrfToken($_POST['csrf_token'] ??
     $regen_id = intval($_POST['pay_regenerate']);
     $regen_row = mysqli_fetch_assoc(mysqli_query($conn, "SELECT p.month_year, e.* FROM payroll p JOIN employees e ON p.employee_id=e.id WHERE p.id=$regen_id"));
     if ($regen_row) {
-        // Keep the same claims this payroll already paid out — don't re-sweep the
-        // unpaid-claims pool, which could pull in claims meant for a later run.
-        $claim_ids = [];
-        $approved_claims = 0.0;
-        $cids_res = mysqli_query($conn, "SELECT id, amount FROM claims WHERE payroll_id=$regen_id AND status='approved'");
-        while ($cr = mysqli_fetch_assoc($cids_res)) {
-            $claim_ids[] = (int)$cr['id'];
-            $approved_claims += (float)$cr['amount'];
-        }
-        if ($claim_ids) {
-            mysqli_query($conn, "UPDATE claims SET payroll_id=NULL WHERE id IN (" . implode(',', $claim_ids) . ")");
-        }
-
-        mysqli_query($conn, "DELETE FROM payroll WHERE id=$regen_id");
         $month_year  = $regen_row['month_year'];
         $month_start = $month_year . '-01';
         $month_end   = date('Y-m-t', strtotime($month_start));
@@ -76,17 +62,38 @@ if (isset($_POST['pay_regenerate']) && validateCsrfToken($_POST['csrf_token'] ??
 ), 0) as ud FROM leaves WHERE employee_id={$regen_row['id']} AND status='approved' AND leave_type $regen_leave_filter AND start_date <= '$month_end' AND end_date >= '$month_start'"));
         $unpaid_deduction = round($per_day * (float)$uq['ud'], 2);
 
-        $net = $basic - $epf_emp - $socso_emp - $eis - $pcb - $unpaid_deduction + $approved_claims;
-        $net = max(0, $net);
+        // Everything from unlinking the old payroll's claims through relinking them to the
+        // new one happens in a single transaction, with the claim rows locked (FOR UPDATE)
+        // for its whole duration — otherwise a concurrent Generate Payroll run for the same
+        // employee (a different month) could grab these claims while they briefly sit
+        // unlinked, baking their amount into two payroll rows at once.
+        mysqli_begin_transaction($conn);
         try {
+            $claim_ids = [];
+            $approved_claims = 0.0;
+            $cids_res = mysqli_query($conn, "SELECT id, amount FROM claims WHERE payroll_id=$regen_id AND status='approved' FOR UPDATE");
+            while ($cr = mysqli_fetch_assoc($cids_res)) {
+                $claim_ids[] = (int)$cr['id'];
+                $approved_claims += (float)$cr['amount'];
+            }
+            if ($claim_ids) {
+                mysqli_query($conn, "UPDATE claims SET payroll_id=NULL WHERE id IN (" . implode(',', $claim_ids) . ")");
+            }
+
+            mysqli_query($conn, "DELETE FROM payroll WHERE id=$regen_id");
+
+            $net = $basic - $epf_emp - $socso_emp - $eis - $pcb - $unpaid_deduction + $approved_claims;
+            $net = max(0, $net);
             mysqli_query($conn, "INSERT INTO payroll (employee_id,month_year,basic_salary,epf_employee,epf_employer,socso_employee,socso_employer,eis_employee,eis_employer,pcb,unpaid_deduction,approved_claims,net_salary) VALUES ({$regen_row['id']},'$month_year',$basic,$epf_emp,$epf_er,$socso_emp,$socso_er,$eis,$eis_er,$pcb,$unpaid_deduction,$approved_claims,$net)");
             $new_payroll_id = mysqli_insert_id($conn);
             if ($claim_ids) {
                 mysqli_query($conn, "UPDATE claims SET payroll_id=$new_payroll_id WHERE id IN (" . implode(',', $claim_ids) . ")");
             }
+            mysqli_commit($conn);
             logAction('generate', 'Regenerated payroll for ' . $regen_row['name'] . ' (' . $month_year . ')', $regen_row['id'], 'payroll');
             showToast('Payroll regenerated for ' . $regen_row['name'] . ' (' . $month_year . ').', 'success');
         } catch (Exception $e) {
+            mysqli_rollback($conn);
             showToast('Payroll for ' . $regen_row['name'] . ' (' . $month_year . ') was already regenerated elsewhere — please refresh.', 'warning');
         }
     }

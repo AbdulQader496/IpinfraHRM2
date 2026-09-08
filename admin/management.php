@@ -143,7 +143,6 @@ if (isset($_POST['upload_document'])) {
                         'application/vnd.ms-excel','application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'];
         $finfo = finfo_open(FILEINFO_MIME_TYPE);
         $doc_mime = finfo_file($finfo, $_FILES['document_file']['tmp_name']);
-        finfo_close($finfo);
         if (!in_array($file_extension, $allowed_ext) || !in_array($doc_mime, $allowed_doc)) {
             $error = 'Only PDF, image, Word, or Excel files are allowed.';
         }

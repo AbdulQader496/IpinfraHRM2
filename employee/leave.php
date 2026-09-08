@@ -82,7 +82,6 @@ if (isset($_POST['update_leave'])) {
             $att_ext      = strtolower(pathinfo($_FILES['attachment']['name'], PATHINFO_EXTENSION));
             $att_finfo    = finfo_open(FILEINFO_MIME_TYPE);
             $att_mime     = finfo_file($att_finfo, $_FILES['attachment']['tmp_name']);
-            finfo_close($att_finfo);
             $att_ok_ext   = ['jpg','jpeg','png','gif','webp','pdf','doc','docx'];
             $att_ok_mime  = ['image/jpeg','image/png','image/gif','image/webp','application/pdf',
                              'application/msword','application/vnd.openxmlformats-officedocument.wordprocessingml.document'];
@@ -208,7 +207,6 @@ if (isset($_POST['apply_leave']) && !$edit_mode) {
                 $att_ext     = strtolower(pathinfo($_FILES['attachment']['name'], PATHINFO_EXTENSION));
                 $att_finfo   = finfo_open(FILEINFO_MIME_TYPE);
                 $att_mime    = finfo_file($att_finfo, $_FILES['attachment']['tmp_name']);
-                finfo_close($att_finfo);
                 $att_ok_ext  = ['jpg','jpeg','png','gif','webp','pdf','doc','docx'];
                 $att_ok_mime = ['image/jpeg','image/png','image/gif','image/webp','application/pdf',
                                 'application/msword','application/vnd.openxmlformats-officedocument.wordprocessingml.document'];

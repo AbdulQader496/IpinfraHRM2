@@ -27,7 +27,6 @@ if (isset($_POST['upload_photo'])) {
     $file_ext  = strtolower(pathinfo($_FILES['photo']['name'], PATHINFO_EXTENSION));
     $finfo     = finfo_open(FILEINFO_MIME_TYPE);
     $mime      = finfo_file($finfo, $_FILES['photo']['tmp_name']);
-    finfo_close($finfo);
     if (!in_array($file_ext, $allowed_ext) || !in_array($mime, $allowed_mime)) {
         showToast('Invalid file type. Only JPG, PNG, GIF, WEBP allowed.', 'error'); header('Location: gallery.php'); exit();
     }

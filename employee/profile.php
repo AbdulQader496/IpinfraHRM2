@@ -33,7 +33,6 @@ if (isset($_POST['update'])) {
         $pic_ext  = strtolower(pathinfo($_FILES['profile_pic']['name'], PATHINFO_EXTENSION));
         $finfo    = finfo_open(FILEINFO_MIME_TYPE);
         $real_mime = finfo_file($finfo, $_FILES['profile_pic']['tmp_name']);
-        finfo_close($finfo);
         if (!in_array($pic_ext, $allowed_ext) || !in_array($real_mime, $allowed_mime)) {
             showToast('Only JPG, PNG, GIF, or WebP images are allowed.', 'error');
             header('Location: profile.php'); exit();

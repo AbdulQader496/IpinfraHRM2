@@ -35,7 +35,6 @@ if (isset($_POST['add_employee'])) {
         $pic_ext  = strtolower(pathinfo($_FILES['profile_pic']['name'], PATHINFO_EXTENSION));
         $finfo    = finfo_open(FILEINFO_MIME_TYPE);
         $real_mime = finfo_file($finfo, $_FILES['profile_pic']['tmp_name']);
-        finfo_close($finfo);
         if (in_array($pic_ext, $allowed_ext) && in_array($real_mime, $allowed_mime) && $_FILES['profile_pic']['size'] <= 2097152) {
             $target_dir = "../uploads/profiles/";
             if (!is_dir($target_dir)) mkdir($target_dir, 0777, true);
@@ -83,7 +82,6 @@ if (isset($_POST['update_employee'])) {
         $pic_ext  = strtolower(pathinfo($_FILES['profile_pic']['name'], PATHINFO_EXTENSION));
         $finfo    = finfo_open(FILEINFO_MIME_TYPE);
         $real_mime = finfo_file($finfo, $_FILES['profile_pic']['tmp_name']);
-        finfo_close($finfo);
         if (in_array($pic_ext, $allowed_ext) && in_array($real_mime, $allowed_mime) && $_FILES['profile_pic']['size'] <= 2097152) {
             $target_dir = "../uploads/profiles/";
             if (!is_dir($target_dir)) mkdir($target_dir, 0777, true);

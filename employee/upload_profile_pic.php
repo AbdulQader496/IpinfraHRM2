@@ -25,7 +25,6 @@ if (isset($_POST['update_profile_pic']) && isset($_FILES['profile_pic']) && $_FI
     $file_extension   = strtolower(pathinfo($_FILES['profile_pic']['name'], PATHINFO_EXTENSION));
     $finfo = finfo_open(FILEINFO_MIME_TYPE);
     $mime  = finfo_file($finfo, $_FILES['profile_pic']['tmp_name']);
-    finfo_close($finfo);
 
     if (!in_array($file_extension, $allowed_img_ext) || !in_array($mime, $allowed_img_mime)) {
         echo json_encode(['success' => false, 'error' => 'Invalid file type. Only JPG, PNG, GIF, WEBP allowed.']);

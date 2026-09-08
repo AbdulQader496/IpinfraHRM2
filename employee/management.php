@@ -58,7 +58,6 @@ if (isset($_POST['upload_document'])) {
     $file_ext  = strtolower(pathinfo($file_name, PATHINFO_EXTENSION));
     $finfo     = finfo_open(FILEINFO_MIME_TYPE);
     $mime      = ($finfo && isset($_FILES['document_file']['tmp_name'])) ? finfo_file($finfo, $_FILES['document_file']['tmp_name']) : '';
-    if ($finfo) finfo_close($finfo);
     $file_path = bin2hex(random_bytes(8)) . '.' . $file_ext;
     if (!in_array($file_ext, $allowed_ext) || !in_array($mime, $allowed_mime)) {
         showToast('Invalid file type. Only PDF, DOC, DOCX, JPG, PNG, XLS, XLSX are allowed.', 'error'); header('Location: management.php?tab=upload'); exit();

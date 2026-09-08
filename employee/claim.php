@@ -8,6 +8,7 @@ require_once '../includes/toast_fn.php';
 $user_id = intval($_SESSION['user_id']);
 $edit_mode = false;
 $edit_claim_id = 0;
+$edit_claim = null;
 
 // ========================================
 // SHARED ATTACHMENT UPLOAD HANDLER
@@ -17,7 +18,7 @@ $edit_claim_id = 0;
 // Previously all failures (oversized file, disallowed type, missing fileinfo extension,
 // unwritable folder) were skipped silently, so a claim could "save" with attachments
 // quietly missing. This now reports every failure back to the user.
-function handleClaimAttachments($conn, $claim_id) {
+function handleClaimAttachments(mysqli $conn, int $claim_id) {
     $result = ['uploaded' => 0, 'failed' => []];
     if (!isset($_FILES['attachments']) || empty($_FILES['attachments']['name'][0])) {
         return $result;
@@ -63,7 +64,6 @@ function handleClaimAttachments($conn, $claim_id) {
             $att_finfo = finfo_open(FILEINFO_MIME_TYPE);
             if ($att_finfo) {
                 $att_mime = finfo_file($att_finfo, $_FILES['attachments']['tmp_name'][$i]);
-                finfo_close($att_finfo);
                 $mime_ok = in_array($att_mime, $att_ok_mime);
             }
         }

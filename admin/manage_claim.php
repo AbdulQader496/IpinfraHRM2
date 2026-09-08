@@ -155,7 +155,10 @@ if (isset($_POST['undo_claim']) && validateCsrfToken($_POST['csrf_token'] ?? '')
     if ($claim && $claim['payroll_id']) {
         showToast('This claim was already paid out in a payroll run — delete or regenerate that payroll first.', 'warning');
     } elseif ($claim) {
-        mysqli_query($conn, "UPDATE claims SET status='pending', reviewed_at=NULL WHERE id=$id AND status='{$claim['status']}'");
+        // Re-check payroll_id IS NULL in the UPDATE itself too — otherwise a payroll run
+        // sweeping this exact claim in the gap between the SELECT above and this UPDATE
+        // could have it paid out, and this would still revert it to pending regardless.
+        mysqli_query($conn, "UPDATE claims SET status='pending', reviewed_at=NULL WHERE id=$id AND status='{$claim['status']}' AND payroll_id IS NULL");
         if (mysqli_affected_rows($conn) > 0) {
             logAction('update', 'Reverted ' . $claim['status'] . ' claim to pending', $id, 'claim');
             showToast('Claim reverted to pending.', 'success');

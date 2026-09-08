@@ -2,6 +2,7 @@
 require_once 'auth.php';
 redirectIfNotLoggedIn();
 require_once 'db.php';
+/** @var mysqli $conn */
 
 header('Content-Type: application/json');
 header('Cache-Control: no-cache');

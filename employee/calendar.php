@@ -2,6 +2,7 @@
 require_once '../includes/auth.php';
 redirectIfNotLoggedIn();
 require_once '../includes/db.php';
+/** @var mysqli $conn */
 
 $user_id = $_SESSION['user_id'];
 $year  = isset($_GET['year'])  ? intval($_GET['year'])  : (int)date('Y');

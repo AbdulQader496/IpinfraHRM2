@@ -1,6 +1,7 @@
 <?php
 session_start();
 require_once 'includes/db.php';
+/** @var mysqli $conn */
 
 // Check if user has remember me cookie
 if (!isset($_SESSION['user_id']) && isset($_COOKIE['remember_token'])) {

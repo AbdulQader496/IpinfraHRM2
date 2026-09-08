@@ -1,5 +1,6 @@
 <?php
 require_once 'db.php';
+/** @var mysqli $conn */
 
 // Malaysia Statutory Calculations (ONLY for Malaysian employees)
 function calculateEPF($salary, $is_employee = true, $is_malaysian = true) {

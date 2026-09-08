@@ -2,6 +2,7 @@
 require_once '../includes/auth.php';
 redirectIfNotAdmin();
 require_once '../includes/db.php';
+/** @var mysqli $conn */
 
 $id = isset($_GET['id']) ? intval($_GET['id']) : 0;
 if (!$id) { header('Location: employees.php'); exit(); }

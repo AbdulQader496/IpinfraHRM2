@@ -2,6 +2,7 @@
 require_once '../includes/auth.php';
 redirectIfNotAdmin();
 require_once '../includes/db.php';
+/** @var mysqli $conn */
 
 if (isset($_POST['add_holiday'])) {
     if (!validateCsrfToken($_POST['csrf_token'] ?? '')) { header('Location: holidays.php'); exit; }

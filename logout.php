@@ -1,6 +1,7 @@
 <?php
 session_start();
 require_once 'includes/db.php';
+/** @var mysqli $conn */
 require_once 'includes/functions.php';
 
 // Clear remember me token from database

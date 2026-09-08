@@ -2,6 +2,7 @@
 require_once '../includes/auth.php';
 redirectIfNotLoggedIn();
 require_once '../includes/db.php';
+/** @var mysqli $conn */
 $id        = (int)($_GET['id'] ?? 0);
 $viewer_id = intval($_SESSION['user_id']);
 $is_admin  = ($_SESSION['role'] ?? '') === 'admin';

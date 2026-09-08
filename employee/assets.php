@@ -2,6 +2,7 @@
 require_once '../includes/auth.php';
 redirectIfNotLoggedIn();
 require_once '../includes/db.php';
+/** @var mysqli $conn */
 require_once '../includes/toast_fn.php';
 
 $user_id = intval($_SESSION['user_id']);

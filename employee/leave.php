@@ -82,10 +82,15 @@ if (isset($_POST['update_leave'])) {
             $att_ext      = strtolower(pathinfo($_FILES['attachment']['name'], PATHINFO_EXTENSION));
             $att_finfo    = finfo_open(FILEINFO_MIME_TYPE);
             $att_mime     = finfo_file($att_finfo, $_FILES['attachment']['tmp_name']);
-            $att_ok_ext   = ['jpg','jpeg','png','gif','webp','pdf','doc','docx'];
-            $att_ok_mime  = ['image/jpeg','image/png','image/gif','image/webp','application/pdf',
+            // heic/heif (default iPhone photo format) added — was the most common real-world
+            // cause of "can't upload my MC photo". Older libmagic databases sometimes don't
+            // recognize these and report generic application/octet-stream instead.
+            $att_ok_ext   = ['jpg','jpeg','png','gif','webp','heic','heif','pdf','doc','docx'];
+            $att_ok_mime  = ['image/jpeg','image/png','image/gif','image/webp','image/heic','image/heif','application/pdf',
                              'application/msword','application/vnd.openxmlformats-officedocument.wordprocessingml.document'];
-            if (in_array($att_ext, $att_ok_ext) && in_array($att_mime, $att_ok_mime) && $_FILES['attachment']['size'] <= 5242880) {
+            $att_mime_ok  = in_array($att_mime, $att_ok_mime)
+                || (in_array($att_ext, ['heic','heif']) && $att_mime === 'application/octet-stream');
+            if (in_array($att_ext, $att_ok_ext) && $att_mime_ok && $_FILES['attachment']['size'] <= 5242880) {
                 // Delete old attachment
                 $old_attach = mysqli_fetch_assoc(mysqli_query($conn, "SELECT attachment FROM leaves WHERE id = $leave_id"));
                 if (!empty($old_attach['attachment']) && file_exists($target_dir . $old_attach['attachment'])) {
@@ -207,11 +212,16 @@ if (isset($_POST['apply_leave']) && !$edit_mode) {
                 $att_ext     = strtolower(pathinfo($_FILES['attachment']['name'], PATHINFO_EXTENSION));
                 $att_finfo   = finfo_open(FILEINFO_MIME_TYPE);
                 $att_mime    = finfo_file($att_finfo, $_FILES['attachment']['tmp_name']);
-                $att_ok_ext  = ['jpg','jpeg','png','gif','webp','pdf','doc','docx'];
-                $att_ok_mime = ['image/jpeg','image/png','image/gif','image/webp','application/pdf',
+                // heic/heif (default iPhone photo format) added — was the most common real-world
+                // cause of "can't upload my MC photo". Older libmagic databases sometimes don't
+                // recognize these and report generic application/octet-stream instead.
+                $att_ok_ext  = ['jpg','jpeg','png','gif','webp','heic','heif','pdf','doc','docx'];
+                $att_ok_mime = ['image/jpeg','image/png','image/gif','image/webp','image/heic','image/heif','application/pdf',
                                 'application/msword','application/vnd.openxmlformats-officedocument.wordprocessingml.document'];
-                if (!in_array($att_ext, $att_ok_ext) || !in_array($att_mime, $att_ok_mime)) {
-                    $message = 'Invalid attachment type. Only JPG, PNG, PDF, DOC, DOCX allowed.';
+                $att_mime_ok = in_array($att_mime, $att_ok_mime)
+                    || (in_array($att_ext, ['heic','heif']) && $att_mime === 'application/octet-stream');
+                if (!in_array($att_ext, $att_ok_ext) || !$att_mime_ok) {
+                    $message = 'Invalid attachment type. Only JPG, PNG, GIF, WEBP, HEIC, PDF, DOC, DOCX allowed.';
                 } elseif ($_FILES['attachment']['size'] > 5 * 1024 * 1024) {
                     $message = 'Attachment must be under 5 MB.';
                 } else {

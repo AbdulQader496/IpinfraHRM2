@@ -28,11 +28,19 @@ function handleClaimAttachments(mysqli $conn, int $claim_id) {
     if (!is_dir($target_dir)) { @mkdir($target_dir, 0777, true); }
     $dir_ok = is_dir($target_dir) && is_writable($target_dir);
 
-    $att_ok_ext  = ['jpg','jpeg','png','pdf','doc','docx','zip','rar'];
-    $att_ok_mime = ['image/jpeg','image/png','application/pdf','application/msword',
+    // jpg/png/pdf/doc/zip/rar only rejected iPhone photos, which default to HEIC — the
+    // most common real-world "can't upload my receipt photo" complaint. Added gif/webp
+    // (already allowed for leave attachments, just missing here) and heic/heif.
+    $att_ok_ext  = ['jpg','jpeg','png','gif','webp','heic','heif','pdf','doc','docx','zip','rar'];
+    $att_ok_mime = ['image/jpeg','image/png','image/gif','image/webp','image/heic','image/heif',
+                    'application/pdf','application/msword',
                     'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
                     'application/zip','application/x-zip-compressed',
                     'application/x-rar-compressed','application/vnd.rar','application/x-rar'];
+    // Older libmagic databases on some servers don't recognize HEIC/HEIF and report the
+    // generic application/octet-stream instead — accept that specifically for these two
+    // extensions rather than rejecting every HEIC photo whenever that's the case.
+    $att_ok_mime_by_ext = ['heic' => 'application/octet-stream', 'heif' => 'application/octet-stream'];
     $fileinfo_available = function_exists('finfo_open');
 
     $total_files = count($_FILES['attachments']['name']);
@@ -64,7 +72,8 @@ function handleClaimAttachments(mysqli $conn, int $claim_id) {
             $att_finfo = finfo_open(FILEINFO_MIME_TYPE);
             if ($att_finfo) {
                 $att_mime = finfo_file($att_finfo, $_FILES['attachments']['tmp_name'][$i]);
-                $mime_ok = in_array($att_mime, $att_ok_mime);
+                $mime_ok = in_array($att_mime, $att_ok_mime)
+                    || (isset($att_ok_mime_by_ext[$file_ext]) && $att_mime === $att_ok_mime_by_ext[$file_ext]);
             }
         }
         if (!$mime_ok) {

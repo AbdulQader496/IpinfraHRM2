@@ -13,6 +13,9 @@ if (isset($_POST['bulk_delete']) && validateCsrfToken($_POST['csrf_token'] ?? ''
     $ids = $_POST['delete_ids'] ?? [];
     if (!empty($ids)) {
         $safe_ids = implode(',', array_map('intval', $ids));
+        // Same unlink-before-delete as the single-record delete above — otherwise these
+        // claims are left pointing at payroll_ids that no longer exist.
+        mysqli_query($conn, "UPDATE claims SET payroll_id = NULL WHERE payroll_id IN ($safe_ids)");
         mysqli_query($conn, "DELETE FROM payroll WHERE id IN ($safe_ids)");
         logAction('delete', count($ids) . ' payroll record(s) bulk deleted', null, 'payroll');
         showToast(count($ids) . ' payroll record(s) deleted.', 'info');
@@ -24,6 +27,9 @@ if (isset($_POST['bulk_delete']) && validateCsrfToken($_POST['csrf_token'] ?? ''
 // Handle Delete Payroll Record
 if (isset($_POST['pay_delete']) && validateCsrfToken($_POST['csrf_token'] ?? '')) {
     $del_id = intval($_POST['pay_delete']);
+    // Unlink any claims paid out by this record first — otherwise they're left pointing at
+    // a payroll_id that no longer exists and can never be picked up by a future run again.
+    mysqli_query($conn, "UPDATE claims SET payroll_id = NULL WHERE payroll_id = $del_id");
     mysqli_query($conn, "DELETE FROM payroll WHERE id = $del_id");
     logAction('delete', 'Deleted payroll record', $del_id, 'payroll');
     showToast('Payroll record deleted.', 'info');

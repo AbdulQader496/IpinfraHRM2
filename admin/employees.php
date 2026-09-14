@@ -2,11 +2,15 @@
 require_once '../includes/auth.php';
 redirectIfNotAdmin();
 require_once '../includes/db.php';
+/** @var mysqli $conn */
 require_once '../includes/functions.php';
 require_once '../includes/toast_fn.php';
 
 // Handle Add Employee
 if (isset($_POST['add_employee'])) {
+    if (!validateCsrfToken($_POST['csrf_token'] ?? '')) {
+        showToast('Security error.', 'error'); header('Location: employees.php'); exit();
+    }
     $employee_id = mysqli_real_escape_string($conn, $_POST['employee_id']);
     $name = mysqli_real_escape_string($conn, $_POST['name']);
     $ic_number = mysqli_real_escape_string($conn, $_POST['ic_number']);
@@ -34,7 +38,6 @@ if (isset($_POST['add_employee'])) {
         $pic_ext  = strtolower(pathinfo($_FILES['profile_pic']['name'], PATHINFO_EXTENSION));
         $finfo    = finfo_open(FILEINFO_MIME_TYPE);
         $real_mime = finfo_file($finfo, $_FILES['profile_pic']['tmp_name']);
-        finfo_close($finfo);
         if (in_array($pic_ext, $allowed_ext) && in_array($real_mime, $allowed_mime) && $_FILES['profile_pic']['size'] <= 2097152) {
             $target_dir = "../uploads/profiles/";
             if (!is_dir($target_dir)) mkdir($target_dir, 0777, true);
@@ -56,6 +59,9 @@ if (isset($_POST['add_employee'])) {
 
 // Handle Update Employee
 if (isset($_POST['update_employee'])) {
+    if (!validateCsrfToken($_POST['csrf_token'] ?? '')) {
+        showToast('Security error.', 'error'); header('Location: employees.php'); exit();
+    }
     $id = intval($_POST['emp_id']);
     $name = mysqli_real_escape_string($conn, $_POST['name']);
     $ic_number = mysqli_real_escape_string($conn, $_POST['ic_number']);
@@ -82,7 +88,6 @@ if (isset($_POST['update_employee'])) {
         $pic_ext  = strtolower(pathinfo($_FILES['profile_pic']['name'], PATHINFO_EXTENSION));
         $finfo    = finfo_open(FILEINFO_MIME_TYPE);
         $real_mime = finfo_file($finfo, $_FILES['profile_pic']['tmp_name']);
-        finfo_close($finfo);
         if (in_array($pic_ext, $allowed_ext) && in_array($real_mime, $allowed_mime) && $_FILES['profile_pic']['size'] <= 2097152) {
             $target_dir = "../uploads/profiles/";
             if (!is_dir($target_dir)) mkdir($target_dir, 0777, true);
@@ -92,15 +97,30 @@ if (isset($_POST['update_employee'])) {
     }
     
     $is_subject = ($nationality == 'Malaysian') ? 1 : 0;
-    
-    $query = "UPDATE employees SET 
-                name='$name', 
+
+    // Optional password reset — only touched if the admin actually typed a new one;
+    // left blank, the employee's existing password is untouched.
+    $new_password = trim($_POST['new_password'] ?? '');
+    $password_sql = '';
+    $password_changed = false;
+    if ($new_password !== '') {
+        if (strlen($new_password) < 6) {
+            showToast('New password must be at least 6 characters — employee details were NOT saved.', 'error');
+            header('Location: employees.php'); exit();
+        }
+        $hashed = mysqli_real_escape_string($conn, password_hash($new_password, PASSWORD_DEFAULT));
+        $password_sql = ", password='$hashed'";
+        $password_changed = true;
+    }
+
+    $query = "UPDATE employees SET
+                name='$name',
                 ic_number='$ic_number',
                 passport_no='$passport_no',
                 nationality='$nationality',
-                email='$email', 
-                department='$department', 
-                position='$position', 
+                email='$email',
+                department='$department',
+                position='$position',
                 basic_salary='$basic_salary',
                 phone='$phone',
                 bank_name='$bank_name',
@@ -112,9 +132,18 @@ if (isset($_POST['update_employee'])) {
                 profile_pic='$profile_pic',
                 is_subject_to_statutory='$is_subject',
                 employee_type='$employee_type'
+                $password_sql
               WHERE id=$id";
     mysqli_query($conn, $query);
-    showToast('Employee updated successfully!');
+    if ($password_changed) {
+        // Reset the remember-me token too — otherwise a device that was already logged in
+        // via that cookie would keep bypassing the new password.
+        mysqli_query($conn, "UPDATE employees SET remember_token = NULL WHERE id=$id");
+        logAction('update', 'Reset password for employee', $id, 'employee');
+        showToast('Employee updated and password reset successfully!');
+    } else {
+        showToast('Employee updated successfully!');
+    }
     header('Location: employees.php');
     exit();
 }
@@ -167,6 +196,11 @@ if (isset($_POST['add_department'])) {
     }
     $dept_name = trim(mysqli_real_escape_string($conn, $_POST['dept_name'] ?? ''));
     if ($dept_name !== '') {
+        // The real departments table (from sql/migration_missing_tables.sql) uses dept_name,
+        // not name — this CREATE TABLE is only a fallback for a fresh install missing the
+        // table entirely, so it must match that same column name or every INSERT/SELECT
+        // against the real table silently fails (caught below, or falls back to reading
+        // distinct employees.department instead of the managed list).
         mysqli_query($conn, "CREATE TABLE IF NOT EXISTS departments (id INT PRIMARY KEY AUTO_INCREMENT, dept_name VARCHAR(100) NOT NULL UNIQUE, created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP)");
         try {
             mysqli_query($conn, "INSERT IGNORE INTO departments (dept_name) VALUES ('$dept_name')");
@@ -181,7 +215,7 @@ if (isset($_POST['add_department'])) {
 // Fetch managed department list (falls back to distinct values from employees if table missing)
 $departments = [];
 try {
-    $dept_result = mysqli_query($conn, "SELECT dept_name FROM departments ORDER BY dept_name ASC");
+    $dept_result = mysqli_query($conn, "SELECT dept_name FROM departments WHERE dept_name IS NOT NULL ORDER BY dept_name ASC");
     while ($row = mysqli_fetch_assoc($dept_result)) {
         $departments[] = $row['dept_name'];
     }
@@ -776,6 +810,7 @@ $employees = mysqli_query($conn, "SELECT * FROM employees WHERE role='employee' 
             </button>
         </div>
         <form method="POST" class="p-5 space-y-4 max-h-[70vh] overflow-y-auto" enctype="multipart/form-data">
+            <?php echo csrfField(); ?>
             <!-- Profile Picture -->
             <div class="text-center mb-4">
                 <div class="relative inline-block">
@@ -911,6 +946,7 @@ $employees = mysqli_query($conn, "SELECT * FROM employees WHERE role='employee' 
                 </button>
             </div>
             <form method="POST" class="p-5 space-y-4 max-h-[70vh] overflow-y-auto" enctype="multipart/form-data" id="editForm">
+                <?php echo csrfField(); ?>
                 <input type="hidden" name="emp_id" id="edit_id">
                 <input type="hidden" name="existing_profile_pic" id="edit_existing_profile_pic">
                 <input type="hidden" name="employee_id" id="edit_employee_id">
@@ -988,7 +1024,18 @@ $employees = mysqli_query($conn, "SELECT * FROM employees WHERE role='employee' 
                         <input type="number" name="medical_leave_entitlement" id="edit_medical_leave" placeholder="Medical Leave" class="w-full px-4 py-3 border border-gray-200 rounded-xl">
                     </div>
                 </div>
-                
+
+                <div class="border-t border-gray-100 pt-4">
+                    <h3 class="font-semibold text-gray-700 mb-3">Reset Password <span class="text-xs font-normal text-gray-400">(optional)</span></h3>
+                    <div class="relative">
+                        <input type="password" name="new_password" id="edit_new_password" placeholder="Leave blank to keep current password" minlength="6" autocomplete="new-password" class="w-full px-4 py-3 pr-12 border border-gray-200 rounded-xl">
+                        <button type="button" onclick="toggleEditPasswordVisibility()" class="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600">
+                            <i class="fas fa-eye" id="edit_new_password_icon"></i>
+                        </button>
+                    </div>
+                    <p class="text-xs text-gray-400 mt-1">Only fill this in if you want to set a new password for this employee. At least 6 characters.</p>
+                </div>
+
                 <div class="border-t border-gray-100 pt-4">
                     <h3 class="font-semibold text-gray-700 mb-3">Employment Type & Status</h3>
                     <div class="mb-3">
@@ -1067,6 +1114,14 @@ $employees = mysqli_query($conn, "SELECT * FROM employees WHERE role='employee' 
             }
         }
         
+        function toggleEditPasswordVisibility() {
+            const field = document.getElementById('edit_new_password');
+            const icon  = document.getElementById('edit_new_password_icon');
+            const showing = field.type === 'text';
+            field.type = showing ? 'password' : 'text';
+            icon.className = showing ? 'fas fa-eye' : 'fas fa-eye-slash';
+        }
+
         function toggleStatutoryFields(type) {
             const nationality = document.getElementById(`${type}_nationality`).value;
             const icField = document.getElementById(`${type}_ic_field`);
@@ -1193,7 +1248,12 @@ $employees = mysqli_query($conn, "SELECT * FROM employees WHERE role='employee' 
             document.getElementById('edit_employee_type').value = employee.employee_type || 'regular';
             document.getElementById('edit_join_date').value = employee.join_date || '';
             document.getElementById('edit_existing_profile_pic').value = employee.profile_pic || '';
-            
+            // Never pre-fill or carry over a password value between opens — blank always
+            // means "don't change it" server-side.
+            document.getElementById('edit_new_password').value = '';
+            document.getElementById('edit_new_password').type = 'password';
+            document.getElementById('edit_new_password_icon').className = 'fas fa-eye';
+
             // Set profile preview
             if (employee.profile_pic) {
                 const preview = document.getElementById('edit_profile_preview');

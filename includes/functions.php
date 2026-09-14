@@ -1,15 +1,16 @@
 <?php
 require_once 'db.php';
+/** @var mysqli $conn */
 
 // Malaysia Statutory Calculations (ONLY for Malaysian employees)
-function calculateEPF($salary, $is_employee = true, $is_malaysian = true) {
+function calculateEPF(float $salary, bool $is_employee = true, bool $is_malaysian = true) {
     if (!$is_malaysian) return 0;
     if ($is_employee) return round($salary * 0.11, 2);
     // Employer rate: 13% for wages ≤ RM5,000; 12% for wages > RM5,000 (EPF Third Schedule)
     return $salary <= 5000 ? round($salary * 0.13, 2) : round($salary * 0.12, 2);
 }
 
-function calculateSOCSO($salary, $is_employee = true, $is_malaysian = true) {
+function calculateSOCSO(float $salary, bool $is_employee = true, bool $is_malaysian = true) {
     if (!$is_malaysian) return 0;
     $insurable = min($salary, 5000);
     if ($is_employee) {
@@ -19,24 +20,24 @@ function calculateSOCSO($salary, $is_employee = true, $is_malaysian = true) {
     }
 }
 
-function calculateEIS($salary, $is_malaysian = true) {
+function calculateEIS(float $salary, bool $is_malaysian = true) {
     if (!$is_malaysian) return 0;
     $insurable = min($salary, 4000);
     return round($insurable * 0.002, 2);
 }
 
-function calculatePCB($salary, $is_malaysian = true) {
+function calculatePCB(float $salary, bool $is_malaysian = true) {
     return 0; // PCB not applicable — employees handle own tax filing
 }
 
-function isMalaysian($employee_id) {
+function isMalaysian(int $employee_id) {
     global $conn;
     $id = intval($employee_id);
     $row = mysqli_fetch_assoc(mysqli_query($conn, "SELECT nationality FROM employees WHERE id = $id"));
     return $row ? $row['nationality'] == 'Malaysian' : false;
 }
 
-function getLeaveBalance($employee_id) {
+function getLeaveBalance(int $employee_id) {
     global $conn;
     $id = intval($employee_id);
     $balance = mysqli_fetch_assoc(mysqli_query($conn, "SELECT
@@ -56,7 +57,7 @@ function getLeaveBalance($employee_id) {
     ];
 }
 
-function updateLeaveBalance($employee_id, $leave_type, $days) {
+function updateLeaveBalance(int $employee_id, string $leave_type, float $days) {
     global $conn;
     $id   = intval($employee_id);
     $days = floatval($days);
@@ -68,26 +69,26 @@ function updateLeaveBalance($employee_id, $leave_type, $days) {
     // unpaid / emergency: no balance to track
 }
 
-function getEmployeeName($employee_id) {
+function getEmployeeName(int $employee_id) {
     global $conn;
     $id  = intval($employee_id);
     $row = mysqli_fetch_assoc(mysqli_query($conn, "SELECT name FROM employees WHERE id = $id"));
     return $row ? $row['name'] : 'Unknown';
 }
 
-function getEmployeeDetails($employee_id) {
+function getEmployeeDetails(int $employee_id) {
     global $conn;
     $id = intval($employee_id);
     return mysqli_fetch_assoc(mysqli_query($conn, "SELECT * FROM employees WHERE id = $id"));
 }
 
-function isHoliday($date) {
+function isHoliday(string $date) {
     global $conn;
     $date = mysqli_real_escape_string($conn, $date);
     return mysqli_num_rows(mysqli_query($conn, "SELECT id FROM holidays WHERE holiday_date = '$date'")) > 0;
 }
 
-function addNotification($employee_id, $title, $message) {
+function addNotification(int $employee_id, string $title, string $message) {
     global $conn;
     $id      = intval($employee_id);
     $title   = mysqli_real_escape_string($conn, $title);
@@ -95,14 +96,14 @@ function addNotification($employee_id, $title, $message) {
     mysqli_query($conn, "INSERT INTO notifications (employee_id, title, message) VALUES ($id, '$title', '$message')");
 }
 
-function getUnreadNotificationsCount($employee_id) {
+function getUnreadNotificationsCount(int $employee_id) {
     global $conn;
     $id  = intval($employee_id);
     $row = mysqli_fetch_assoc(mysqli_query($conn, "SELECT COUNT(*) as count FROM notifications WHERE employee_id = $id AND is_read = 0"));
     return $row ? $row['count'] : 0;
 }
 
-function logAction($action, $description, $target_id = null, $target_type = null) {
+function logAction(string $action, string $description, ?int $target_id = null, ?string $target_type = null) {
     global $conn;
     $user_id     = isset($_SESSION['user_id']) ? intval($_SESSION['user_id']) : 0;
     $action      = mysqli_real_escape_string($conn, $action);

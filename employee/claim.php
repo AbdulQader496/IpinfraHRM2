@@ -2,6 +2,7 @@
 require_once '../includes/auth.php';
 redirectIfNotLoggedIn();
 require_once '../includes/db.php';
+/** @var mysqli $conn */
 require_once '../includes/toast_fn.php';
 
 // Safe bootstrap for claim attachment support on older databases.
@@ -18,6 +19,7 @@ mysqli_query($conn, "CREATE TABLE IF NOT EXISTS claim_attachments (
 $user_id = intval($_SESSION['user_id']);
 $edit_mode = false;
 $edit_claim_id = 0;
+$edit_claim = null;
 
 // ========================================
 // SHARED ATTACHMENT UPLOAD HANDLER
@@ -27,7 +29,7 @@ $edit_claim_id = 0;
 // Previously all failures (oversized file, disallowed type, missing fileinfo extension,
 // unwritable folder) were skipped silently, so a claim could "save" with attachments
 // quietly missing. This now reports every failure back to the user.
-function handleClaimAttachments($conn, $claim_id) {
+function handleClaimAttachments(mysqli $conn, int $claim_id) {
     $result = ['uploaded' => 0, 'failed' => []];
     if (!isset($_FILES['attachments']) || empty($_FILES['attachments']['name'][0])) {
         return $result;
@@ -37,11 +39,19 @@ function handleClaimAttachments($conn, $claim_id) {
     if (!is_dir($target_dir)) { @mkdir($target_dir, 0777, true); }
     $dir_ok = is_dir($target_dir) && is_writable($target_dir);
 
-    $att_ok_ext  = ['jpg','jpeg','png','pdf','doc','docx','zip','rar'];
-    $att_ok_mime = ['image/jpeg','image/png','application/pdf','application/msword',
+    // jpg/png/pdf/doc/zip/rar only rejected iPhone photos, which default to HEIC — the
+    // most common real-world "can't upload my receipt photo" complaint. Added gif/webp
+    // (already allowed for leave attachments, just missing here) and heic/heif.
+    $att_ok_ext  = ['jpg','jpeg','png','gif','webp','heic','heif','pdf','doc','docx','zip','rar'];
+    $att_ok_mime = ['image/jpeg','image/png','image/gif','image/webp','image/heic','image/heif',
+                    'application/pdf','application/msword',
                     'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
                     'application/zip','application/x-zip-compressed',
                     'application/x-rar-compressed','application/vnd.rar','application/x-rar'];
+    // Older libmagic databases on some servers don't recognize HEIC/HEIF and report the
+    // generic application/octet-stream instead — accept that specifically for these two
+    // extensions rather than rejecting every HEIC photo whenever that's the case.
+    $att_ok_mime_by_ext = ['heic' => 'application/octet-stream', 'heif' => 'application/octet-stream'];
     $fileinfo_available = function_exists('finfo_open');
 
     $total_files = count($_FILES['attachments']['name']);
@@ -73,8 +83,8 @@ function handleClaimAttachments($conn, $claim_id) {
             $att_finfo = finfo_open(FILEINFO_MIME_TYPE);
             if ($att_finfo) {
                 $att_mime = finfo_file($att_finfo, $_FILES['attachments']['tmp_name'][$i]);
-                finfo_close($att_finfo);
-                $mime_ok = in_array($att_mime, $att_ok_mime);
+                $mime_ok = in_array($att_mime, $att_ok_mime)
+                    || (isset($att_ok_mime_by_ext[$file_ext]) && $att_mime === $att_ok_mime_by_ext[$file_ext]);
             }
         }
         if (!$mime_ok) {
@@ -115,30 +125,36 @@ if (isset($_GET['edit'])) {
 // HANDLE UPDATE CLAIM
 // ========================================
 if (isset($_POST['update_claim'])) {
+    if (!validateCsrfToken($_POST['csrf_token'] ?? '')) {
+        showToast('Security error.', 'error'); header('Location: claim.php'); exit;
+    }
     $claim_id = intval($_POST['claim_id'] ?? 0);
     $claim_type = mysqli_real_escape_string($conn, $_POST['claim_type'] ?? '');
     $amount = floatval($_POST['amount'] ?? 0);
     $description = mysqli_real_escape_string($conn, $_POST['description'] ?? '');
-    
-    // Check if claim is still pending
-    $check_query = mysqli_query($conn, "SELECT id FROM claims WHERE id = $claim_id AND employee_id = $user_id AND status = 'pending'");
-    if (mysqli_num_rows($check_query) > 0) {
-        $update_query = "UPDATE claims SET
-                            claim_type = '$claim_type',
-                            amount = $amount,
-                            description = '$description'
-                         WHERE id = $claim_id";
-        
-        if (mysqli_query($conn, $update_query)) {
-            $att_result = handleClaimAttachments($conn, $claim_id);
-            if ($att_result['failed']) {
-                showToast('Claim updated, but ' . count($att_result['failed']) . ' attachment(s) failed: ' . implode('; ', $att_result['failed']), 'warning');
-            } else {
-                showToast('Claim updated successfully!');
-            }
-            header("Location: claim.php");
-            exit();
+
+    // Atomic guard: re-check status='pending' in the UPDATE itself, not just an earlier
+    // SELECT — an admin approving this exact claim in between would otherwise still get
+    // silently overwritten by this update.
+    $update_query = "UPDATE claims SET
+                        claim_type = '$claim_type',
+                        amount = $amount,
+                        description = '$description'
+                     WHERE id = $claim_id AND employee_id = $user_id AND status = 'pending'";
+    mysqli_query($conn, $update_query);
+    if (mysqli_affected_rows($conn) > 0) {
+        $att_result = handleClaimAttachments($conn, $claim_id);
+        if ($att_result['failed']) {
+            showToast('Claim updated, but ' . count($att_result['failed']) . ' attachment(s) failed: ' . implode('; ', $att_result['failed']), 'warning');
+        } else {
+            showToast('Claim updated successfully!');
         }
+        header("Location: claim.php");
+        exit();
+    } else {
+        showToast('This claim is no longer pending and can\'t be edited.', 'error');
+        header("Location: claim.php");
+        exit();
     }
 }
 
@@ -146,13 +162,17 @@ if (isset($_POST['update_claim'])) {
 // HANDLE DELETE ATTACHMENT
 // ========================================
 if (isset($_POST['delete_attachment'])) {
+    if (!validateCsrfToken($_POST['csrf_token'] ?? '')) {
+        showToast('Security error.', 'error'); header('Location: claim.php'); exit;
+    }
     $attach_id = intval($_POST['attach_id'] ?? 0);
     $claim_id = intval($_POST['claim_id'] ?? 0);
-    
-    // Get file path to delete
+
+    // Only allow deleting an attachment off a claim that's still pending (matches the
+    // ownership + status scoping used everywhere else in this file).
     $file_query = mysqli_query($conn, "SELECT ca.file_path FROM claim_attachments ca
  JOIN claims c ON ca.claim_id = c.id
- WHERE ca.id = $attach_id AND ca.claim_id = $claim_id AND c.employee_id = $user_id");
+ WHERE ca.id = $attach_id AND ca.claim_id = $claim_id AND c.employee_id = $user_id AND c.status = 'pending'");
     if ($file = mysqli_fetch_assoc($file_query)) {
         $file_path = "../uploads/claims/" . $file['file_path'];
         if (file_exists($file_path)) {
@@ -168,6 +188,9 @@ if (isset($_POST['delete_attachment'])) {
 // HANDLE DELETE CLAIM (Only pending claims)
 // ========================================
 if (isset($_POST['delete_claim'])) {
+    if (!validateCsrfToken($_POST['csrf_token'] ?? '')) {
+        showToast('Security error.', 'error'); header('Location: claim.php'); exit;
+    }
     $claim_id    = intval($_POST['claim_id'] ?? $_GET['claim_id'] ?? 0);
     $check_query = mysqli_query($conn, "SELECT id FROM claims WHERE id=$claim_id AND employee_id=$user_id AND status='pending'");
     if (mysqli_num_rows($check_query) > 0) {
@@ -177,7 +200,8 @@ if (isset($_POST['delete_claim'])) {
             if (file_exists($fp)) unlink($fp);
         }
         mysqli_query($conn, "DELETE FROM claim_attachments WHERE claim_id=$claim_id");
-        mysqli_query($conn, "DELETE FROM claims WHERE id=$claim_id");
+        // Atomic guard: re-check status='pending' on the actual DELETE, not just the SELECT above.
+        mysqli_query($conn, "DELETE FROM claims WHERE id=$claim_id AND employee_id=$user_id AND status='pending'");
         showToast('Claim deleted.', 'info'); header('Location: claim.php'); exit();
     } else {
         showToast('Cannot delete a claim that is already processed.', 'error'); header('Location: claim.php'); exit();
@@ -188,6 +212,9 @@ if (isset($_POST['delete_claim'])) {
 // HANDLE CLAIM SUBMISSION WITH MULTIPLE FILES
 // ========================================
 if (isset($_POST['apply_claim'])) {
+    if (!validateCsrfToken($_POST['csrf_token'] ?? '')) {
+        showToast('Security error.', 'error'); header('Location: claim.php'); exit;
+    }
     $claim_type = mysqli_real_escape_string($conn, $_POST['claim_type'] ?? '');
     $amount = floatval($_POST['amount'] ?? 0);
     $description = mysqli_real_escape_string($conn, $_POST['description'] ?? '');
@@ -369,6 +396,7 @@ $pending_total = mysqli_fetch_assoc(mysqli_query($conn, "SELECT SUM(amount) as t
         </div>
         
         <form method="POST" enctype="multipart/form-data" class="space-y-4" id="claimForm">
+            <?php echo csrfField(); ?>
             <?php if ($edit_mode): ?>
                 <input type="hidden" name="claim_id" value="<?php echo $edit_claim['id']; ?>">
             <?php endif; ?>
@@ -414,6 +442,7 @@ $pending_total = mysqli_fetch_assoc(mysqli_query($conn, "SELECT SUM(amount) as t
                             <span class="text-xs text-gray-400">(<?php echo round($att['file_size'] / 1024, 1); ?> KB)</span>
                         </div>
                         <form method="POST" style="display:inline;" onsubmit="return confirm('Delete this attachment?');">
+                            <?php echo csrfField(); ?>
                             <input type="hidden" name="attach_id" value="<?php echo $att['id']; ?>">
                             <input type="hidden" name="claim_id" value="<?php echo $edit_claim['id']; ?>">
                             <button type="submit" name="delete_attachment" class="text-red-500 hover:text-red-700">
@@ -530,6 +559,7 @@ $pending_total = mysqli_fetch_assoc(mysqli_query($conn, "SELECT SUM(amount) as t
                                         <i class="fas fa-edit"></i> Edit
                                     </a>
                                     <form method="POST" style="display:inline;" onsubmit="return confirm('Delete this claim? This action cannot be undone.');">
+                                        <?php echo csrfField(); ?>
                                         <input type="hidden" name="claim_id" value="<?php echo $row['id']; ?>">
                                         <button type="submit" name="delete_claim" class="text-red-500 hover:text-red-700 text-sm" title="Delete">
                                             <i class="fas fa-trash"></i> Delete

@@ -2,6 +2,7 @@
 require_once '../includes/auth.php';
 redirectIfNotAdmin();
 require_once '../includes/db.php';
+/** @var mysqli $conn */
 
 // CSRF gate — must be a POST with a valid token
 if (!isset($_POST['csrf_token']) || !validateCsrfToken($_POST['csrf_token'])) {

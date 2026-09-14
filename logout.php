@@ -1,6 +1,7 @@
 <?php
 session_start();
 require_once 'includes/db.php';
+/** @var mysqli $conn */
 require_once 'includes/functions.php';
 
 // Safe bootstrap for remember-me support on older databases.

@@ -2,6 +2,7 @@
 require_once '../includes/auth.php';
 redirectIfNotAdmin();
 require_once '../includes/db.php';
+/** @var mysqli $conn */
 require_once '../includes/functions.php';
 require_once '../includes/toast_fn.php';
 
@@ -12,6 +13,9 @@ if (isset($_POST['bulk_delete']) && validateCsrfToken($_POST['csrf_token'] ?? ''
     $ids = $_POST['delete_ids'] ?? [];
     if (!empty($ids)) {
         $safe_ids = implode(',', array_map('intval', $ids));
+        // Same unlink-before-delete as the single-record delete above — otherwise these
+        // claims are left pointing at payroll_ids that no longer exist.
+        mysqli_query($conn, "UPDATE claims SET payroll_id = NULL WHERE payroll_id IN ($safe_ids)");
         mysqli_query($conn, "DELETE FROM payroll WHERE id IN ($safe_ids)");
         logAction('delete', count($ids) . ' payroll record(s) bulk deleted', null, 'payroll');
         showToast(count($ids) . ' payroll record(s) deleted.', 'info');
@@ -23,6 +27,9 @@ if (isset($_POST['bulk_delete']) && validateCsrfToken($_POST['csrf_token'] ?? ''
 // Handle Delete Payroll Record
 if (isset($_POST['pay_delete']) && validateCsrfToken($_POST['csrf_token'] ?? '')) {
     $del_id = intval($_POST['pay_delete']);
+    // Unlink any claims paid out by this record first — otherwise they're left pointing at
+    // a payroll_id that no longer exists and can never be picked up by a future run again.
+    mysqli_query($conn, "UPDATE claims SET payroll_id = NULL WHERE payroll_id = $del_id");
     mysqli_query($conn, "DELETE FROM payroll WHERE id = $del_id");
     logAction('delete', 'Deleted payroll record', $del_id, 'payroll');
     showToast('Payroll record deleted.', 'info');
@@ -35,20 +42,6 @@ if (isset($_POST['pay_regenerate']) && validateCsrfToken($_POST['csrf_token'] ??
     $regen_id = intval($_POST['pay_regenerate']);
     $regen_row = mysqli_fetch_assoc(mysqli_query($conn, "SELECT p.month_year, e.* FROM payroll p JOIN employees e ON p.employee_id=e.id WHERE p.id=$regen_id"));
     if ($regen_row) {
-        // Keep the same claims this payroll already paid out — don't re-sweep the
-        // unpaid-claims pool, which could pull in claims meant for a later run.
-        $claim_ids = [];
-        $approved_claims = 0.0;
-        $cids_res = mysqli_query($conn, "SELECT id, amount FROM claims WHERE payroll_id=$regen_id AND status='approved'");
-        while ($cr = mysqli_fetch_assoc($cids_res)) {
-            $claim_ids[] = (int)$cr['id'];
-            $approved_claims += (float)$cr['amount'];
-        }
-        if ($claim_ids) {
-            mysqli_query($conn, "UPDATE claims SET payroll_id=NULL WHERE id IN (" . implode(',', $claim_ids) . ")");
-        }
-
-        mysqli_query($conn, "DELETE FROM payroll WHERE id=$regen_id");
         $month_year  = $regen_row['month_year'];
         $month_start = $month_year . '-01';
         $month_end   = date('Y-m-t', strtotime($month_start));
@@ -76,17 +69,38 @@ if (isset($_POST['pay_regenerate']) && validateCsrfToken($_POST['csrf_token'] ??
 ), 0) as ud FROM leaves WHERE employee_id={$regen_row['id']} AND status='approved' AND leave_type $regen_leave_filter AND start_date <= '$month_end' AND end_date >= '$month_start'"));
         $unpaid_deduction = round($per_day * (float)$uq['ud'], 2);
 
-        $net = $basic - $epf_emp - $socso_emp - $eis - $pcb - $unpaid_deduction + $approved_claims;
-        $net = max(0, $net);
+        // Everything from unlinking the old payroll's claims through relinking them to the
+        // new one happens in a single transaction, with the claim rows locked (FOR UPDATE)
+        // for its whole duration — otherwise a concurrent Generate Payroll run for the same
+        // employee (a different month) could grab these claims while they briefly sit
+        // unlinked, baking their amount into two payroll rows at once.
+        mysqli_begin_transaction($conn);
         try {
+            $claim_ids = [];
+            $approved_claims = 0.0;
+            $cids_res = mysqli_query($conn, "SELECT id, amount FROM claims WHERE payroll_id=$regen_id AND status='approved' FOR UPDATE");
+            while ($cr = mysqli_fetch_assoc($cids_res)) {
+                $claim_ids[] = (int)$cr['id'];
+                $approved_claims += (float)$cr['amount'];
+            }
+            if ($claim_ids) {
+                mysqli_query($conn, "UPDATE claims SET payroll_id=NULL WHERE id IN (" . implode(',', $claim_ids) . ")");
+            }
+
+            mysqli_query($conn, "DELETE FROM payroll WHERE id=$regen_id");
+
+            $net = $basic - $epf_emp - $socso_emp - $eis - $pcb - $unpaid_deduction + $approved_claims;
+            $net = max(0, $net);
             mysqli_query($conn, "INSERT INTO payroll (employee_id,month_year,basic_salary,epf_employee,epf_employer,socso_employee,socso_employer,eis_employee,eis_employer,pcb,unpaid_deduction,approved_claims,net_salary) VALUES ({$regen_row['id']},'$month_year',$basic,$epf_emp,$epf_er,$socso_emp,$socso_er,$eis,$eis_er,$pcb,$unpaid_deduction,$approved_claims,$net)");
             $new_payroll_id = mysqli_insert_id($conn);
             if ($claim_ids) {
                 mysqli_query($conn, "UPDATE claims SET payroll_id=$new_payroll_id WHERE id IN (" . implode(',', $claim_ids) . ")");
             }
+            mysqli_commit($conn);
             logAction('generate', 'Regenerated payroll for ' . $regen_row['name'] . ' (' . $month_year . ')', $regen_row['id'], 'payroll');
             showToast('Payroll regenerated for ' . $regen_row['name'] . ' (' . $month_year . ').', 'success');
         } catch (Exception $e) {
+            mysqli_rollback($conn);
             showToast('Payroll for ' . $regen_row['name'] . ' (' . $month_year . ') was already regenerated elsewhere — please refresh.', 'warning');
         }
     }
@@ -332,34 +346,43 @@ if (isset($_POST['generate_payroll'])) {
             $unpaid_days = (float)mysqli_fetch_assoc($unpaid_q)['ud'];
             $unpaid_deduction = round($per_day * $unpaid_days, 2);
 
-            // Sweep in every approved claim not yet paid out by an earlier run — this is the
-            // next payroll generated for the employee, regardless of which month the claim
-            // was approved in, so nothing is skipped if a month's run is late or missed.
-            $claim_ids = [];
-            $approved_claims = 0.0;
-            $claim_q = mysqli_query($conn, "SELECT id, amount FROM claims
-                WHERE employee_id = {$emp['id']} AND status = 'approved' AND payroll_id IS NULL");
-            while ($clr = mysqli_fetch_assoc($claim_q)) {
-                $claim_ids[] = (int)$clr['id'];
-                $approved_claims += (float)$clr['amount'];
-            }
-
             // EIS: both employee and employer contribute same rate (0.2%)
             $eis_er = $eis;
 
-            $net = $basic - $epf_emp - $socso_emp - $eis - $pcb - $unpaid_deduction + $approved_claims;
-            $net = max(0, $net);
-
-            $insert = "INSERT INTO payroll (employee_id, month_year, basic_salary, epf_employee, epf_employer, socso_employee, socso_employer, eis_employee, eis_employer, pcb, unpaid_deduction, approved_claims, net_salary)
-                       VALUES ({$emp['id']}, '$month_year', $basic, $epf_emp, $epf_er, $socso_emp, $socso_er, $eis, $eis_er, $pcb, $unpaid_deduction, $approved_claims, $net)";
+            // Sweep in every approved claim not yet paid out by an earlier run — this is the
+            // next payroll generated for the employee, regardless of which month the claim
+            // was approved in, so nothing is skipped if a month's run is late or missed.
+            //
+            // Wrapped in a transaction with FOR UPDATE: without this, two overlapping
+            // "Generate Payroll" runs for the same employee (e.g. two different months
+            // triggered close together) could both read the same unpaid claim before either
+            // finished, and both pay it out. Locking the candidate rows for the duration of
+            // this transaction makes the second run wait, then see them already linked.
+            mysqli_begin_transaction($conn);
             try {
+                $claim_ids = [];
+                $approved_claims = 0.0;
+                $claim_q = mysqli_query($conn, "SELECT id, amount FROM claims
+                    WHERE employee_id = {$emp['id']} AND status = 'approved' AND payroll_id IS NULL FOR UPDATE");
+                while ($clr = mysqli_fetch_assoc($claim_q)) {
+                    $claim_ids[] = (int)$clr['id'];
+                    $approved_claims += (float)$clr['amount'];
+                }
+
+                $net = $basic - $epf_emp - $socso_emp - $eis - $pcb - $unpaid_deduction + $approved_claims;
+                $net = max(0, $net);
+
+                $insert = "INSERT INTO payroll (employee_id, month_year, basic_salary, epf_employee, epf_employer, socso_employee, socso_employer, eis_employee, eis_employer, pcb, unpaid_deduction, approved_claims, net_salary)
+                           VALUES ({$emp['id']}, '$month_year', $basic, $epf_emp, $epf_er, $socso_emp, $socso_er, $eis, $eis_er, $pcb, $unpaid_deduction, $approved_claims, $net)";
                 mysqli_query($conn, $insert);
                 $new_payroll_id = mysqli_insert_id($conn);
                 if ($claim_ids) {
                     mysqli_query($conn, "UPDATE claims SET payroll_id=$new_payroll_id WHERE id IN (" . implode(',', $claim_ids) . ")");
                 }
+                mysqli_commit($conn);
                 $generated_count++;
             } catch (Exception $e) {
+                mysqli_rollback($conn);
                 // Already generated by a concurrent request for this employee+month — skip, not fatal.
                 // Claims stay unlinked (payroll_id IS NULL) and remain eligible for the next run.
             }

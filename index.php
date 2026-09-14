@@ -1,6 +1,7 @@
 <?php
 session_start();
 require_once 'includes/db.php';
+/** @var mysqli $conn */
 
 // Safe bootstrap for remember-me support on older databases.
 $col_exists = mysqli_fetch_assoc(mysqli_query($conn, "

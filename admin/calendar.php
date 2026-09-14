@@ -2,6 +2,7 @@
 require_once '../includes/auth.php';
 redirectIfNotAdmin();
 require_once '../includes/db.php';
+/** @var mysqli $conn */
 
 // Month navigation
 $month = isset($_GET['m']) ? $_GET['m'] : date('Y-m');

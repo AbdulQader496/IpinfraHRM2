@@ -1,6 +1,7 @@
 <?php
 session_start();
 require_once 'db.php';
+/** @var mysqli $conn */
 
 function _restoreSessionFromCookie() {
     if (!isset($_COOKIE['remember_token'])) return;

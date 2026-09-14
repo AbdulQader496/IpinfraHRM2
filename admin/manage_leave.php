@@ -1275,7 +1275,7 @@ $leave_type_options = mysqli_query($conn, "SELECT DISTINCT leave_type FROM leave
                 <input type="hidden" name="action" value="approve">
                 <input type="hidden" name="id" id="ld_approve_id" value="">
                 <button type="button"
-                   onclick="confirmAction('Approve Leave Request?', 'This will approve the leave and notify the employee. The leave balance will be updated.', function(){ document.getElementById(\'ld_approve_form\').submit(); })"
+                   onclick="confirmAction('Approve Leave Request?', 'This will approve the leave and notify the employee. The leave balance will be updated.', function(){ document.getElementById('ld_approve_form').submit(); })"
                    class="flex-1 bg-gradient-to-r from-green-500 to-emerald-600 text-white text-center py-3 rounded-xl font-semibold text-sm shadow hover:shadow-lg hover:from-green-600 hover:to-emerald-700 transition flex items-center justify-center gap-2">
                     <i class="fas fa-check-circle"></i> Approve
                 </button>
@@ -1285,7 +1285,7 @@ $leave_type_options = mysqli_query($conn, "SELECT DISTINCT leave_type FROM leave
                 <input type="hidden" name="action" value="reject">
                 <input type="hidden" name="id" id="ld_reject_id" value="">
                 <button type="button"
-                   onclick="confirmAction('Reject Leave Request?', 'This will reject the leave request and notify the employee.', function(){ document.getElementById(\'ld_reject_form\').submit(); })"
+                   onclick="confirmAction('Reject Leave Request?', 'This will reject the leave request and notify the employee.', function(){ document.getElementById('ld_reject_form').submit(); })"
                    class="flex-1 bg-gradient-to-r from-red-500 to-rose-600 text-white text-center py-3 rounded-xl font-semibold text-sm shadow hover:shadow-lg hover:from-red-600 hover:to-rose-700 transition flex items-center justify-center gap-2">
                     <i class="fas fa-times-circle"></i> Reject
                 </button>

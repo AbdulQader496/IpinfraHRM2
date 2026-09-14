@@ -499,6 +499,7 @@ $initials = strtoupper(substr($me['name'],0,1) . (strpos($me['name'],' ')!==fals
             </div>
             <form method="POST" id="resignForm" class="space-y-4">
                 <?php echo csrfField(); ?>
+                <input type="hidden" name="submit_resignation" value="1">
                 <div>
                     <label class="block text-xs font-semibold text-gray-600 uppercase tracking-wide mb-1.5">Last Working Day <span class="text-red-400">*</span></label>
                     <input type="date" name="last_working_date" required class="form-input"

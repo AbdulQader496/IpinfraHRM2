@@ -168,6 +168,31 @@ if (isset($_POST['undo_claim']) && validateCsrfToken($_POST['csrf_token'] ?? '')
     header("Location: manage_claim.php?page=$page&per_page=$per_page&search=" . urlencode($search) . "&status=$status_filter&type=$type_filter&date_from=$date_from&date_to=$date_to");
     exit();
 }
+
+// ========================================
+// DELETE CLAIM (admin cleanup of old records — any status)
+// ========================================
+// Deleting the claim row never touches payroll: approved_claims on a payroll record is a
+// frozen snapshot taken when that payroll was generated, not a live sum, so removing an
+// already-paid claim afterward can't corrupt a historical payslip — it only removes this
+// claim's own audit-trail row.
+if (isset($_POST['delete_claim']) && validateCsrfToken($_POST['csrf_token'] ?? '')) {
+    $id = intval($_POST['delete_claim']);
+    $claim = mysqli_fetch_assoc(mysqli_query($conn, "SELECT id FROM claims WHERE id=$id"));
+    if ($claim) {
+        $attach_q = mysqli_query($conn, "SELECT file_path FROM claim_attachments WHERE claim_id=$id");
+        while ($att = mysqli_fetch_assoc($attach_q)) {
+            $fp = "../uploads/claims/" . $att['file_path'];
+            if (file_exists($fp)) unlink($fp);
+        }
+        mysqli_query($conn, "DELETE FROM claim_attachments WHERE claim_id=$id");
+        mysqli_query($conn, "DELETE FROM claims WHERE id=$id");
+        logAction('delete', 'Deleted claim record', $id, 'claim');
+        showToast('Claim deleted.', 'info');
+    }
+    header("Location: manage_claim.php?page=$page&per_page=$per_page&search=" . urlencode($search) . "&status=$status_filter&type=$type_filter&date_from=$date_from&date_to=$date_to");
+    exit();
+}
 ?>
 <!DOCTYPE html>
 <html lang="en">
@@ -429,12 +454,14 @@ if (isset($_POST['undo_claim']) && validateCsrfToken($_POST['csrf_token'] ?? '')
                                 </div>
                             </div>
                             
-                            <?php if($row['description']): ?>
-                                <div class="mt-3 p-3 bg-gray-50 rounded-xl">
-                                    <p class="text-xs text-gray-500 mb-1"><i class="fas fa-comment mr-1"></i> Description:</p>
+                            <div class="mt-3 p-3 bg-gray-50 rounded-xl">
+                                <p class="text-xs text-gray-500 mb-1"><i class="fas fa-comment mr-1"></i> Description:</p>
+                                <?php if ($row['description']): ?>
                                     <p class="text-sm text-gray-700"><?php echo nl2br(htmlspecialchars($row['description'])); ?></p>
-                                </div>
-                            <?php endif; ?>
+                                <?php else: ?>
+                                    <p class="text-sm text-gray-400 italic">No description provided</p>
+                                <?php endif; ?>
+                            </div>
                             
                             <!-- Attachments Section -->
                             <?php
@@ -499,6 +526,16 @@ if (isset($_POST['undo_claim']) && validateCsrfToken($_POST['csrf_token'] ?? '')
                                     </form>
                                 </div>
                             <?php endif; ?>
+                            <div class="mt-2">
+                                <form method="POST" data-confirm="Delete this claim record permanently? This cannot be undone." data-confirm-title="Delete Claim">
+                                    <?php echo csrfField(); ?>
+                                    <input type="hidden" name="delete_claim" value="<?php echo $row['id']; ?>">
+                                    <button type="submit"
+                                        class="inline-flex items-center gap-1.5 text-xs text-red-500 hover:text-red-700 bg-red-50 hover:bg-red-100 border border-red-200 hover:border-red-300 px-2.5 py-1.5 rounded-lg transition font-medium">
+                                        <i class="fas fa-trash text-[10px]"></i> Delete
+                                    </button>
+                                </form>
+                            </div>
                             <?php if ($row['status'] == 'pending'): ?>
                                 <div class="flex gap-2 mt-4">
                                     <form method="POST" action="manage_claim.php?page=<?php echo $page; ?>&per_page=<?php echo $per_page; ?>&search=<?php echo urlencode($search); ?>&status=<?php echo $status_filter; ?>&type=<?php echo urlencode($type_filter); ?>&date_from=<?php echo $date_from; ?>&date_to=<?php echo $date_to; ?>" style="display:contents;">

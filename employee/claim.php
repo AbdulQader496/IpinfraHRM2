@@ -120,7 +120,11 @@ if (isset($_POST['update_claim'])) {
     $claim_id = intval($_POST['claim_id'] ?? 0);
     $claim_type = mysqli_real_escape_string($conn, $_POST['claim_type'] ?? '');
     $amount = floatval($_POST['amount'] ?? 0);
-    $description = mysqli_real_escape_string($conn, $_POST['description'] ?? '');
+    $description_raw = trim($_POST['description'] ?? '');
+    if ($description_raw === '') {
+        showToast('Please describe the claim purpose.', 'error'); header("Location: claim.php?edit=$claim_id"); exit;
+    }
+    $description = mysqli_real_escape_string($conn, $description_raw);
 
     // Atomic guard: re-check status='pending' in the UPDATE itself, not just an earlier
     // SELECT — an admin approving this exact claim in between would otherwise still get
@@ -154,7 +158,7 @@ if (isset($_POST['delete_attachment'])) {
     if (!validateCsrfToken($_POST['csrf_token'] ?? '')) {
         showToast('Security error.', 'error'); header('Location: claim.php'); exit;
     }
-    $attach_id = intval($_POST['attach_id'] ?? 0);
+    $attach_id = intval($_POST['delete_attachment'] ?? 0);
     $claim_id = intval($_POST['claim_id'] ?? 0);
 
     // Only allow deleting an attachment off a claim that's still pending (matches the
@@ -206,11 +210,15 @@ if (isset($_POST['apply_claim'])) {
     }
     $claim_type = mysqli_real_escape_string($conn, $_POST['claim_type'] ?? '');
     $amount = floatval($_POST['amount'] ?? 0);
-    $description = mysqli_real_escape_string($conn, $_POST['description'] ?? '');
-    
+    $description_raw = trim($_POST['description'] ?? '');
+    if ($description_raw === '') {
+        showToast('Please describe the claim purpose.', 'error'); header('Location: claim.php'); exit;
+    }
+    $description = mysqli_real_escape_string($conn, $description_raw);
+
     $query = "INSERT INTO claims (employee_id, claim_type, amount, description)
               VALUES ($user_id, '$claim_type', $amount, '$description')";
-    
+
     if (mysqli_query($conn, $query)) {
         $claim_id = mysqli_insert_id($conn);
 
@@ -412,7 +420,7 @@ $pending_total = mysqli_fetch_assoc(mysqli_query($conn, "SELECT SUM(amount) as t
             
             <div>
                 <label class="block text-gray-700 text-sm font-semibold mb-2">Description</label>
-                <textarea name="description" rows="3" placeholder="Please describe the claim purpose..." class="form-input w-full px-4 py-2.5 border border-gray-200 rounded-xl focus:border-indigo-400 focus:ring-2 focus:ring-indigo-100 transition"><?php echo $edit_mode ? htmlspecialchars($edit_claim['description']) : ''; ?></textarea>
+                <textarea name="description" rows="3" required placeholder="Please describe the claim purpose..." class="form-input w-full px-4 py-2.5 border border-gray-200 rounded-xl focus:border-indigo-400 focus:ring-2 focus:ring-indigo-100 transition"><?php echo $edit_mode ? htmlspecialchars($edit_claim['description']) : ''; ?></textarea>
             </div>
             
             <!-- Existing Attachments (Edit Mode) -->
@@ -430,14 +438,15 @@ $pending_total = mysqli_fetch_assoc(mysqli_query($conn, "SELECT SUM(amount) as t
                             <span class="text-sm text-gray-600"><?php echo htmlspecialchars($att['file_name']); ?></span>
                             <span class="text-xs text-gray-400">(<?php echo round($att['file_size'] / 1024, 1); ?> KB)</span>
                         </div>
-                        <form method="POST" style="display:inline;" onsubmit="return confirm('Delete this attachment?');">
-                            <?php echo csrfField(); ?>
-                            <input type="hidden" name="attach_id" value="<?php echo $att['id']; ?>">
-                            <input type="hidden" name="claim_id" value="<?php echo $edit_claim['id']; ?>">
-                            <button type="submit" name="delete_attachment" class="text-red-500 hover:text-red-700">
-                                <i class="fas fa-trash"></i>
-                            </button>
-                        </form>
+                        <!-- Bound to the outer #claimForm via the form="" attribute rather than
+                             its own nested <form> -- a <form> inside another <form> is invalid
+                             HTML and browsers silently truncate the DOM at the first inner
+                             </form>, which was cutting off the Update button below it entirely. -->
+                        <button type="submit" name="delete_attachment" value="<?php echo $att['id']; ?>" form="claimForm"
+                            onclick="return confirm('Delete this attachment?');"
+                            class="text-red-500 hover:text-red-700">
+                            <i class="fas fa-trash"></i>
+                        </button>
                     </div>
                     <?php endwhile; ?>
                 </div>

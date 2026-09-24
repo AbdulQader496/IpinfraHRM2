@@ -41,8 +41,9 @@ if (isset($_POST['update_leave'])) {
     $half_day = mysqli_real_escape_string($conn, $_POST['half_day'] ?? '');
     $start_date = mysqli_real_escape_string($conn, $_POST['start_date'] ?? '');
     $end_date = mysqli_real_escape_string($conn, $_POST['end_date'] ?? '');
-    $reason = mysqli_real_escape_string($conn, $_POST['reason'] ?? '');
-    
+    $reason_raw = trim($_POST['reason'] ?? '');
+    $reason = mysqli_real_escape_string($conn, $reason_raw);
+
     // Calculate total days
     if ($half_day != 'none') {
         $total_days = 0.5;
@@ -55,6 +56,8 @@ if (isset($_POST['update_leave'])) {
         $error = 'Please select a leave type.';
     } elseif (strtotime($end_date) < strtotime($start_date)) {
         $error = 'End date must be on or after start date.';
+    } elseif ($reason_raw === '') {
+        $error = 'Please provide a reason for leave.';
     } else {
     // Interns can only apply for Medical or Unpaid leave
     if ($is_intern && !in_array($leave_type, ['medical', 'unpaid'])) {
@@ -177,15 +180,18 @@ if (isset($_POST['apply_leave']) && !$edit_mode) {
         header('Location: leave.php'); exit;
     }
     $leave_type = mysqli_real_escape_string($conn, $_POST['leave_type'] ?? '');
+    $reason_raw = trim($_POST['reason'] ?? '');
     if (empty($leave_type)) {
         $error = 'Please select a leave type.';
     } elseif ($is_intern && !in_array($leave_type, ['medical', 'unpaid'])) {
         $error = 'Interns can only apply for Medical or Unpaid Leave.';
+    } elseif ($reason_raw === '') {
+        $error = 'Please provide a reason for leave.';
     } else {
         $half_day   = mysqli_real_escape_string($conn, $_POST['half_day'] ?? '');
         $start_date = mysqli_real_escape_string($conn, $_POST['start_date'] ?? '');
         $end_date   = mysqli_real_escape_string($conn, $_POST['end_date'] ?? '');
-        $reason     = mysqli_real_escape_string($conn, $_POST['reason'] ?? '');
+        $reason     = mysqli_real_escape_string($conn, $reason_raw);
 
         if ($half_day != 'none') {
             $total_days = 0.5;
@@ -469,7 +475,7 @@ $balance = getLeaveBalance($user_id);
             
             <div>
                 <label class="block text-gray-700 text-sm font-semibold mb-2">Reason <span class="text-gray-400 font-normal">(Optional)</span></label>
-                <textarea name="reason" rows="3" placeholder="Please provide reason for leave..." class="w-full px-4 py-2.5 border border-gray-200 rounded-xl focus:border-indigo-400 focus:ring-2 focus:ring-indigo-100 transition"><?php echo $edit_mode ? htmlspecialchars($edit_leave['reason']) : ''; ?></textarea>
+                <textarea name="reason" rows="3" required placeholder="Please provide reason for leave..." class="w-full px-4 py-2.5 border border-gray-200 rounded-xl focus:border-indigo-400 focus:ring-2 focus:ring-indigo-100 transition"><?php echo $edit_mode ? htmlspecialchars($edit_leave['reason']) : ''; ?></textarea>
             </div>
             
             <div id="attachmentContainer">

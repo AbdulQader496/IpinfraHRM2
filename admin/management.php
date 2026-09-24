@@ -260,20 +260,24 @@ $pending_count = mysqli_fetch_assoc(mysqli_query($conn, "SELECT COUNT(*) as coun
     <?php endif; ?>
 
     <!-- Tabs -->
-    <div class="flex gap-3 mb-6 bg-white/50 backdrop-blur-sm rounded-2xl p-2 shadow-lg">
-        <button onclick="showTab('resignations')" id="tabResignations" class="tab-btn flex-1 py-2.5 rounded-xl font-semibold transition-all tab-active">
+    <!-- flex-1 on 4 tabs (one with a long label, "Upload Document") squeezed them past the
+         container's width on mobile with no way to scroll to the ones that didn't fit --
+         switched to the same horizontally-scrollable tab pattern already used successfully
+         on employee/management.php: natural-width, non-wrapping buttons in a scroll container. -->
+    <div class="flex gap-3 mb-6 bg-white/50 backdrop-blur-sm rounded-2xl p-2 shadow-lg overflow-x-auto">
+        <button onclick="showTab('resignations')" id="tabResignations" class="tab-btn shrink-0 sm:flex-1 whitespace-nowrap py-2.5 px-4 rounded-xl font-semibold transition-all tab-active">
             <i class="fas fa-user-minus mr-2"></i> Resignations
             <?php if($pending_count > 0): ?>
                 <span class="ml-2 bg-red-500 text-white text-xs px-2 py-0.5 rounded-full"><?php echo $pending_count; ?></span>
             <?php endif; ?>
         </button>
-        <button onclick="showTab('terminations')" id="tabTerminations" class="tab-btn flex-1 py-2.5 rounded-xl font-semibold transition-all tab-inactive">
+        <button onclick="showTab('terminations')" id="tabTerminations" class="tab-btn shrink-0 sm:flex-1 whitespace-nowrap py-2.5 px-4 rounded-xl font-semibold transition-all tab-inactive">
             <i class="fas fa-gavel mr-2"></i> Terminations
         </button>
-        <button onclick="showTab('documents')" id="tabDocuments" class="tab-btn flex-1 py-2.5 rounded-xl font-semibold transition-all tab-inactive">
+        <button onclick="showTab('documents')" id="tabDocuments" class="tab-btn shrink-0 sm:flex-1 whitespace-nowrap py-2.5 px-4 rounded-xl font-semibold transition-all tab-inactive">
             <i class="fas fa-folder-open mr-2"></i> Employee Documents
         </button>
-        <button onclick="showTab('upload')" id="tabUpload" class="tab-btn flex-1 py-2.5 rounded-xl font-semibold transition-all tab-inactive">
+        <button onclick="showTab('upload')" id="tabUpload" class="tab-btn shrink-0 sm:flex-1 whitespace-nowrap py-2.5 px-4 rounded-xl font-semibold transition-all tab-inactive">
             <i class="fas fa-upload mr-2"></i> Upload Document
         </button>
     </div>
@@ -292,7 +296,8 @@ $pending_count = mysqli_fetch_assoc(mysqli_query($conn, "SELECT COUNT(*) as coun
                     </div>
                 </div>
             </div>
-            <div class="overflow-x-auto">
+            <!-- Desktop table -->
+            <div class="overflow-x-auto hidden md:block">
                 <table class="w-full">
                     <thead class="bg-gray-100">
                         <tr>
@@ -360,6 +365,70 @@ $pending_count = mysqli_fetch_assoc(mysqli_query($conn, "SELECT COUNT(*) as coun
                         <?php endif; ?>
                     </tbody>
                 </table>
+            </div>
+
+            <!-- Mobile cards -->
+            <div class="md:hidden divide-y divide-gray-100">
+                <?php
+                mysqli_data_seek($resignations, 0);
+                if (mysqli_num_rows($resignations) == 0): ?>
+                    <p class="p-8 text-center text-gray-500">No resignation requests</p>
+                <?php else: while($row = mysqli_fetch_assoc($resignations)): ?>
+                <div class="p-4">
+                    <div class="flex items-start justify-between gap-3 mb-3">
+                        <div class="flex items-center gap-3 min-w-0">
+                            <div class="w-9 h-9 shrink-0 rounded-full bg-red-100 flex items-center justify-center">
+                                <i class="fas fa-user text-red-600 text-sm"></i>
+                            </div>
+                            <div class="min-w-0">
+                                <p class="font-semibold text-gray-800 text-sm truncate"><?php echo htmlspecialchars($row['name'] ?? '', ENT_QUOTES, 'UTF-8'); ?></p>
+                                <p class="text-xs text-gray-400"><?php echo htmlspecialchars($row['employee_id'] ?? '', ENT_QUOTES, 'UTF-8'); ?></p>
+                            </div>
+                        </div>
+                        <span class="shrink-0 inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-semibold <?php
+                            echo $row['status'] == 'approved' ? 'bg-green-100 text-green-700' :
+                                ($row['status'] == 'rejected' ? 'bg-red-100 text-red-700' :
+                                ($row['status'] == 'cancelled' ? 'bg-gray-100 text-gray-700' : 'bg-yellow-100 text-yellow-700')); ?>">
+                            <i class="fas <?php echo $row['status'] == 'approved' ? 'fa-check-circle' : ($row['status'] == 'rejected' ? 'fa-times-circle' : 'fa-clock'); ?>"></i>
+                            <?php echo ucfirst($row['status']); ?>
+                        </span>
+                    </div>
+                    <div class="grid grid-cols-2 gap-2 mb-3 bg-gray-50 rounded-xl p-3 text-sm">
+                        <div>
+                            <p class="text-[10px] uppercase tracking-wide text-gray-400 font-semibold mb-0.5">Requested</p>
+                            <p class="text-gray-700"><?php echo date('d M Y', strtotime($row['requested_date'])); ?></p>
+                        </div>
+                        <div>
+                            <p class="text-[10px] uppercase tracking-wide text-gray-400 font-semibold mb-0.5">Last Working Day</p>
+                            <p class="text-red-600 font-medium"><?php echo date('d M Y', strtotime($row['last_working_date'])); ?></p>
+                        </div>
+                    </div>
+                    <?php if(!empty($row['reason'])): ?>
+                        <p class="text-xs text-gray-500 mb-3">"<?php echo htmlspecialchars(substr($row['reason'], 0, 100), ENT_QUOTES, 'UTF-8'); ?>"</p>
+                    <?php endif; ?>
+                    <?php if($row['status'] == 'pending'): ?>
+                        <div class="flex gap-2">
+                            <button onclick="openApproveModal(<?php echo htmlspecialchars(json_encode(['id' => $row['id'], 'employee_id' => $row['employee_id'], 'name' => $row['name']], JSON_HEX_APOS | JSON_HEX_QUOT | JSON_HEX_TAG), ENT_QUOTES, 'UTF-8'); ?>)" class="flex-1 bg-green-600 hover:bg-green-700 text-white py-2 rounded-lg text-sm font-medium transition">Approve</button>
+                            <button onclick="openRejectModal(<?php echo htmlspecialchars(json_encode(['id' => $row['id'], 'employee_id' => $row['employee_id'], 'name' => $row['name']], JSON_HEX_APOS | JSON_HEX_QUOT | JSON_HEX_TAG), ENT_QUOTES, 'UTF-8'); ?>)" class="flex-1 bg-red-600 hover:bg-red-700 text-white py-2 rounded-lg text-sm font-medium transition">Reject</button>
+                            <form method="POST" onsubmit="return confirm('Delete this resignation record?')">
+                                <?php echo csrfField(); ?>
+                                <input type="hidden" name="delete_resignation" value="<?php echo intval($row['id']); ?>">
+                                <button type="submit" class="px-3 py-2 rounded-lg bg-gray-100 text-gray-500 hover:text-red-600 transition">
+                                    <i class="fas fa-trash"></i>
+                                </button>
+                            </form>
+                        </div>
+                    <?php else: ?>
+                        <form method="POST" onsubmit="return confirm('Delete this resignation record?')">
+                            <?php echo csrfField(); ?>
+                            <input type="hidden" name="delete_resignation" value="<?php echo intval($row['id']); ?>">
+                            <button type="submit" class="w-full py-2 rounded-lg bg-red-50 text-red-600 text-sm font-medium">
+                                <i class="fas fa-trash mr-1"></i> Delete
+                            </button>
+                        </form>
+                    <?php endif; ?>
+                </div>
+                <?php endwhile; endif; ?>
             </div>
         </div>
     </div>
@@ -501,7 +570,8 @@ $pending_count = mysqli_fetch_assoc(mysqli_query($conn, "SELECT COUNT(*) as coun
                     </div>
                 </div>
             </div>
-            <div class="overflow-x-auto">
+            <!-- Desktop table -->
+            <div class="overflow-x-auto hidden md:block">
                 <table class="w-full">
                     <thead class="bg-gray-100">
                         <tr>
@@ -579,6 +649,64 @@ $pending_count = mysqli_fetch_assoc(mysqli_query($conn, "SELECT COUNT(*) as coun
                         <?php endif; ?>
                     </tbody>
                 </table>
+            </div>
+
+            <!-- Mobile cards -->
+            <div class="md:hidden divide-y divide-gray-100">
+                <?php
+                mysqli_data_seek($documents, 0);
+                if (mysqli_num_rows($documents) == 0): ?>
+                    <p class="p-8 text-center text-gray-500">No documents uploaded</p>
+                <?php else: while($doc = mysqli_fetch_assoc($documents)):
+                    $file_path = "";
+                    $possible_paths = [
+                        "../uploads/documents/" . $doc['file_path'],
+                        "../uploads/employee_documents/" . $doc['file_path']
+                    ];
+                    foreach ($possible_paths as $path) {
+                        if (file_exists($path)) { $file_path = $path; break; }
+                    }
+                ?>
+                <div class="p-4">
+                    <div class="flex items-center gap-3 mb-3">
+                        <div class="w-9 h-9 shrink-0 rounded-full bg-blue-100 flex items-center justify-center">
+                            <i class="fas fa-user text-blue-600 text-sm"></i>
+                        </div>
+                        <div class="min-w-0">
+                            <p class="font-semibold text-gray-800 text-sm truncate"><?php echo htmlspecialchars($doc['name'] ?? '', ENT_QUOTES, 'UTF-8'); ?></p>
+                            <p class="text-xs text-gray-400"><?php echo htmlspecialchars($doc['employee_id'] ?? '', ENT_QUOTES, 'UTF-8'); ?></p>
+                        </div>
+                    </div>
+                    <p class="font-medium text-gray-800 text-sm mb-2"><?php echo htmlspecialchars($doc['document_title'] ?? '', ENT_QUOTES, 'UTF-8'); ?></p>
+                    <div class="flex items-center gap-2 flex-wrap mb-3">
+                        <span class="inline-flex items-center gap-1 px-2 py-1 rounded-full text-xs bg-blue-100 text-blue-700">
+                            <i class="fas fa-file-alt"></i> <?php echo ucfirst(str_replace('_', ' ', $doc['document_type'])); ?>
+                        </span>
+                        <span class="inline-flex items-center gap-1 px-2 py-1 rounded-full text-xs font-semibold <?php echo $doc['uploaded_by_role'] == 'Employee' ? 'bg-green-100 text-green-700' : 'bg-purple-100 text-purple-700'; ?>">
+                            <i class="fas <?php echo $doc['uploaded_by_role'] == 'Employee' ? 'fa-user' : 'fa-building'; ?>"></i>
+                            <?php echo htmlspecialchars($doc['uploaded_by_role'] ?? '', ENT_QUOTES, 'UTF-8'); ?>
+                        </span>
+                        <span class="text-xs text-gray-400"><?php echo date('d M Y', strtotime($doc['upload_date'])); ?></span>
+                    </div>
+                    <div class="flex gap-2">
+                        <?php if($file_path): ?>
+                            <a href="<?php echo htmlspecialchars($file_path, ENT_QUOTES, 'UTF-8'); ?>" target="_blank" class="flex-1 flex items-center justify-center gap-1.5 bg-blue-50 text-blue-600 py-2 rounded-lg text-sm font-medium">
+                                <i class="fas fa-eye"></i> View
+                            </a>
+                            <a href="<?php echo htmlspecialchars($file_path, ENT_QUOTES, 'UTF-8'); ?>" download class="flex-1 flex items-center justify-center gap-1.5 bg-green-50 text-green-600 py-2 rounded-lg text-sm font-medium">
+                                <i class="fas fa-download"></i> Download
+                            </a>
+                        <?php endif; ?>
+                        <form method="POST" onsubmit="return confirm('Delete this document permanently?')">
+                            <?php echo csrfField(); ?>
+                            <input type="hidden" name="delete_doc" value="<?php echo intval($doc['id']); ?>">
+                            <button type="submit" class="px-3 py-2 rounded-lg bg-red-50 text-red-600" title="Delete">
+                                <i class="fas fa-trash"></i>
+                            </button>
+                        </form>
+                    </div>
+                </div>
+                <?php endwhile; endif; ?>
             </div>
         </div>
     </div>

@@ -763,7 +763,10 @@ $payrolls = mysqli_query($conn, "SELECT p.*, e.name, e.employee_id, e.nationalit
                             </div>
 
                             <!-- Right: Net + Button -->
-                            <div class="flex items-center gap-3 flex-shrink-0 sm:ml-auto">
+                            <!-- flex-wrap so the action buttons drop to a second line on narrow
+                                 screens instead of getting clipped by the row's overflow-hidden
+                                 ancestor with no way to reach Delete/Regenerate at all. -->
+                            <div class="flex items-center gap-3 flex-wrap flex-shrink-0 sm:ml-auto sm:flex-nowrap">
                                 <div class="text-right">
                                     <p class="text-xs text-gray-400">Net Salary</p>
                                     <p class="text-xl font-bold text-green-600">RM <?php echo number_format($row['net_salary'], 2); ?></p>

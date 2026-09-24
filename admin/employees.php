@@ -1094,7 +1094,11 @@ $employees = mysqli_query($conn, "SELECT * FROM employees WHERE role='employee' 
     </div>
 
     <script>
-        let currentView = localStorage.getItem('employeeView') || 'list';
+        // With no saved preference yet, default to the card Grid view on narrow screens --
+        // the List view is a plain <table> that doesn't fit a phone screen (columns run off
+        // the edge with no way to reach them), while Grid already renders fine at any width.
+        // A manual choice via the toggle button is still remembered as before.
+        let currentView = localStorage.getItem('employeeView') || (window.innerWidth < 640 ? 'grid' : 'list');
         
         function toggleSearch() {
             document.getElementById('searchBar').classList.toggle('hidden');

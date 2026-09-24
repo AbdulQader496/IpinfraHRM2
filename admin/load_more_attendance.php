@@ -122,16 +122,27 @@ while ($row = mysqli_fetch_assoc($attendance)):
     </td>
     
     <td class="p-4 text-center">
-        <button onclick="openEditModalFromLoad(<?php echo json_encode($row, JSON_HEX_TAG | JSON_HEX_APOS | JSON_HEX_QUOT | JSON_HEX_AMP); ?>, '<?php echo $date; ?>')"
+        <?php /* openEditModalFromLoad() was called here but never defined anywhere in the
+                 codebase -- Edit silently did nothing (ReferenceError) for every row loaded
+                 via "Load More". This HTML is fetched and appended into the same DOM as
+                 attendance.php, so its already-working openEditModal() is directly callable. */ ?>
+        <button onclick="openEditModal(<?php echo htmlspecialchars(json_encode($row), ENT_QUOTES); ?>, '<?php echo $date; ?>')"
                 class="text-blue-600 hover:text-blue-800 transition" title="Edit Attendance">
             <i class="fas fa-edit"></i>
         </button>
+        <?php /* This used to be a plain GET link, but the handler in attendance.php only ever
+                 checked $_POST['delete_attendance'] -- clicking it just navigated to a URL
+                 whose query param was silently ignored, deleting nothing. Matches the working
+                 POST form used for rows rendered by attendance.php itself. */ ?>
         <?php if($attendance_id): ?>
-        <a href="?delete_attendance=<?php echo $attendance_id; ?>&date=<?php echo $date; ?>" 
-           data-confirm="Delete this attendance record?" data-confirm-title="Delete Record"
-           class="text-red-500 hover:text-red-700 transition ml-2" title="Delete">
-            <i class="fas fa-trash"></i>
-        </a>
+        <form method="POST" action="attendance.php" style="display:inline" onsubmit="return confirm('Delete this attendance record?')">
+            <?php echo csrfField(); ?>
+            <input type="hidden" name="delete_attendance" value="<?php echo $attendance_id; ?>">
+            <input type="hidden" name="date" value="<?php echo htmlspecialchars($date, ENT_QUOTES, 'UTF-8'); ?>">
+            <button type="submit" class="text-red-500 hover:text-red-700 transition ml-2" title="Delete">
+                <i class="fas fa-trash"></i>
+            </button>
+        </form>
         <?php endif; ?>
     </td>
 </tr>

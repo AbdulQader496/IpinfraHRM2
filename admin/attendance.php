@@ -70,21 +70,33 @@ if (isset($_POST['edit_attendance'])) {
         header('Location: attendance.php'); exit();
     }
     $attendance_id = intval($_POST['attendance_id']);
+    $employee_id = intval($_POST['employee_id'] ?? 0);
     $clock_in = mysqli_real_escape_string($conn, $_POST['clock_in']);
     $clock_out = mysqli_real_escape_string($conn, $_POST['clock_out']);
-    
+    $redirect_date = isset($_POST['date']) ? preg_replace('/[^0-9\-]/', '', $_POST['date']) : date('Y-m-d');
+
     $status = 'present';
     if (!empty($clock_in) && strtotime($clock_in) > strtotime('10:00:00')) {
         $status = 'late';
     }
-    
-    $update_query = "UPDATE attendance SET 
-                     clock_in = " . ($clock_in ? "'$clock_in'" : "NULL") . ",
-                     clock_out = " . ($clock_out ? "'$clock_out'" : "NULL") . ",
-                     status = '$status'
-                     WHERE id = $attendance_id";
-    $redirect_date = isset($_POST['date']) ? preg_replace('/[^0-9\-]/', '', $_POST['date']) : date('Y-m-d');
-    mysqli_query($conn, $update_query);
+
+    if ($attendance_id > 0) {
+        // Existing record for that employee/date -- update it.
+        $update_query = "UPDATE attendance SET
+                         clock_in = " . ($clock_in ? "'$clock_in'" : "NULL") . ",
+                         clock_out = " . ($clock_out ? "'$clock_out'" : "NULL") . ",
+                         status = '$status'
+                         WHERE id = $attendance_id";
+        mysqli_query($conn, $update_query);
+    } elseif ($employee_id > 0) {
+        // No attendance row exists yet for this employee/date (shown as "Absent") --
+        // the button only ever offered an UPDATE, which silently touched zero rows and
+        // made editing an absent employee's attendance a no-op. Insert instead.
+        $insert_query = "INSERT INTO attendance (employee_id, date, clock_in, clock_out, status)
+                          VALUES ($employee_id, '$redirect_date', " . ($clock_in ? "'$clock_in'" : "NULL") . ", " . ($clock_out ? "'$clock_out'" : "NULL") . ", '$status')
+                          ON DUPLICATE KEY UPDATE clock_in = VALUES(clock_in), clock_out = VALUES(clock_out), status = VALUES(status)";
+        mysqli_query($conn, $insert_query);
+    }
     header("Location: attendance.php?date=" . $redirect_date);
     exit();
 }
@@ -568,7 +580,14 @@ $all_employees = mysqli_query($conn, "SELECT id, name, employee_id FROM employee
                             </td>
                             
                             <td class="p-4 text-center">
-                                <button onclick="openEditModal(<?php echo json_encode($row, JSON_HEX_APOS | JSON_HEX_QUOT | JSON_HEX_TAG); ?>, '<?php echo $date; ?>')"
+                                <?php /* JSON_HEX_QUOT only escapes quotes found INSIDE string values -- it never touches
+                                         the structural "key":"value" quotes JSON itself requires, so the raw json_encode()
+                                         output still breaks out of this onclick="..." attribute at its very first quote
+                                         (right after the opening brace). That corrupted the whole tag for every row, not
+                                         just employees with no attendance record -- htmlspecialchars() is what actually
+                                         makes it HTML-attribute-safe, matching the pattern already used for openLeaveDetails()
+                                         and openAdjustModal() elsewhere in this codebase. */ ?>
+                                <button onclick="openEditModal(<?php echo htmlspecialchars(json_encode($row), ENT_QUOTES); ?>, '<?php echo $date; ?>')"
                                         class="text-blue-600 hover:text-blue-800 transition" title="Edit Attendance">
                                     <i class="fas fa-edit"></i>
                                 </button>
@@ -688,6 +707,7 @@ $all_employees = mysqli_query($conn, "SELECT id, name, employee_id FROM employee
         <form method="POST" class="p-6 space-y-4" action="">
             <?php echo csrfField(); ?>
             <input type="hidden" name="attendance_id" id="editAttendanceId">
+            <input type="hidden" name="employee_id" id="editEmployeeId">
             <input type="hidden" name="date" value="<?php echo $date; ?>">
             
             <div>
@@ -808,7 +828,8 @@ $all_employees = mysqli_query($conn, "SELECT id, name, employee_id FROM employee
     }
     
     function openEditModal(employee, date) {
-        document.getElementById('editAttendanceId').value = employee.id;
+        document.getElementById('editAttendanceId').value = employee.id || '';
+        document.getElementById('editEmployeeId').value = employee.emp_id;
         document.getElementById('editEmployeeName').innerHTML = employee.name + ' (' + employee.employee_id + ')';
         
         if (employee.clock_in) {

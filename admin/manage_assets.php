@@ -483,7 +483,7 @@ $active_count = mysqli_num_rows($active_assignments);
                                     </span>
                                 </td>
                                 <td class="p-3 text-center">
-                                    <button onclick="openQuantityModal(<?php echo intval($asset['id']); ?>, <?php echo intval($asset['quantity']); ?>, <?php echo json_encode(htmlspecialchars($asset['asset_name'] ?? '', ENT_QUOTES, 'UTF-8')); ?>)" class="text-blue-600 hover:text-blue-800 text-sm mr-2">
+                                    <button onclick="openQuantityModal(<?php echo intval($asset['id']); ?>, <?php echo intval($asset['quantity']); ?>, <?php echo htmlspecialchars(json_encode($asset['asset_name'] ?? ''), ENT_QUOTES); ?>)" class="text-blue-600 hover:text-blue-800 text-sm mr-2">
                                         <i class="fas fa-edit"></i> Qty
                                     </button>
                                     <form method="POST" style="display:inline" onsubmit="return confirm('Delete this asset record permanently?')">

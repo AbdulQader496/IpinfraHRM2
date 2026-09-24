@@ -528,7 +528,7 @@ $announcements = mysqli_query($conn, "SELECT * FROM announcements WHERE is_activ
                                 <?php endif; ?>
                             </div>
                             <div class="flex gap-1 ml-2">
-                                <button onclick='openEditAnnouncementModal(<?php echo json_encode($ann); ?>)' class="text-blue-500 hover:text-blue-700 p-1">
+                                <button onclick='openEditAnnouncementModal(<?php echo htmlspecialchars(json_encode($ann), ENT_QUOTES); ?>)' class="text-blue-500 hover:text-blue-700 p-1">
                                     <i class="fas fa-edit"></i>
                                 </button>
                                 <form method="POST" style="display:inline;" data-confirm="Delete this announcement? This cannot be undone." data-confirm-title="Delete Announcement">

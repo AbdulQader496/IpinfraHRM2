@@ -258,7 +258,11 @@ $history_count = $hist_total;
                                         <div class="mt-2 flex items-center justify-between">
                                             <span class="text-xs text-gray-500">Stock: <?php echo $asset['available_quantity']; ?>/<?php echo $asset['quantity']; ?></span>
                                             <?php if($asset['available_quantity'] > 0): ?>
-                                                <button onclick="openRequestModal(<?php echo $asset['id']; ?>, '<?php echo addslashes($asset['asset_name']); ?>', <?php echo $asset['available_quantity']; ?>)" 
+                                                <?php /* addslashes() only backslash-escapes quotes, which isn't a valid HTML-attribute
+                                                         escape -- an asset name containing a literal " (e.g. a 27" Monitor) would still
+                                                         close this double-quoted attribute early. htmlspecialchars(..., ENT_QUOTES) is
+                                                         what actually neutralizes it for this context. */ ?>
+                                                <button onclick="openRequestModal(<?php echo intval($asset['id']); ?>, '<?php echo htmlspecialchars($asset['asset_name'], ENT_QUOTES); ?>', <?php echo intval($asset['available_quantity']); ?>)"
                                                         class="bg-gradient-to-r from-blue-600 to-indigo-600 text-white px-4 py-1.5 rounded-lg text-sm font-semibold hover:shadow-lg transition transform hover:scale-105">
                                                     <i class="fas fa-paper-plane mr-1"></i> Request
                                                 </button>

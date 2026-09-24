@@ -889,7 +889,7 @@ $leave_type_options = mysqli_query($conn, "SELECT DISTINCT leave_type FROM leave
                                 </span>
                             </td>
                             <td class="p-3">
-                                <button onclick='openEditTypeModal(<?php echo json_encode($type); ?>)' class="text-blue-600 mr-2">Edit</button>
+                                <button onclick='openEditTypeModal(<?php echo htmlspecialchars(json_encode($type), ENT_QUOTES); ?>)' class="text-blue-600 mr-2">Edit</button>
                                 <form id="del_type_<?php echo $type['id']; ?>" method="POST" style="display:inline" onsubmit="return false;">
                                     <?php echo csrfField(); ?>
                                     <input type="hidden" name="delete_type" value="<?php echo $type['id']; ?>">

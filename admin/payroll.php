@@ -20,7 +20,7 @@ if (isset($_POST['bulk_delete']) && validateCsrfToken($_POST['csrf_token'] ?? ''
         logAction('delete', count($ids) . ' payroll record(s) bulk deleted', null, 'payroll');
         showToast(count($ids) . ' payroll record(s) deleted.', 'info');
     }
-    $qs = http_build_query(array_filter(['month' => $_POST['filter_month'] ?? '', 'per_page' => $_POST['filter_per_page'] ?? '']));
+    $qs = http_build_query(array_filter(['month' => $_POST['filter_month'] ?? '', 'search' => $_POST['filter_search'] ?? '', 'per_page' => $_POST['filter_per_page'] ?? '']));
     header('Location: payroll.php' . ($qs ? '?'.$qs : '')); exit();
 }
 
@@ -33,7 +33,7 @@ if (isset($_POST['pay_delete']) && validateCsrfToken($_POST['csrf_token'] ?? '')
     mysqli_query($conn, "DELETE FROM payroll WHERE id = $del_id");
     logAction('delete', 'Deleted payroll record', $del_id, 'payroll');
     showToast('Payroll record deleted.', 'info');
-    $qs = http_build_query(array_filter(['month' => $_POST['filter_month'] ?? '', 'per_page' => $_POST['filter_per_page'] ?? '', 'page' => $_POST['filter_page'] ?? '']));
+    $qs = http_build_query(array_filter(['month' => $_POST['filter_month'] ?? '', 'search' => $_POST['filter_search'] ?? '', 'per_page' => $_POST['filter_per_page'] ?? '', 'page' => $_POST['filter_page'] ?? '']));
     header('Location: payroll.php' . ($qs ? '?'.$qs : '')); exit();
 }
 
@@ -111,7 +111,14 @@ if (isset($_POST['pay_regenerate']) && validateCsrfToken($_POST['csrf_token'] ??
 if (isset($_GET['export']) && $_GET['export'] === 'csv') {
     $exp_month = trim($_GET['month'] ?? '');
     if ($exp_month && !preg_match('/^\d{4}-\d{2}$/', $exp_month)) $exp_month = '';
-    $exp_where = $exp_month ? "WHERE p.month_year = '$exp_month'" : '';
+    $exp_search = trim($_GET['search'] ?? '');
+    $exp_where_parts = [];
+    if ($exp_month) $exp_where_parts[] = "p.month_year = '$exp_month'";
+    if ($exp_search !== '') {
+        $exp_search_safe = mysqli_real_escape_string($conn, $exp_search);
+        $exp_where_parts[] = "(e.name LIKE '%$exp_search_safe%' OR e.employee_id LIKE '%$exp_search_safe%')";
+    }
+    $exp_where = $exp_where_parts ? 'WHERE ' . implode(' AND ', $exp_where_parts) : '';
     $export_query = mysqli_query($conn, "SELECT e.employee_id, e.name, e.department, e.nationality, e.employee_type, p.month_year, p.basic_salary, p.epf_employee, p.socso_employee, p.eis_employee, p.pcb, p.unpaid_deduction, p.approved_claims, p.net_salary FROM payroll p JOIN employees e ON p.employee_id = e.id $exp_where ORDER BY p.month_year DESC, e.name ASC");
     $filename = 'payroll_export_' . date('Y-m-d') . '.csv';
     header('Content-Type: text/csv');
@@ -298,7 +305,7 @@ if (isset($_POST['email_payslip'])) {
     } else {
         showToast('Could not send payslip: payroll record not found or employee email is missing.', 'error');
     }
-    $qs = http_build_query(array_filter(['month' => $_POST['filter_month'] ?? '', 'per_page' => $_POST['filter_per_page'] ?? '', 'page' => $_POST['filter_page'] ?? '']));
+    $qs = http_build_query(array_filter(['month' => $_POST['filter_month'] ?? '', 'search' => $_POST['filter_search'] ?? '', 'per_page' => $_POST['filter_per_page'] ?? '', 'page' => $_POST['filter_page'] ?? '']));
     header('Location: payroll.php' . ($qs ? '?'.$qs : '')); exit();
 }
 
@@ -410,11 +417,18 @@ $stats = mysqli_fetch_assoc($stats_query);
 // Filters & pagination
 $filter_month = trim($_GET['month'] ?? '');
 if ($filter_month && !preg_match('/^\d{4}-\d{2}$/', $filter_month)) $filter_month = '';
+$search = trim($_GET['search'] ?? '');
 $per_page = (int)($_GET['per_page'] ?? 25);
 if (!in_array($per_page, [10, 25, 50, 100])) $per_page = 25;
 $page = max(1, (int)($_GET['page'] ?? 1));
 
-$where_clause = $filter_month ? "WHERE p.month_year = '" . mysqli_real_escape_string($conn, $filter_month) . "'" : '';
+$where_parts = [];
+if ($filter_month) $where_parts[] = "p.month_year = '" . mysqli_real_escape_string($conn, $filter_month) . "'";
+if ($search !== '') {
+    $search_safe = mysqli_real_escape_string($conn, $search);
+    $where_parts[] = "(e.name LIKE '%$search_safe%' OR e.employee_id LIKE '%$search_safe%')";
+}
+$where_clause = $where_parts ? 'WHERE ' . implode(' AND ', $where_parts) : '';
 
 $total_count = (int)mysqli_fetch_assoc(mysqli_query($conn,
     "SELECT COUNT(*) as c FROM payroll p JOIN employees e ON p.employee_id = e.id $where_clause"))['c'];
@@ -587,6 +601,7 @@ $payrolls = mysqli_query($conn, "SELECT p.*, e.name, e.employee_id, e.nationalit
             <?php echo csrfField(); ?>
             <input type="hidden" name="bulk_delete" value="1">
             <input type="hidden" name="filter_month" value="<?php echo htmlspecialchars($filter_month); ?>">
+            <input type="hidden" name="filter_search" value="<?php echo htmlspecialchars($search); ?>">
             <input type="hidden" name="filter_per_page" value="<?php echo $per_page; ?>">
         </form>
 
@@ -600,6 +615,9 @@ $payrolls = mysqli_query($conn, "SELECT p.*, e.name, e.employee_id, e.nationalit
                     <p class="font-semibold text-gray-800 text-sm whitespace-nowrap">Payroll Records</p>
                     <span class="text-xs text-gray-400">(<?php echo $total_count; ?> total)</span>
                 </div>
+                <!-- Employee search -->
+                <input type="text" name="search" value="<?php echo htmlspecialchars($search); ?>" placeholder="Search employee name or ID..."
+                       class="text-xs border border-gray-200 rounded-lg px-3 py-2 focus:border-indigo-400 focus:outline-none bg-white w-full sm:w-48">
                 <!-- Month picker -->
                 <input type="month" name="month" value="<?php echo htmlspecialchars($filter_month); ?>"
                        class="text-xs border border-gray-200 rounded-lg px-3 py-2 focus:border-indigo-400 focus:outline-none bg-white">
@@ -614,13 +632,13 @@ $payrolls = mysqli_query($conn, "SELECT p.*, e.name, e.employee_id, e.nationalit
                 <button type="submit" class="text-xs bg-indigo-600 hover:bg-indigo-700 text-white px-3 py-2 rounded-lg font-semibold transition whitespace-nowrap">
                     <i class="fas fa-search text-[10px] mr-1"></i> Filter
                 </button>
-                <?php if ($filter_month): ?>
+                <?php if ($filter_month || $search !== ''): ?>
                 <a href="?per_page=<?php echo $per_page; ?>" class="text-xs text-gray-500 hover:text-gray-700 bg-gray-200 hover:bg-gray-300 px-3 py-2 rounded-lg transition whitespace-nowrap">
                     Clear
                 </a>
                 <?php endif; ?>
                 <!-- Export -->
-                <a href="?export=csv<?php echo $filter_month ? '&month='.urlencode($filter_month) : ''; ?>"
+                <a href="?export=csv<?php echo $filter_month ? '&month='.urlencode($filter_month) : ''; ?><?php echo $search !== '' ? '&search='.urlencode($search) : ''; ?>"
                    class="inline-flex items-center gap-1 text-xs bg-green-100 text-green-700 px-3 py-2 rounded-lg hover:bg-green-200 transition font-semibold whitespace-nowrap">
                     <i class="fas fa-download"></i> CSV
                 </a>
@@ -755,6 +773,7 @@ $payrolls = mysqli_query($conn, "SELECT p.*, e.name, e.employee_id, e.nationalit
                                     <?php echo csrfField(); ?>
                                     <input type="hidden" name="email_payslip" value="<?php echo $row['id']; ?>">
                                     <input type="hidden" name="filter_month" value="<?php echo htmlspecialchars($_GET['month'] ?? ''); ?>">
+                                    <input type="hidden" name="filter_search" value="<?php echo htmlspecialchars($_GET['search'] ?? ''); ?>">
                                     <input type="hidden" name="filter_per_page" value="<?php echo htmlspecialchars($_GET['per_page'] ?? ''); ?>">
                                     <input type="hidden" name="filter_page" value="<?php echo htmlspecialchars($_GET['page'] ?? ''); ?>">
                                     <button type="submit" class="flex items-center gap-1 bg-indigo-100 hover:bg-indigo-200 text-indigo-600 px-3 py-2.5 rounded-xl text-sm font-semibold transition" title="Email Payslip">
@@ -765,6 +784,7 @@ $payrolls = mysqli_query($conn, "SELECT p.*, e.name, e.employee_id, e.nationalit
                                     <?php echo csrfField(); ?>
                                     <input type="hidden" name="pay_regenerate" value="<?php echo $row['id']; ?>">
                                     <input type="hidden" name="filter_month" value="<?php echo htmlspecialchars($filter_month); ?>">
+                                    <input type="hidden" name="filter_search" value="<?php echo htmlspecialchars($search); ?>">
                                     <input type="hidden" name="filter_per_page" value="<?php echo $per_page; ?>">
                                     <input type="hidden" name="filter_page" value="<?php echo $page; ?>">
                                     <button type="submit" class="flex items-center gap-1 bg-blue-100 hover:bg-blue-200 text-blue-600 px-3 py-2.5 rounded-xl text-sm font-semibold transition" title="Regenerate">
@@ -775,6 +795,7 @@ $payrolls = mysqli_query($conn, "SELECT p.*, e.name, e.employee_id, e.nationalit
                                     <?php echo csrfField(); ?>
                                     <input type="hidden" name="pay_delete" value="<?php echo $row['id']; ?>">
                                     <input type="hidden" name="filter_month" value="<?php echo htmlspecialchars($filter_month); ?>">
+                                    <input type="hidden" name="filter_search" value="<?php echo htmlspecialchars($search); ?>">
                                     <input type="hidden" name="filter_per_page" value="<?php echo $per_page; ?>">
                                     <input type="hidden" name="filter_page" value="<?php echo $page; ?>">
                                     <button type="submit" class="flex items-center gap-1 bg-red-100 hover:bg-red-200 text-red-600 px-3 py-2.5 rounded-xl text-sm font-semibold transition" title="Delete Record">
@@ -805,7 +826,7 @@ $payrolls = mysqli_query($conn, "SELECT p.*, e.name, e.employee_id, e.nationalit
                 </p>
                 <div class="flex items-center gap-1.5 flex-wrap">
                     <?php
-                    $pg_base = '?page=%d&per_page=' . $per_page . ($filter_month ? '&month=' . urlencode($filter_month) : '');
+                    $pg_base = '?page=%d&per_page=' . $per_page . ($filter_month ? '&month=' . urlencode($filter_month) : '') . ($search !== '' ? '&search=' . urlencode($search) : '');
 
                     // Prev
                     if ($page > 1):

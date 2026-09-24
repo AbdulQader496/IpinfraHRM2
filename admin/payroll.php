@@ -709,7 +709,7 @@ $payrolls = mysqli_query($conn, "SELECT p.*, e.name, e.employee_id, e.nationalit
                         ];
                     ?>
                     <div class="payroll-row px-5 py-4">
-                        <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                        <div class="flex flex-col sm:flex-row sm:items-center gap-4">
 
                             <!-- Checkbox -->
                             <div class="flex-shrink-0 self-start sm:self-center">
@@ -718,7 +718,12 @@ $payrolls = mysqli_query($conn, "SELECT p.*, e.name, e.employee_id, e.nationalit
                             </div>
 
                             <!-- Left: Employee Info -->
-                            <div class="flex items-center gap-3 min-w-0">
+                            <!-- Fixed width so every row's avatar/name starts at the same X regardless of how
+                                 many "quick figure" pills (Basic / Claims / Unpaid / Statutory) that row has --
+                                 justify-between previously redistributed the gap before this column based on
+                                 the combined width of everything else in the row, so names visibly drifted
+                                 left/right row to row depending on unrelated content. -->
+                            <div class="flex items-center gap-3 min-w-0 sm:w-72 sm:shrink-0">
                                 <div class="w-10 h-10 rounded-full bg-gradient-to-br from-indigo-500 to-purple-600 flex items-center justify-center text-white font-bold text-sm flex-shrink-0">
                                     <?php echo strtoupper(substr($row['name'], 0, 1)); ?>
                                 </div>
@@ -758,7 +763,7 @@ $payrolls = mysqli_query($conn, "SELECT p.*, e.name, e.employee_id, e.nationalit
                             </div>
 
                             <!-- Right: Net + Button -->
-                            <div class="flex items-center gap-3 flex-shrink-0">
+                            <div class="flex items-center gap-3 flex-shrink-0 sm:ml-auto">
                                 <div class="text-right">
                                     <p class="text-xs text-gray-400">Net Salary</p>
                                     <p class="text-xl font-bold text-green-600">RM <?php echo number_format($row['net_salary'], 2); ?></p>

@@ -16,6 +16,33 @@ $edit_leave_id = 0;
 $emp_info = mysqli_fetch_assoc(mysqli_query($conn, "SELECT employee_type FROM employees WHERE id = $user_id"));
 $is_intern = isset($emp_info['employee_type']) && $emp_info['employee_type'] == 'intern';
 
+// Nothing used to stop an employee submitting two leave requests covering the same days.
+// Admin approval only guards each row on its own status, so both could get approved,
+// crediting leave balance twice (and double-deducting unpaid days in payroll) for the same
+// calendar days. Returns the conflicting row, or null if the range is clear.
+// The one legitimate overlap: two half-day requests on the same single day for different
+// halves (morning off + afternoon off) -- allowed.
+function findOverlappingLeave(mysqli $conn, int $user_id, string $start, string $end, string $half_day, int $exclude_id = 0) {
+    $start_e = mysqli_real_escape_string($conn, $start);
+    $end_e   = mysqli_real_escape_string($conn, $end);
+    $excl    = $exclude_id > 0 ? "AND id != $exclude_id" : '';
+    $q = mysqli_query($conn, "SELECT id, half_day, start_date, end_date FROM leaves
+        WHERE employee_id = $user_id AND status IN ('pending','approved') $excl
+        AND start_date <= '$end_e' AND end_date >= '$start_e'");
+    while ($row = mysqli_fetch_assoc($q)) {
+        $both_half = ($half_day !== 'none' && $row['half_day'] !== 'none');
+        $same_day  = ($start === $end && $row['start_date'] === $start && $row['end_date'] === $end);
+        if ($both_half && $same_day && $half_day !== $row['half_day']) continue;
+        return $row;
+    }
+    return null;
+}
+
+function describeLeaveRange(array $row) {
+    $s = date('d M Y', strtotime($row['start_date']));
+    return $row['end_date'] !== $row['start_date'] ? $s . ' – ' . date('d M Y', strtotime($row['end_date'])) : $s;
+}
+
 // ========================================
 // HANDLE EDIT LEAVE (Load data for editing)
 // ========================================
@@ -62,6 +89,8 @@ if (isset($_POST['update_leave'])) {
     // Interns can only apply for Medical or Unpaid leave
     if ($is_intern && !in_array($leave_type, ['medical', 'unpaid'])) {
         $error = 'Interns can only apply for Medical or Unpaid Leave.';
+    } elseif ($overlap = findOverlappingLeave($conn, $user_id, $start_date, $end_date, $half_day, $leave_id)) {
+        $error = 'You already have a leave request covering ' . describeLeaveRange($overlap) . '. Please pick different dates.';
     } else {
     // Atomic guard: re-check status='pending' in the UPDATE itself, not just an earlier
     // SELECT — otherwise an admin approving this exact request between the check and the
@@ -204,6 +233,10 @@ if (isset($_POST['apply_leave']) && !$edit_mode) {
             } else {
                 $total_days = (strtotime($end_date) - strtotime($start_date)) / 86400 + 1;
             }
+        }
+
+        if (empty($error) && ($overlap = findOverlappingLeave($conn, $user_id, $start_date, $end_date, $half_day))) {
+            $error = 'You already have a leave request covering ' . describeLeaveRange($overlap) . '. Please pick different dates.';
         }
 
         if (empty($error)) {

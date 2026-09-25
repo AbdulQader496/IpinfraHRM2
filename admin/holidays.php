@@ -3,13 +3,17 @@ require_once '../includes/auth.php';
 redirectIfNotAdmin();
 require_once '../includes/db.php';
 /** @var mysqli $conn */
+require_once '../includes/toast_fn.php';
 
 if (isset($_POST['add_holiday'])) {
     if (!validateCsrfToken($_POST['csrf_token'] ?? '')) { header('Location: holidays.php'); exit; }
     $date = mysqli_real_escape_string($conn, $_POST['holiday_date']);
     $name = mysqli_real_escape_string($conn, $_POST['holiday_name']);
     if (!preg_match('/^\d{4}-\d{2}-\d{2}$/', $date)) {
-        $error = 'Invalid date format.';
+        showToast('Invalid date format.', 'error'); header('Location: holidays.php'); exit();
+    } elseif (mysqli_num_rows(mysqli_query($conn, "SELECT id FROM holidays WHERE holiday_date = '$date'")) > 0) {
+        // Two holidays on one date break the calendar's per-day lookup and double-list the day.
+        showToast('A holiday is already set for that date.', 'error'); header('Location: holidays.php'); exit();
     } else {
         mysqli_query($conn, "INSERT INTO holidays (holiday_date, holiday_name) VALUES ('$date', '$name')");
         header('Location: holidays.php');
@@ -59,6 +63,7 @@ $holidays = mysqli_query($conn, "SELECT * FROM holidays ORDER BY holiday_date DE
         <!-- No back button - just empty space or nothing -->
     </div>
 </div>
+<?php require_once '../includes/toast.php'; ?>
 <?php require_once '../includes/global_ui.php'; ?>
 <?php require_once '../includes/admin_sidebar.php'; ?>
 

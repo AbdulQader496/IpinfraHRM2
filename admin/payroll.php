@@ -315,7 +315,14 @@ if (isset($_POST['email_payslip'])) {
 
 if (isset($_POST['generate_payroll'])) {
     if (!validateCsrfToken($_POST['csrf_token'] ?? '')) { showToast('Security error.', 'error'); header('Location: payroll.php'); exit; }
-    $month_year = mysqli_real_escape_string($conn, $_POST['month_year']);
+    // Every other month input in this file (CSV export, GET filter) is regex-checked; this
+    // one wasn't, so a malformed value from a non-UI request could feed strtotime() below
+    // a bogus date and generate garbage payroll rows for every employee.
+    $month_year_raw = trim($_POST['month_year'] ?? '');
+    if (!preg_match('/^\d{4}-(0[1-9]|1[0-2])$/', $month_year_raw)) {
+        showToast('Invalid month format.', 'error'); header('Location: payroll.php'); exit;
+    }
+    $month_year = mysqli_real_escape_string($conn, $month_year_raw);
     $employees = mysqli_query($conn, "SELECT * FROM employees WHERE role='employee' AND status='active'");
     $generated_count = 0;
 

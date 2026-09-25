@@ -140,7 +140,7 @@ if (isset($_POST['update_employee'])) {
             header('Location: employees.php'); exit();
         }
         $hashed = mysqli_real_escape_string($conn, password_hash($new_password, PASSWORD_DEFAULT));
-        $password_sql = ", password='$hashed'";
+        $password_sql = ", password='$hashed', remember_token=NULL";
         $password_changed = true;
     }
 
@@ -205,7 +205,7 @@ if (isset($_POST['emp_delete']) && validateCsrfToken($_POST['csrf_token'] ?? '')
     } catch (Exception $e) { /* table may not exist in this environment */ }
 
     // Remove related records first to avoid FK constraint failures
-    $related = ['attendance', 'leaves', 'payroll', 'claims', 'notifications', 'employee_of_month', 'asset_requests', 'employee_documents'];
+    $related = ['attendance', 'leaves', 'payroll', 'claims', 'notifications', 'employee_of_month', 'asset_requests', 'employee_documents', 'employee_resignations', 'employee_terminations', 'employee_warnings'];
     foreach ($related as $tbl) {
         try {
             mysqli_query($conn, "DELETE FROM `$tbl` WHERE employee_id = $id");

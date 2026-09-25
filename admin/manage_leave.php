@@ -327,9 +327,12 @@ if (isset($_POST['delete_leave'])) {
         header('Location: manage_leave.php'); exit();
     }
     $id = intval($_POST['delete_leave']);
-    $leave = mysqli_fetch_assoc(mysqli_query($conn, "SELECT * FROM leaves WHERE id=$id"));
+    // Read the row under a lock inside the transaction: otherwise a concurrent approve/undo
+    // could change status between this read and the DELETE, and the balance restore below
+    // would act on a stale status (restoring days never deducted, or missing ones that were).
+    mysqli_begin_transaction($conn);
+    $leave = mysqli_fetch_assoc(mysqli_query($conn, "SELECT * FROM leaves WHERE id=$id FOR UPDATE"));
     if ($leave) {
-        mysqli_begin_transaction($conn);
         mysqli_query($conn, "DELETE FROM leaves WHERE id=$id");
         if (mysqli_affected_rows($conn) > 0) {
             if ($leave['status'] == 'approved') {
@@ -350,6 +353,8 @@ if (isset($_POST['delete_leave'])) {
         } else {
             mysqli_rollback($conn);
         }
+    } else {
+        mysqli_rollback($conn);
     }
     header('Location: manage_leave.php'); exit();
 }

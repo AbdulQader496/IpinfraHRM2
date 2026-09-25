@@ -88,8 +88,17 @@ for ($i = 5; $i >= 0; $i--) {
          WHERE DATE_FORMAT(date,'%Y-%m') = '$month_key'
          AND clock_in IS NOT NULL"))['cnt'];
 
-    if ($total_working_days > 0 && $active_employees > 0) {
-        $rate = round(($present_count / ($active_employees * $total_working_days)) * 100, 1);
+    // Headcount as of that month: dividing every past month by today's headcount skews the
+    // trend whenever people joined/left. Anyone who has an attendance row that month counts,
+    // plus active staff who had already joined by month end (join_date may be NULL).
+    $month_end = date('Y-m-t', strtotime("-$i months"));
+    $headcount = (int)mysqli_fetch_assoc(mysqli_query($conn,
+        "SELECT COUNT(*) as cnt FROM employees e WHERE e.role='employee'
+         AND (e.join_date IS NULL OR e.join_date <= '$month_end')
+         AND (e.status='active' OR EXISTS (SELECT 1 FROM attendance a WHERE a.employee_id=e.id AND DATE_FORMAT(a.date,'%Y-%m')='$month_key'))"))['cnt'];
+
+    if ($total_working_days > 0 && $headcount > 0) {
+        $rate = round(($present_count / ($headcount * $total_working_days)) * 100, 1);
     } else {
         $rate = 0;
     }
@@ -187,7 +196,7 @@ try {
 } catch (Exception $e) { }
 
 // Get announcements
-$announcements = mysqli_query($conn, "SELECT * FROM announcements WHERE is_active = 1 AND (end_date IS NULL OR end_date >= CURDATE()) ORDER BY 
+$announcements = mysqli_query($conn, "SELECT * FROM announcements WHERE is_active = 1 AND start_date <= CURDATE() AND (end_date IS NULL OR end_date >= CURDATE()) ORDER BY 
     CASE announcement_type 
         WHEN 'urgent' THEN 1 
         WHEN 'holiday' THEN 2 

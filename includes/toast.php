@@ -306,8 +306,9 @@ if (!empty($_SESSION['toast'])) {
     unset($_SESSION['toast']);
 
     // Sanitise for JS output
-    $jsMessage = json_encode($t['message']);
-    $jsType    = json_encode($t['type']);
+    $jsFlags   = JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT;
+    $jsMessage = json_encode($t['message'], $jsFlags);
+    $jsType    = json_encode($t['type'], $jsFlags);
     echo "<script>document.addEventListener('DOMContentLoaded', function(){ window.showToast({$jsMessage}, {$jsType}); });</script>\n";
 }
 ?>

@@ -10,6 +10,11 @@ $edit_mode = false;
 $edit_claim_id = 0;
 $edit_claim = null;
 
+// Matches claims.claim_type's ENUM in the DB. Under MYSQLI_REPORT_STRICT an out-of-set
+// value from a crafted (non-UI) request throws an uncaught mysqli_sql_exception instead of
+// being rejected gracefully -- same bug class already fixed for leaves.leave_type.
+$allowed_claim_types = ['travel', 'meal', 'medical', 'toll', 'parking', 'other'];
+
 // ========================================
 // SHARED ATTACHMENT UPLOAD HANDLER
 // ========================================
@@ -118,8 +123,17 @@ if (isset($_POST['update_claim'])) {
         showToast('Security error.', 'error'); header('Location: claim.php'); exit;
     }
     $claim_id = intval($_POST['claim_id'] ?? 0);
-    $claim_type = mysqli_real_escape_string($conn, $_POST['claim_type'] ?? '');
+    $claim_type_raw = $_POST['claim_type'] ?? '';
+    if (!in_array($claim_type_raw, $allowed_claim_types, true)) {
+        showToast('Please choose a valid claim type.', 'error'); header("Location: claim.php?edit=$claim_id"); exit;
+    }
+    $claim_type = mysqli_real_escape_string($conn, $claim_type_raw);
     $amount = floatval($_POST['amount'] ?? 0);
+    // A hand-crafted POST (bypassing the type="number" input) could otherwise submit zero or
+    // a negative amount -- approved and swept into payroll, a negative claim would REDUCE net pay.
+    if ($amount <= 0) {
+        showToast('Claim amount must be greater than 0.', 'error'); header("Location: claim.php?edit=$claim_id"); exit;
+    }
     $description_raw = trim($_POST['description'] ?? '');
     if ($description_raw === '') {
         showToast('Please describe the claim purpose.', 'error'); header("Location: claim.php?edit=$claim_id"); exit;
@@ -208,8 +222,15 @@ if (isset($_POST['apply_claim'])) {
     if (!validateCsrfToken($_POST['csrf_token'] ?? '')) {
         showToast('Security error.', 'error'); header('Location: claim.php'); exit;
     }
-    $claim_type = mysqli_real_escape_string($conn, $_POST['claim_type'] ?? '');
+    $claim_type_raw = $_POST['claim_type'] ?? '';
+    if (!in_array($claim_type_raw, $allowed_claim_types, true)) {
+        showToast('Please choose a valid claim type.', 'error'); header('Location: claim.php'); exit;
+    }
+    $claim_type = mysqli_real_escape_string($conn, $claim_type_raw);
     $amount = floatval($_POST['amount'] ?? 0);
+    if ($amount <= 0) {
+        showToast('Claim amount must be greater than 0.', 'error'); header('Location: claim.php'); exit;
+    }
     $description_raw = trim($_POST['description'] ?? '');
     if ($description_raw === '') {
         showToast('Please describe the claim purpose.', 'error'); header('Location: claim.php'); exit;

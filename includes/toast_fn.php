@@ -5,7 +5,9 @@ if (!function_exists('showToast')) {
     function showToast($message, $type = 'success') {
         if (session_status() === PHP_SESSION_NONE) session_start();
         $_SESSION['toast'] = [
-            'message' => htmlspecialchars($message, ENT_QUOTES, 'UTF-8'),
+            // Stored raw: toast.php renders via textContent, so pre-escaping here displayed
+            // literal "&#039;" for any message containing an apostrophe or ampersand.
+            'message' => (string)$message,
             'type'    => in_array($type, ['success','error','warning','info']) ? $type : 'success',
         ];
     }

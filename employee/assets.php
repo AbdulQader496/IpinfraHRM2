@@ -19,6 +19,12 @@ if (isset($_POST['request_asset'])) {
     $end_date           = mysqli_real_escape_string($conn, $_POST['end_date']);
     $quantity_requested = intval($_POST['quantity_requested']);
 
+    $date_re = '/^\d{4}-\d{2}-\d{2}$/';
+    if (!preg_match($date_re, $start_date) || !preg_match($date_re, $end_date) || $end_date < $start_date) {
+        showToast('End date must be on or after the start date.', 'error');
+        header('Location: assets.php'); exit();
+    }
+
     $asset_row = mysqli_fetch_assoc(mysqli_query($conn, "SELECT available_quantity FROM assets WHERE id = $asset_id"));
     if ($quantity_requested <= 0 || !$asset_row || $quantity_requested > $asset_row['available_quantity']) {
         showToast('Invalid quantity requested.', 'error');

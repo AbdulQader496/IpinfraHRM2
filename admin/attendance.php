@@ -18,11 +18,28 @@ if (isset($_POST['add_manual_attendance'])) {
     $attendance_date = mysqli_real_escape_string($conn, $_POST['attendance_date']);
     $clock_in = mysqli_real_escape_string($conn, $_POST['clock_in']);
     $clock_out = mysqli_real_escape_string($conn, $_POST['clock_out']);
-    
+
+    // Reject impossible entries instead of storing them: a clock-out at/before clock-in
+    // (or a clock-out with no clock-in) produces negative/garbage worked hours everywhere.
+    $manual_error = null;
+    if ($employee_id <= 0 || !preg_match('/^\d{4}-\d{2}-\d{2}$/', $attendance_date)) {
+        $manual_error = 'Please choose an employee and a valid date.';
+    } elseif ($clock_out !== '' && $clock_in === '') {
+        $manual_error = 'Clock-out needs a clock-in time.';
+    } elseif ($clock_in !== '' && $clock_out !== '' && strtotime($clock_out) <= strtotime($clock_in)) {
+        $manual_error = 'Clock-out must be after clock-in.';
+    }
+    if ($manual_error) {
+        showToast($manual_error, 'error');
+        header('Location: attendance.php?date=' . urlencode($attendance_date)); exit();
+    }
+
     $check_query = mysqli_query($conn, "SELECT id FROM attendance WHERE employee_id = $employee_id AND date = '$attendance_date'");
     
     $status = 'present';
-    if (!empty($clock_in) && strtotime($clock_in) > strtotime('10:00:00')) {
+    if (empty($clock_in)) {
+        $status = 'absent';
+    } elseif (strtotime($clock_in) > strtotime('10:00:00')) {
         $status = 'late';
     }
     
@@ -75,8 +92,19 @@ if (isset($_POST['edit_attendance'])) {
     $clock_out = mysqli_real_escape_string($conn, $_POST['clock_out']);
     $redirect_date = isset($_POST['date']) ? preg_replace('/[^0-9\-]/', '', $_POST['date']) : date('Y-m-d');
 
+    if ($clock_out !== '' && $clock_in === '') {
+        showToast('Clock-out needs a clock-in time.', 'error');
+        header("Location: attendance.php?date=" . $redirect_date); exit();
+    }
+    if ($clock_in !== '' && $clock_out !== '' && strtotime($clock_out) <= strtotime($clock_in)) {
+        showToast('Clock-out must be after clock-in.', 'error');
+        header("Location: attendance.php?date=" . $redirect_date); exit();
+    }
+
     $status = 'present';
-    if (!empty($clock_in) && strtotime($clock_in) > strtotime('10:00:00')) {
+    if (empty($clock_in)) {
+        $status = 'absent';
+    } elseif (strtotime($clock_in) > strtotime('10:00:00')) {
         $status = 'late';
     }
 

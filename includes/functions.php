@@ -57,17 +57,10 @@ function getLeaveBalance(int $employee_id) {
     ];
 }
 
-function updateLeaveBalance(int $employee_id, string $leave_type, float $days) {
-    global $conn;
-    $id   = intval($employee_id);
-    $days = floatval($days);
-    if ($leave_type == 'annual') {
-        mysqli_query($conn, "UPDATE employees SET used_annual_leave = used_annual_leave + $days WHERE id = $id");
-    } elseif ($leave_type == 'medical') {
-        mysqli_query($conn, "UPDATE employees SET used_medical_leave = used_medical_leave + $days WHERE id = $id");
-    }
-    // unpaid / emergency: no balance to track
-}
+// updateLeaveBalance() used to live here but nothing ever called it -- admin/manage_leave.php
+// does its own inline UPDATEs (with GREATEST(0, ...) floors and atomic status guards) instead,
+// and this version had neither, so it was a trap for whoever next wired it up. Removed;
+// leave-balance changes belong in manage_leave.php's approve/undo/delete handlers.
 
 function getEmployeeName(int $employee_id) {
     global $conn;

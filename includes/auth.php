@@ -9,7 +9,7 @@ function _restoreSessionFromCookie() {
     try {
         // Schema migration — run once at deployment, not on every request:
         // mysqli_query($conn, "ALTER TABLE employees ADD COLUMN IF NOT EXISTS remember_token VARCHAR(64) NULL");
-        $token = mysqli_real_escape_string($conn, $_COOKIE['remember_token']);
+        $token = hash('sha256', (string)$_COOKIE['remember_token']);
         // status='active' alone doesn't catch an approved resignation -- see the matching
         // check in index.php for why.
         $user  = mysqli_fetch_assoc(mysqli_query($conn,

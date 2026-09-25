@@ -62,7 +62,7 @@ if (isset($_POST['edit_photo'])) {
         if (!in_array($file_ext, $allowed_ext) || !in_array($mime, $allowed_mime)) {
             showToast('Invalid file type.', 'error'); header('Location: gallery.php'); exit();
         }
-        $new_image = time() . '_' . $user_id . '.' . $file_ext;
+        $new_image = time() . '_' . $user_id . '_' . bin2hex(random_bytes(4)) . '.' . $file_ext;
         $target_dir = "../uploads/gallery/";
         if (!is_dir($target_dir)) mkdir($target_dir, 0777, true);
         if (move_uploaded_file($_FILES['photo']['tmp_name'], $target_dir . $new_image)) {

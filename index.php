@@ -7,7 +7,14 @@ require_once 'includes/db.php';
 if (!isset($_SESSION['user_id']) && isset($_COOKIE['remember_token'])) {
     try {
         $token = mysqli_real_escape_string($conn, $_COOKIE['remember_token']);
-        $query = "SELECT * FROM employees WHERE remember_token = '$token' AND status = 'active'";
+        // status='active' alone doesn't catch an approved resignation -- that only ever
+        // touches employment_status, never status, so a resigned employee whose last
+        // working day has passed could otherwise keep logging in indefinitely.
+        $query = "SELECT * FROM employees WHERE remember_token = '$token' AND status = 'active'
+                  AND NOT EXISTS (
+                      SELECT 1 FROM employee_resignations er
+                      WHERE er.employee_id = employees.id AND er.status = 'approved' AND er.last_working_date < CURDATE()
+                  )";
         $result = mysqli_query($conn, $query);
 
         if (mysqli_num_rows($result) == 1) {
@@ -35,7 +42,12 @@ if (isset($_POST['login'])) {
     $password_raw = $_POST['password']; // not escaped for SQL — never concatenated raw, only verified/hashed
     $remember = isset($_POST['remember']) ? true : false;
 
-    $query = "SELECT * FROM employees WHERE email = '$email' AND status = 'active'";
+    // Same resignation-lockout check as the remember-me path above.
+    $query = "SELECT * FROM employees WHERE email = '$email' AND status = 'active'
+              AND NOT EXISTS (
+                  SELECT 1 FROM employee_resignations er
+                  WHERE er.employee_id = employees.id AND er.status = 'approved' AND er.last_working_date < CURDATE()
+              )";
     $result = mysqli_query($conn, $query);
     $user = (mysqli_num_rows($result) == 1) ? mysqli_fetch_assoc($result) : null;
 

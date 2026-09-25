@@ -16,8 +16,24 @@ if (isset($_POST['add_employee'])) {
     $ic_number = mysqli_real_escape_string($conn, $_POST['ic_number']);
     $passport_no = mysqli_real_escape_string($conn, $_POST['passport_no']);
     $nationality = mysqli_real_escape_string($conn, $_POST['nationality']);
-    $email = mysqli_real_escape_string($conn, $_POST['email']);
-    $password = mysqli_real_escape_string($conn, password_hash($_POST['password'], PASSWORD_DEFAULT));
+    $email_raw = trim($_POST['email'] ?? '');
+    $email = mysqli_real_escape_string($conn, $email_raw);
+
+    // Login matches on email + status='active' expecting exactly one row -- two active
+    // employees sharing an email silently locks BOTH of them out with no indication why.
+    // There's no DB-level UNIQUE constraint on email, so this has to be checked here.
+    $dupe = mysqli_fetch_assoc(mysqli_query($conn, "SELECT id FROM employees WHERE email = '$email'"));
+    if ($dupe) {
+        showToast('That email is already in use by another employee.', 'error');
+        header('Location: employees.php'); exit();
+    }
+
+    $new_password_raw = $_POST['password'] ?? '';
+    if (strlen($new_password_raw) < 6) {
+        showToast('Password must be at least 6 characters.', 'error');
+        header('Location: employees.php'); exit();
+    }
+    $password = mysqli_real_escape_string($conn, password_hash($new_password_raw, PASSWORD_DEFAULT));
     $department = mysqli_real_escape_string($conn, $_POST['department']);
     $position = mysqli_real_escape_string($conn, $_POST['position']);
     $basic_salary = floatval($_POST['basic_salary']);
@@ -51,8 +67,14 @@ if (isset($_POST['add_employee'])) {
     // UPDATED INSERT QUERY with new fields
     $query = "INSERT INTO employees (employee_id, name, ic_number, passport_no, nationality, email, password, department, position, basic_salary, join_date, profile_pic, is_subject_to_statutory, phone, address, bank_name, bank_account, employee_type)
               VALUES ('$employee_id', '$name', '$ic_number', '$passport_no', '$nationality', '$email', '$password', '$department', '$position', '$basic_salary', '$join_date', '$profile_pic', '$is_subject', '$phone', '$address', '$bank_name', '$bank_account', '$employee_type')";
-    mysqli_query($conn, $query);
-    showToast('Employee added successfully!');
+    try {
+        mysqli_query($conn, $query);
+        showToast('Employee added successfully!');
+    } catch (mysqli_sql_exception $e) {
+        // Most likely a duplicate employee_id slipping past the UI (that column is
+        // UNIQUE) -- report it instead of letting the admin believe it worked.
+        showToast('Could not add employee — Employee ID may already be in use.', 'error');
+    }
     header('Location: employees.php');
     exit();
 }
@@ -67,7 +89,16 @@ if (isset($_POST['update_employee'])) {
     $ic_number = mysqli_real_escape_string($conn, $_POST['ic_number']);
     $passport_no = mysqli_real_escape_string($conn, $_POST['passport_no']);
     $nationality = mysqli_real_escape_string($conn, $_POST['nationality']);
-    $email = mysqli_real_escape_string($conn, $_POST['email']);
+    $email_raw = trim($_POST['email'] ?? '');
+    $email = mysqli_real_escape_string($conn, $email_raw);
+
+    // Same check as Add Employee -- two active employees sharing an email locks both out.
+    $dupe = mysqli_fetch_assoc(mysqli_query($conn, "SELECT id FROM employees WHERE email = '$email' AND id != $id"));
+    if ($dupe) {
+        showToast('That email is already in use by another employee.', 'error');
+        header('Location: employees.php'); exit();
+    }
+
     $department = mysqli_real_escape_string($conn, $_POST['department']);
     $position = mysqli_real_escape_string($conn, $_POST['position']);
     $basic_salary = floatval($_POST['basic_salary']);
@@ -134,7 +165,12 @@ if (isset($_POST['update_employee'])) {
                 employee_type='$employee_type'
                 $password_sql
               WHERE id=$id";
-    mysqli_query($conn, $query);
+    try {
+        mysqli_query($conn, $query);
+    } catch (mysqli_sql_exception $e) {
+        showToast('Could not save changes — that email may already be in use.', 'error');
+        header('Location: employees.php'); exit();
+    }
     if ($password_changed) {
         // Reset the remember-me token too — otherwise a device that was already logged in
         // via that cookie would keep bypassing the new password.

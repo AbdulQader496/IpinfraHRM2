@@ -64,8 +64,12 @@ if (isset($_POST['pay_regenerate']) && validateCsrfToken($_POST['csrf_token'] ??
 
         $per_day = $basic / $wdays;
         $regen_leave_filter = $is_intern ? "IN ('unpaid', 'annual')" : "= 'unpaid'";
+        // Same half-day fix as generate_payroll above -- a half-day row (start_date=end_date)
+        // must count as 0.5, not 1, and can't span a month boundary so needs no clamping.
         $uq = mysqli_fetch_assoc(mysqli_query($conn, "SELECT COALESCE(SUM(
-    DATEDIFF(LEAST(end_date, '$month_end'), GREATEST(start_date, '$month_start')) + 1
+    CASE WHEN half_day != 'none' THEN 0.5
+         ELSE DATEDIFF(LEAST(end_date, '$month_end'), GREATEST(start_date, '$month_start')) + 1
+    END
 ), 0) as ud FROM leaves WHERE employee_id={$regen_row['id']} AND status='approved' AND leave_type $regen_leave_filter AND start_date <= '$month_end' AND end_date >= '$month_start'"));
         $unpaid_deduction = round($per_day * (float)$uq['ud'], 2);
 
@@ -344,8 +348,15 @@ if (isset($_POST['generate_payroll'])) {
             // Interns have no annual leave entitlement — annual leave also deducted for them
             $per_day = $basic / $working_days_in_month;
             $leave_type_filter = $is_intern ? "IN ('unpaid', 'annual')" : "= 'unpaid'";
+            // A half-day row always has start_date = end_date, so the DATEDIFF+1 branch
+            // (correct for clamping a multi-day leave to this month's boundary) would count
+            // it as one full day instead of 0.5 -- deducting double what it should. Half-day
+            // rows can't span a month boundary anyway, so they don't need the LEAST/GREATEST
+            // clamp at all.
             $unpaid_q = mysqli_query($conn, "SELECT COALESCE(SUM(
-                DATEDIFF(LEAST(end_date, '$month_end'), GREATEST(start_date, '$month_start')) + 1
+                CASE WHEN half_day != 'none' THEN 0.5
+                     ELSE DATEDIFF(LEAST(end_date, '$month_end'), GREATEST(start_date, '$month_start')) + 1
+                END
             ), 0) as ud FROM leaves
                 WHERE employee_id = {$emp['id']} AND status = 'approved'
                 AND leave_type $leave_type_filter

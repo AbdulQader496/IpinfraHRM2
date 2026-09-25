@@ -76,9 +76,18 @@ if (isset($_POST['update_quantity'])) {
     $assigned = mysqli_fetch_assoc($assigned_query);
     $assigned_count = $assigned['assigned'] ?: 0;
 
-    $available = $new_quantity - $assigned_count;
-    if ($available < 0) $available = 0;
+    // Shrinking the total below what's currently checked out used to just clamp
+    // available_quantity to 0 and move on -- but the very next Return then adds back
+    // to available_quantity with no cap at the (now-smaller) total, so available_quantity
+    // ends up exceeding quantity after a few returns, and every later approval only checks
+    // available_quantity >= requested, letting the asset be overbooked beyond what
+    // physically exists. Reject the shrink instead of silently creating that inconsistency.
+    if ($new_quantity < $assigned_count) {
+        showToast("Can't set total below $assigned_count — that many units are currently checked out. Wait for returns first.", 'error');
+        header('Location: manage_assets.php'); exit();
+    }
 
+    $available = $new_quantity - $assigned_count;
     mysqli_query($conn, "UPDATE assets SET quantity = $new_quantity, available_quantity = $available WHERE id = $asset_id");
     header('Location: manage_assets.php');
     exit();
@@ -121,8 +130,21 @@ if (isset($_POST['asset_action']) && validateCsrfToken($_POST['csrf_token'] ?? '
             header('Location: manage_assets.php'); exit();
         }
 
-        mysqli_query($conn, "UPDATE assets SET available_quantity = available_quantity + {$request['quantity']}, status = 'available' WHERE id = {$request['asset_id']}");
-        mysqli_query($conn, "UPDATE asset_requests SET status='returned', returned_date=CURDATE() WHERE id=$request_id");
+        // Claim the request row FIRST, atomically, before touching stock -- otherwise a
+        // duplicate submission (double-click, retry) can pass the SELECT above twice and
+        // both go on to double-credit available_quantity and insert two history rows for
+        // what should be a single return.
+        mysqli_query($conn, "UPDATE asset_requests SET status='returned', returned_date=CURDATE() WHERE id=$request_id AND status='approved' AND returned_date IS NULL");
+        if (mysqli_affected_rows($conn) == 0) {
+            showToast('Request already processed.', 'error');
+            header('Location: manage_assets.php'); exit();
+        }
+
+        // LEAST(...) caps this at the asset's own total -- without it, available_quantity
+        // could be pushed above quantity (e.g. after an admin shrinks the total while units
+        // are checked out), and every later approval only checks available_quantity, so an
+        // uncapped return here is what actually let stock become overbooked.
+        mysqli_query($conn, "UPDATE assets SET available_quantity = LEAST(quantity, available_quantity + {$request['quantity']}), status = 'available' WHERE id = {$request['asset_id']}");
         mysqli_query($conn, "UPDATE asset_assignment_history SET returned_date=CURDATE() WHERE asset_id={$request['asset_id']} AND employee_id={$request['employee_id']} AND returned_date IS NULL");
         logAction('update', 'Marked asset request as returned', $request_id, 'asset_request');
     } else {
@@ -135,13 +157,27 @@ if (isset($_POST['asset_action']) && validateCsrfToken($_POST['csrf_token'] ?? '
             header('Location: manage_assets.php'); exit();
         }
 
+        if ($status == 'approved' && $request['quantity'] <= 0) {
+            showToast('Invalid request quantity.', 'error');
+            header('Location: manage_assets.php'); exit();
+        }
+
+        // Claim the request row FIRST, atomically, before touching stock -- otherwise two
+        // near-simultaneous approvals of the same request_id can both pass the SELECT
+        // above and both decrement available_quantity for what should be a single approval.
+        mysqli_query($conn, "UPDATE asset_requests SET status='$status', approved_by={$_SESSION['user_id']}, approved_date=CURDATE() WHERE id=$request_id AND status='pending'");
+        if (mysqli_affected_rows($conn) == 0) {
+            showToast('Request already processed.', 'error');
+            header('Location: manage_assets.php'); exit();
+        }
+
         if ($status == 'approved') {
-            if ($request['quantity'] <= 0) {
-                showToast('Invalid request quantity.', 'error');
-                header('Location: manage_assets.php'); exit();
-            }
             mysqli_query($conn, "UPDATE assets SET available_quantity = available_quantity - {$request['quantity']} WHERE id = {$request['asset_id']} AND available_quantity >= {$request['quantity']}");
             if (mysqli_affected_rows($conn) == 0) {
+                // Not enough stock after all -- the request row already claimed 'approved'
+                // above, so undo that claim rather than leaving it approved with nothing
+                // actually reserved for it.
+                mysqli_query($conn, "UPDATE asset_requests SET status='pending', approved_by=NULL, approved_date=NULL WHERE id=$request_id");
                 showToast('Insufficient stock to approve this request.', 'error');
                 header('Location: manage_assets.php'); exit();
             }
@@ -150,11 +186,6 @@ if (isset($_POST['asset_action']) && validateCsrfToken($_POST['csrf_token'] ?? '
             if ($asset['available_quantity'] == 0) {
                 mysqli_query($conn, "UPDATE assets SET status = 'assigned' WHERE id = {$request['asset_id']}");
             }
-        }
-
-        mysqli_query($conn, "UPDATE asset_requests SET status='$status', approved_by={$_SESSION['user_id']}, approved_date=CURDATE() WHERE id=$request_id");
-
-        if ($status == 'approved') {
             mysqli_query($conn, "INSERT INTO asset_assignment_history (asset_id, employee_id, assigned_date, quantity)
                                 VALUES ({$request['asset_id']}, {$request['employee_id']}, CURDATE(), {$request['quantity']})");
         }

@@ -65,8 +65,12 @@ if (isset($_POST['add_employee'])) {
     $is_subject = ($nationality == 'Malaysian') ? 1 : 0;
 
     // UPDATED INSERT QUERY with new fields
-    $query = "INSERT INTO employees (employee_id, name, ic_number, passport_no, nationality, email, password, department, position, basic_salary, join_date, profile_pic, is_subject_to_statutory, phone, address, bank_name, bank_account, employee_type)
-              VALUES ('$employee_id', '$name', '$ic_number', '$passport_no', '$nationality', '$email', '$password', '$department', '$position', '$basic_salary', '$join_date', '$profile_pic', '$is_subject', '$phone', '$address', '$bank_name', '$bank_account', '$employee_type')";
+    // The column default gives every new row 14 annual days; interns are "No Leave"
+    // (leave.php only lets them apply for medical/unpaid), so start them at 0 instead.
+    $annual_sql_col = $employee_type === 'intern' ? ', annual_leave_entitlement' : '';
+    $annual_sql_val = $employee_type === 'intern' ? ', 0' : '';
+    $query = "INSERT INTO employees (employee_id, name, ic_number, passport_no, nationality, email, password, department, position, basic_salary, join_date, profile_pic, is_subject_to_statutory, phone, address, bank_name, bank_account, employee_type$annual_sql_col)
+              VALUES ('$employee_id', '$name', '$ic_number', '$passport_no', '$nationality', '$email', '$password', '$department', '$position', '$basic_salary', '$join_date', '$profile_pic', '$is_subject', '$phone', '$address', '$bank_name', '$bank_account', '$employee_type'$annual_sql_val)";
     try {
         mysqli_query($conn, $query);
         showToast('Employee added successfully!');
@@ -110,6 +114,7 @@ if (isset($_POST['update_employee'])) {
     $status = mysqli_real_escape_string($conn, $_POST['status']);
     $join_date = mysqli_real_escape_string($conn, $_POST['join_date']);
     $employee_type = mysqli_real_escape_string($conn, $_POST['employee_type'] ?? 'regular');
+    if ($employee_type === 'intern') $annual_leave = 0; // interns have no annual leave
     
     // Handle profile picture upload
     $profile_pic = mysqli_real_escape_string($conn, $_POST['existing_profile_pic']);
@@ -204,14 +209,46 @@ if (isset($_POST['emp_delete']) && validateCsrfToken($_POST['csrf_token'] ?? '')
         }
     } catch (Exception $e) { /* table may not exist in this environment */ }
 
-    // Remove related records first to avoid FK constraint failures
-    $related = ['attendance', 'leaves', 'payroll', 'claims', 'notifications', 'employee_of_month', 'asset_requests', 'employee_documents', 'employee_resignations', 'employee_terminations', 'employee_warnings'];
-    foreach ($related as $tbl) {
-        try {
-            mysqli_query($conn, "DELETE FROM `$tbl` WHERE employee_id = $id");
-        } catch (Exception $e) { /* table may not exist in this environment */ }
+    if ($id === (int)$_SESSION['user_id']) {
+        showToast('You cannot delete your own account.', 'error');
+        header('Location: employees.php'); exit();
     }
-    mysqli_query($conn, "DELETE FROM employees WHERE id = $id");
+
+    // Deleting used to hard-code a list of tables and ignore everything else. Several tables
+    // reference employees with ON DELETE RESTRICT (asset_assignment_history, terminations,
+    // resignations, approved_by/created_by/selected_by/uploaded_by columns, ...), so deleting
+    // anyone with an approved asset request, or any admin who had approved something, threw a
+    // fatal FK error -- after the earlier tables had already been wiped, leaving a half-deleted
+    // employee. Now: discover every FK pointing at employees, delete rows owned by the employee
+    // (employee_id) and null out "who did it" columns (approved_by etc.), all in one transaction.
+    mysqli_begin_transaction($conn);
+    try {
+        // Units still out on loan go back into stock before their request rows disappear.
+        mysqli_query($conn, "UPDATE assets a JOIN asset_requests r ON r.asset_id = a.id
+            SET a.available_quantity = LEAST(a.quantity, a.available_quantity + r.quantity)
+            WHERE r.employee_id = $id AND r.status = 'approved' AND r.returned_date IS NULL");
+        $fks = mysqli_query($conn, "SELECT table_name AS t, column_name AS c FROM information_schema.key_column_usage
+            WHERE table_schema = DATABASE() AND referenced_table_name = 'employees' AND referenced_column_name = 'id'");
+        $fk_list = [];
+        while ($f = mysqli_fetch_assoc($fks)) { $fk_list[] = $f; }
+        // Rows the employee owns first, then the "actor" references.
+        usort($fk_list, fn($x, $y) => ($y['c'] === 'employee_id') <=> ($x['c'] === 'employee_id'));
+        foreach ($fk_list as $f) {
+            $t = str_replace('`', '', $f['t']); $c = str_replace('`', '', $f['c']);
+            if ($c === 'employee_id') {
+                mysqli_query($conn, "DELETE FROM `$t` WHERE `$c` = $id");
+            } else {
+                mysqli_query($conn, "UPDATE `$t` SET `$c` = NULL WHERE `$c` = $id");
+            }
+        }
+        mysqli_query($conn, "DELETE FROM employees WHERE id = $id");
+        mysqli_commit($conn);
+    } catch (Exception $e) {
+        mysqli_rollback($conn);
+        error_log('Employee delete failed: ' . $e->getMessage());
+        showToast('Could not delete this employee because other records still depend on them.', 'error');
+        header('Location: employees.php'); exit();
+    }
 
     foreach ($files_to_delete as $fp) {
         if (file_exists($fp)) @unlink($fp);

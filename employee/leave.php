@@ -38,6 +38,24 @@ function findOverlappingLeave(mysqli $conn, int $user_id, string $start, string 
     return null;
 }
 
+// Annual/medical requests bigger than what's left used to go straight through: nothing
+// checked the balance at apply or approve time, so an employee could book 31 annual days
+// against a 14-day entitlement and have every one of them paid. Days already tied up in
+// other pending requests of the same type count against the balance too. Returns the
+// remaining days when the request doesn't fit, or null when it does (or the type is
+// unpaid/emergency, which have no balance).
+function leaveExceedsBalance(mysqli $conn, int $user_id, string $type, float $days, int $exclude_id = 0) {
+    $cols = ['annual' => ['annual_leave_entitlement', 'used_annual_leave'], 'medical' => ['medical_leave_entitlement', 'used_medical_leave']];
+    if (!isset($cols[$type])) return null;
+    [$ent, $used] = $cols[$type];
+    $e = mysqli_fetch_assoc(mysqli_query($conn, "SELECT $ent AS ent, $used AS used FROM employees WHERE id = $user_id"));
+    $excl = $exclude_id > 0 ? "AND id != $exclude_id" : '';
+    $t = mysqli_real_escape_string($conn, $type);
+    $pend = mysqli_fetch_assoc(mysqli_query($conn, "SELECT COALESCE(SUM(total_days),0) AS d FROM leaves WHERE employee_id = $user_id AND leave_type = '$t' AND status = 'pending' $excl"));
+    $remaining = (float)$e['ent'] - (float)$e['used'] - (float)$pend['d'];
+    return $days > $remaining ? max(0, $remaining) : null;
+}
+
 function describeLeaveRange(array $row) {
     $s = date('d M Y', strtotime($row['start_date']));
     return $row['end_date'] !== $row['start_date'] ? $s . ' – ' . date('d M Y', strtotime($row['end_date'])) : $s;
@@ -91,6 +109,8 @@ if (isset($_POST['update_leave'])) {
         $error = 'Interns can only apply for Medical or Unpaid Leave.';
     } elseif ($overlap = findOverlappingLeave($conn, $user_id, $start_date, $end_date, $half_day, $leave_id)) {
         $error = 'You already have a leave request covering ' . describeLeaveRange($overlap) . '. Please pick different dates.';
+    } elseif (($left = leaveExceedsBalance($conn, $user_id, $leave_type, (float)$total_days, $leave_id)) !== null) {
+        $error = 'Not enough ' . $leave_type . ' leave balance: ' . $left . ' day(s) left, but you requested ' . $total_days . '.';
     } else {
     // Atomic guard: re-check status='pending' in the UPDATE itself, not just an earlier
     // SELECT — otherwise an admin approving this exact request between the check and the
@@ -237,6 +257,10 @@ if (isset($_POST['apply_leave']) && !$edit_mode) {
 
         if (empty($error) && ($overlap = findOverlappingLeave($conn, $user_id, $start_date, $end_date, $half_day))) {
             $error = 'You already have a leave request covering ' . describeLeaveRange($overlap) . '. Please pick different dates.';
+        }
+
+        if (empty($error) && ($left = leaveExceedsBalance($conn, $user_id, $leave_type, (float)$total_days)) !== null) {
+            $error = 'Not enough ' . $leave_type . ' leave balance: ' . $left . ' day(s) left, but you requested ' . $total_days . '.';
         }
 
         if (empty($error)) {

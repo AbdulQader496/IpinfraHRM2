@@ -187,7 +187,7 @@
 
     // Set text
     getEl('confirmModalTitle').textContent = title   || 'Are you sure?';
-    getEl('confirmModalMessage').innerHTML = message || 'This action cannot be undone.';
+    getEl('confirmModalMessage').textContent = message || 'This action cannot be undone.';
 
     // Show modal shell
     var modal    = getEl('confirmModal');

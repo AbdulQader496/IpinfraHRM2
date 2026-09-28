@@ -18,8 +18,16 @@ if ((int)($col_exists['cnt'] ?? 0) === 0) {
 // Check if user has remember me cookie
 if (!isset($_SESSION['user_id']) && isset($_COOKIE['remember_token'])) {
     try {
-        $token = mysqli_real_escape_string($conn, $_COOKIE['remember_token']);
-        $query = "SELECT * FROM employees WHERE remember_token = '$token' AND status = 'active'";
+        // Only a SHA-256 of the cookie token is stored, so a DB leak can't be replayed as cookies.
+        $token = hash('sha256', (string)$_COOKIE['remember_token']);
+        // status='active' alone doesn't catch an approved resignation -- that only ever
+        // touches employment_status, never status, so a resigned employee whose last
+        // working day has passed could otherwise keep logging in indefinitely.
+        $query = "SELECT * FROM employees WHERE remember_token = '$token' AND status = 'active'
+                  AND NOT EXISTS (
+                      SELECT 1 FROM employee_resignations er
+                      WHERE er.employee_id = employees.id AND er.status = 'approved' AND er.last_working_date < CURDATE()
+                  )";
         $result = mysqli_query($conn, $query);
 
         if (mysqli_num_rows($result) == 1) {
@@ -42,12 +50,23 @@ if (!isset($_SESSION['user_id']) && isset($_COOKIE['remember_token'])) {
     }
 }
 
-if (isset($_POST['login'])) {
-    $email = mysqli_real_escape_string($conn, $_POST['email']);
-    $password_raw = $_POST['password']; // not escaped for SQL — never concatenated raw, only verified/hashed
+if (empty($_SESSION['login_csrf'])) {
+    $_SESSION['login_csrf'] = bin2hex(random_bytes(32));
+}
+
+if (isset($_POST['login']) && !hash_equals($_SESSION['login_csrf'], (string)($_POST['login_csrf'] ?? ''))) {
+    $error = "Session expired. Please try again.";
+} elseif (isset($_POST['login'])) {
+    $email = mysqli_real_escape_string($conn, $_POST['email'] ?? '');
+    $password_raw = (string)($_POST['password'] ?? ''); // not escaped for SQL — never concatenated raw, only verified/hashed
     $remember = isset($_POST['remember']) ? true : false;
 
-    $query = "SELECT * FROM employees WHERE email = '$email' AND status = 'active'";
+    // Same resignation-lockout check as the remember-me path above.
+    $query = "SELECT * FROM employees WHERE email = '$email' AND status = 'active'
+              AND NOT EXISTS (
+                  SELECT 1 FROM employee_resignations er
+                  WHERE er.employee_id = employees.id AND er.status = 'approved' AND er.last_working_date < CURDATE()
+              )";
     $result = mysqli_query($conn, $query);
     $user = (mysqli_num_rows($result) == 1) ? mysqli_fetch_assoc($result) : null;
 
@@ -74,7 +93,8 @@ if (isset($_POST['login'])) {
         // Set remember me cookie (30 days)
         if ($remember) {
             $token = bin2hex(random_bytes(32));
-            mysqli_query($conn, "UPDATE employees SET remember_token = '$token' WHERE id = {$user['id']}");
+            $token_hash = hash('sha256', $token);
+            mysqli_query($conn, "UPDATE employees SET remember_token = '$token_hash' WHERE id = {$user['id']}");
             $is_https = (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off') || (($_SERVER['HTTP_X_FORWARDED_PROTO'] ?? '') === 'https');
             setcookie('remember_token', $token, time() + (86400 * 30), "/", "", $is_https, true);
         }
@@ -608,6 +628,7 @@ if (isset($_POST['login'])) {
 
             <!-- Login form -->
             <form method="POST" action="">
+                <input type="hidden" name="login_csrf" value="<?php echo htmlspecialchars($_SESSION['login_csrf'], ENT_QUOTES, 'UTF-8'); ?>">
 
                 <!-- Email -->
                 <div style="margin-bottom:1.1rem;">

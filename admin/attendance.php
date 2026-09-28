@@ -1,4 +1,4 @@
-<?php
+﻿<?php
 require_once '../includes/auth.php';
 redirectIfNotAdmin();
 require_once '../includes/db.php';
@@ -18,11 +18,28 @@ if (isset($_POST['add_manual_attendance'])) {
     $attendance_date = mysqli_real_escape_string($conn, $_POST['attendance_date']);
     $clock_in = mysqli_real_escape_string($conn, $_POST['clock_in']);
     $clock_out = mysqli_real_escape_string($conn, $_POST['clock_out']);
-    
+
+    // Reject impossible entries instead of storing them: a clock-out at/before clock-in
+    // (or a clock-out with no clock-in) produces negative/garbage worked hours everywhere.
+    $manual_error = null;
+    if ($employee_id <= 0 || !preg_match('/^\d{4}-\d{2}-\d{2}$/', $attendance_date)) {
+        $manual_error = 'Please choose an employee and a valid date.';
+    } elseif ($clock_out !== '' && $clock_in === '') {
+        $manual_error = 'Clock-out needs a clock-in time.';
+    } elseif ($clock_in !== '' && $clock_out !== '' && strtotime($clock_out) <= strtotime($clock_in)) {
+        $manual_error = 'Clock-out must be after clock-in.';
+    }
+    if ($manual_error) {
+        showToast($manual_error, 'error');
+        header('Location: attendance.php?date=' . urlencode($attendance_date)); exit();
+    }
+
     $check_query = mysqli_query($conn, "SELECT id FROM attendance WHERE employee_id = $employee_id AND date = '$attendance_date'");
     
     $status = 'present';
-    if (!empty($clock_in) && strtotime($clock_in) > strtotime('10:00:00')) {
+    if (empty($clock_in)) {
+        $status = 'absent';
+    } elseif (strtotime($clock_in) > strtotime('10:00:00')) {
         $status = 'late';
     }
     
@@ -70,21 +87,44 @@ if (isset($_POST['edit_attendance'])) {
         header('Location: attendance.php'); exit();
     }
     $attendance_id = intval($_POST['attendance_id']);
+    $employee_id = intval($_POST['employee_id'] ?? 0);
     $clock_in = mysqli_real_escape_string($conn, $_POST['clock_in']);
     $clock_out = mysqli_real_escape_string($conn, $_POST['clock_out']);
-    
+    $redirect_date = isset($_POST['date']) ? preg_replace('/[^0-9\-]/', '', $_POST['date']) : date('Y-m-d');
+
+    if ($clock_out !== '' && $clock_in === '') {
+        showToast('Clock-out needs a clock-in time.', 'error');
+        header("Location: attendance.php?date=" . $redirect_date); exit();
+    }
+    if ($clock_in !== '' && $clock_out !== '' && strtotime($clock_out) <= strtotime($clock_in)) {
+        showToast('Clock-out must be after clock-in.', 'error');
+        header("Location: attendance.php?date=" . $redirect_date); exit();
+    }
+
     $status = 'present';
-    if (!empty($clock_in) && strtotime($clock_in) > strtotime('10:00:00')) {
+    if (empty($clock_in)) {
+        $status = 'absent';
+    } elseif (strtotime($clock_in) > strtotime('10:00:00')) {
         $status = 'late';
     }
-    
-    $update_query = "UPDATE attendance SET 
-                     clock_in = " . ($clock_in ? "'$clock_in'" : "NULL") . ",
-                     clock_out = " . ($clock_out ? "'$clock_out'" : "NULL") . ",
-                     status = '$status'
-                     WHERE id = $attendance_id";
-    $redirect_date = isset($_POST['date']) ? preg_replace('/[^0-9\-]/', '', $_POST['date']) : date('Y-m-d');
-    mysqli_query($conn, $update_query);
+
+    if ($attendance_id > 0) {
+        // Existing record for that employee/date -- update it.
+        $update_query = "UPDATE attendance SET
+                         clock_in = " . ($clock_in ? "'$clock_in'" : "NULL") . ",
+                         clock_out = " . ($clock_out ? "'$clock_out'" : "NULL") . ",
+                         status = '$status'
+                         WHERE id = $attendance_id";
+        mysqli_query($conn, $update_query);
+    } elseif ($employee_id > 0) {
+        // No attendance row exists yet for this employee/date (shown as "Absent") --
+        // the button only ever offered an UPDATE, which silently touched zero rows and
+        // made editing an absent employee's attendance a no-op. Insert instead.
+        $insert_query = "INSERT INTO attendance (employee_id, date, clock_in, clock_out, status)
+                          VALUES ($employee_id, '$redirect_date', " . ($clock_in ? "'$clock_in'" : "NULL") . ", " . ($clock_out ? "'$clock_out'" : "NULL") . ", '$status')
+                          ON DUPLICATE KEY UPDATE clock_in = VALUES(clock_in), clock_out = VALUES(clock_out), status = VALUES(status)";
+        mysqli_query($conn, $insert_query);
+    }
     header("Location: attendance.php?date=" . $redirect_date);
     exit();
 }
@@ -325,39 +365,34 @@ $all_employees = mysqli_query($conn, "SELECT id, name, employee_id FROM employee
 
     <!-- Date Navigation -->
     <div class="bg-white/80 backdrop-blur rounded-2xl shadow-lg p-5 mb-6">
-        <div class="flex flex-wrap items-center justify-between gap-4">
-            <div class="flex items-center gap-3">
-                <button onclick="changeDate(-1)" class="w-10 h-10 bg-slate-100 rounded-full flex items-center justify-center hover:bg-slate-200 transition shadow-sm">
-                    <i class="fas fa-chevron-left text-slate-600"></i>
-                </button>
-                <div class="text-center min-w-[180px]">
-                    <p class="text-xl font-bold text-slate-800"><?php echo $day_name; ?></p>
-                    <p class="text-sm text-slate-500"><?php echo $formatted_date; ?></p>
-                </div>
-                <button onclick="changeDate(1)" class="w-10 h-10 bg-slate-100 rounded-full flex items-center justify-center hover:bg-slate-200 transition shadow-sm">
-                    <i class="fas fa-chevron-right text-slate-600"></i>
-                </button>
+        <div class="flex items-center justify-center gap-3 mb-4">
+            <button onclick="changeDate(-1)" class="w-10 h-10 shrink-0 bg-slate-100 rounded-full flex items-center justify-center hover:bg-slate-200 transition shadow-sm">
+                <i class="fas fa-chevron-left text-slate-600"></i>
+            </button>
+            <div class="text-center min-w-[160px]">
+                <p class="text-xl font-bold text-slate-800"><?php echo $day_name; ?></p>
+                <p class="text-sm text-slate-500"><?php echo $formatted_date; ?></p>
             </div>
-            <div class="flex flex-wrap gap-3 items-center">
-                <button onclick="goToday()" class="px-5 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-sm font-medium shadow-md transition">
-                    <i class="fas fa-calendar-day mr-2"></i> Today
+            <button onclick="changeDate(1)" class="w-10 h-10 shrink-0 bg-slate-100 rounded-full flex items-center justify-center hover:bg-slate-200 transition shadow-sm">
+                <i class="fas fa-chevron-right text-slate-600"></i>
+            </button>
+        </div>
+        <div class="flex flex-wrap justify-center gap-2 pt-4 border-t border-slate-100">
+            <button onclick="goToday()" class="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-sm font-medium shadow-md transition whitespace-nowrap">
+                <i class="fas fa-calendar-day mr-1.5"></i> Today
+            </button>
+            <div class="relative">
+                <i class="fas fa-calendar-alt absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 text-sm"></i>
+                <input type="date" id="datePicker" value="<?php echo $date; ?>" class="pl-9 pr-3 py-2 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 w-[152px]" onchange="goToDate()">
+            </div>
+            <a href="?export=csv&date=<?php echo urlencode($date); ?>" class="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-sm font-medium shadow-md transition flex items-center gap-1.5 whitespace-nowrap">
+                <i class="fas fa-file-csv"></i> Export Day
+            </a>
+            <div class="flex items-center gap-1.5">
+                <input type="month" id="exportMonth" value="<?php echo date('Y-m', strtotime($date)); ?>" class="px-3 py-2 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500 w-[130px]">
+                <button onclick="exportMonthCSV()" class="px-4 py-2 bg-teal-600 hover:bg-teal-700 text-white rounded-xl text-sm font-medium shadow-md transition flex items-center gap-1.5 whitespace-nowrap">
+                    <i class="fas fa-file-export"></i> Export Month
                 </button>
-                <div class="relative">
-                    <i class="fas fa-calendar-alt absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 text-sm"></i>
-                    <input type="date" id="datePicker" value="<?php echo $date; ?>" class="pl-9 pr-3 py-2 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" onchange="goToDate()">
-                </div>
-                <!-- CSV Export Controls -->
-                <div class="flex items-center gap-2">
-                    <a href="?export=csv&date=<?php echo urlencode($date); ?>" class="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-sm font-medium shadow-md transition flex items-center gap-2">
-                        <i class="fas fa-file-csv"></i> Export Day
-                    </a>
-                    <div class="flex items-center gap-1">
-                        <input type="month" id="exportMonth" value="<?php echo date('Y-m', strtotime($date)); ?>" class="px-3 py-2 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500">
-                        <button onclick="exportMonthCSV()" class="px-4 py-2 bg-teal-600 hover:bg-teal-700 text-white rounded-xl text-sm font-medium shadow-md transition flex items-center gap-2">
-                            <i class="fas fa-file-export"></i> Export Month
-                        </button>
-                    </div>
-                </div>
             </div>
         </div>
     </div>
@@ -394,26 +429,26 @@ $all_employees = mysqli_query($conn, "SELECT id, name, employee_id FROM employee
         </div>
     </div>
     <?php else: ?>
-    <div class="grid grid-cols-4 gap-3 mb-6">
-        <div class="bg-gradient-to-br from-green-500 to-green-600 rounded-2xl p-3 text-white shadow-lg stat-card text-center">
+    <div class="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-6">
+        <div class="bg-gradient-to-br from-green-500 to-green-600 rounded-2xl p-4 text-white shadow-lg stat-card text-center">
             <i class="fas fa-check-circle text-xl opacity-80"></i>
-            <p class="text-2xl font-bold"><?php echo $completed_count; ?></p>
-            <p class="text-xs">Completed</p>
+            <p class="text-2xl font-bold mt-1"><?php echo $completed_count; ?></p>
+            <p class="text-xs font-medium opacity-90">Completed</p>
         </div>
-        <div class="bg-gradient-to-br from-yellow-500 to-yellow-600 rounded-2xl p-3 text-white shadow-lg stat-card text-center">
+        <div class="bg-gradient-to-br from-yellow-500 to-yellow-600 rounded-2xl p-4 text-white shadow-lg stat-card text-center">
             <i class="fas fa-hourglass-half text-xl opacity-80"></i>
-            <p class="text-2xl font-bold"><?php echo $in_progress_count; ?></p>
-            <p class="text-xs">In Progress</p>
+            <p class="text-2xl font-bold mt-1"><?php echo $in_progress_count; ?></p>
+            <p class="text-xs font-medium opacity-90">In Progress</p>
         </div>
-        <div class="bg-gradient-to-br from-orange-500 to-orange-600 rounded-2xl p-3 text-white shadow-lg stat-card text-center">
+        <div class="bg-gradient-to-br from-orange-500 to-orange-600 rounded-2xl p-4 text-white shadow-lg stat-card text-center">
             <i class="fas fa-clock text-xl opacity-80"></i>
-            <p class="text-2xl font-bold"><?php echo $late_count; ?></p>
-            <p class="text-xs">Late</p>
+            <p class="text-2xl font-bold mt-1"><?php echo $late_count; ?></p>
+            <p class="text-xs font-medium opacity-90">Late</p>
         </div>
-        <div class="bg-gradient-to-br from-red-500 to-red-600 rounded-2xl p-3 text-white shadow-lg stat-card text-center">
+        <div class="bg-gradient-to-br from-red-500 to-red-600 rounded-2xl p-4 text-white shadow-lg stat-card text-center">
             <i class="fas fa-times-circle text-xl opacity-80"></i>
-            <p class="text-2xl font-bold"><?php echo $absent_count; ?></p>
-            <p class="text-xs">Absent</p>
+            <p class="text-2xl font-bold mt-1"><?php echo $absent_count; ?></p>
+            <p class="text-xs font-medium opacity-90">Absent</p>
         </div>
     </div>
     <?php endif; ?>
@@ -454,7 +489,8 @@ $all_employees = mysqli_query($conn, "SELECT id, name, employee_id FROM employee
             </p>
         </div>
         
-        <div class="overflow-x-auto">
+        <!-- Desktop table -->
+        <div class="overflow-x-auto hidden md:block">
             <table class="w-full attendance-table">
                 <thead>
                     <tr class="bg-slate-50 border-b">
@@ -553,7 +589,7 @@ $all_employees = mysqli_query($conn, "SELECT id, name, employee_id FROM employee
                                         <i class="fas fa-check-circle mr-1"></i> Completed
                                     </span>
                                 <?php elseif ($row['clock_in'] && !$row['clock_out']): ?>
-                                    <span class="status-badge px-3 py-1 rounded-full text-xs font-medium bg-yellow-100 text-yellow-700">
+                                    <span class="status-badge px-3 py-1 rounded-full text-xs font-medium bg-amber-100 text-amber-800">
                                         <i class="fas fa-hourglass-half mr-1"></i> In Progress
                                     </span>
                                 <?php elseif ($row['status'] == 'late'): ?>
@@ -568,7 +604,14 @@ $all_employees = mysqli_query($conn, "SELECT id, name, employee_id FROM employee
                             </td>
                             
                             <td class="p-4 text-center">
-                                <button onclick="openEditModal(<?php echo json_encode($row, JSON_HEX_APOS | JSON_HEX_QUOT | JSON_HEX_TAG); ?>, '<?php echo $date; ?>')"
+                                <?php /* JSON_HEX_QUOT only escapes quotes found INSIDE string values -- it never touches
+                                         the structural "key":"value" quotes JSON itself requires, so the raw json_encode()
+                                         output still breaks out of this onclick="..." attribute at its very first quote
+                                         (right after the opening brace). That corrupted the whole tag for every row, not
+                                         just employees with no attendance record -- htmlspecialchars() is what actually
+                                         makes it HTML-attribute-safe, matching the pattern already used for openLeaveDetails()
+                                         and openAdjustModal() elsewhere in this codebase. */ ?>
+                                <button onclick="openEditModal(<?php echo htmlspecialchars(json_encode($row), ENT_QUOTES); ?>, '<?php echo $date; ?>')"
                                         class="text-blue-600 hover:text-blue-800 transition" title="Edit Attendance">
                                     <i class="fas fa-edit"></i>
                                 </button>
@@ -582,7 +625,8 @@ $all_employees = mysqli_query($conn, "SELECT id, name, employee_id FROM employee
                                     </button>
                                 </form>
                                 <?php endif; ?>
-                             </tr>
+                            </td>
+                        </tr>
                         <?php endforeach; ?>
                     <?php else: ?>
                         <tr>
@@ -593,6 +637,112 @@ $all_employees = mysqli_query($conn, "SELECT id, name, employee_id FROM employee
                     <?php endif; ?>
                 </tbody>
             </table>
+        </div>
+
+        <!-- Mobile cards -->
+        <div class="md:hidden divide-y divide-slate-100" id="attendanceCardsBody">
+            <?php if(count($attendance_data) > 0): ?>
+                <?php foreach ($attendance_data as $row):
+                    $row_status = 'absent';
+                    $attendance_id = $row['id'] ?? null;
+
+                    if ($is_weekend) {
+                        $row_status = 'weekend';
+                    } elseif ($row['clock_in'] && $row['clock_out']) {
+                        $row_status = 'completed';
+                    } elseif ($row['clock_in'] && !$row['clock_out']) {
+                        $row_status = 'in_progress';
+                    } elseif ($row['status'] == 'late') {
+                        $row_status = 'late';
+                    }
+
+                    $card_badge = [
+                        'weekend'     => ['bg-purple-100 text-purple-700', 'fa-calendar-week', 'Weekend'],
+                        'completed'   => ['bg-green-100 text-green-700', 'fa-check-circle', 'Completed'],
+                        'in_progress' => ['bg-amber-100 text-amber-800', 'fa-hourglass-half', 'In Progress'],
+                        'late'        => ['bg-orange-100 text-orange-700', 'fa-clock', 'Late'],
+                        'absent'      => ['bg-red-100 text-red-700', 'fa-times-circle', 'Absent'],
+                    ][$row_status];
+                ?>
+                <div class="p-4">
+                    <div class="flex items-start justify-between gap-3 mb-3">
+                        <div class="flex items-center gap-3 min-w-0">
+                            <div class="w-10 h-10 shrink-0 rounded-full bg-gradient-to-br from-blue-100 to-blue-200 flex items-center justify-center">
+                                <i class="fas fa-user text-blue-600 text-sm"></i>
+                            </div>
+                            <div class="min-w-0">
+                                <p class="font-semibold text-slate-800 text-sm truncate"><?php echo htmlspecialchars($row['name'], ENT_QUOTES, 'UTF-8'); ?></p>
+                                <p class="text-xs text-slate-400 font-mono"><?php echo htmlspecialchars($row['employee_id'], ENT_QUOTES, 'UTF-8'); ?></p>
+                            </div>
+                        </div>
+                        <span class="shrink-0 status-badge px-2.5 py-1 rounded-full text-xs font-medium <?php echo $card_badge[0]; ?>">
+                            <i class="fas <?php echo $card_badge[1]; ?> mr-1"></i> <?php echo $card_badge[2]; ?>
+                        </span>
+                    </div>
+
+                    <?php if(!$is_weekend): ?>
+                    <div class="grid grid-cols-3 gap-2 mb-3 bg-slate-50 rounded-xl p-3">
+                        <div>
+                            <p class="text-[10px] uppercase tracking-wide text-slate-400 font-semibold mb-0.5">Clock In</p>
+                            <?php if ($row['clock_in']): ?>
+                                <p class="text-sm font-semibold <?php echo (strtotime($row['clock_in']) > strtotime('10:00:00')) ? 'text-orange-600' : 'text-green-600'; ?>">
+                                    <?php echo date('h:i A', strtotime($row['clock_in'])); ?>
+                                </p>
+                            <?php else: ?>
+                                <p class="text-sm text-slate-400">-- : --</p>
+                            <?php endif; ?>
+                        </div>
+                        <div>
+                            <p class="text-[10px] uppercase tracking-wide text-slate-400 font-semibold mb-0.5">Clock Out</p>
+                            <?php if ($row['clock_out']): ?>
+                                <p class="text-sm font-semibold text-red-600"><?php echo date('h:i A', strtotime($row['clock_out'])); ?></p>
+                            <?php elseif ($row['clock_in']): ?>
+                                <p class="text-xs font-medium text-orange-500 leading-tight">Not Out</p>
+                            <?php else: ?>
+                                <p class="text-sm text-slate-400">-- : --</p>
+                            <?php endif; ?>
+                        </div>
+                        <div>
+                            <p class="text-[10px] uppercase tracking-wide text-slate-400 font-semibold mb-0.5">Duration</p>
+                            <?php if ($row['clock_in'] && $row['clock_out']):
+                                $start = new DateTime($row['clock_in']);
+                                $end = new DateTime($row['clock_out']);
+                                $diff = $start->diff($end);
+                            ?>
+                                <p class="text-sm font-semibold text-slate-700"><?php echo $diff->h; ?>h <?php echo $diff->i; ?>m</p>
+                            <?php elseif ($row['clock_in']): ?>
+                                <p class="text-xs font-medium text-orange-600 leading-tight">In Progress</p>
+                            <?php else: ?>
+                                <p class="text-sm text-slate-400">-</p>
+                            <?php endif; ?>
+                        </div>
+                    </div>
+                    <?php endif; ?>
+
+                    <div class="flex gap-2">
+                        <button onclick="openEditModal(<?php echo htmlspecialchars(json_encode($row), ENT_QUOTES); ?>, '<?php echo $date; ?>')"
+                                class="flex-1 flex items-center justify-center gap-1.5 py-2 rounded-xl text-sm font-medium bg-blue-50 text-blue-600 hover:bg-blue-100 transition">
+                            <i class="fas fa-edit"></i> Edit
+                        </button>
+                        <?php if($attendance_id): ?>
+                        <form method="POST" class="flex-1" onsubmit="return confirm('Delete this attendance record?')">
+                            <?php echo csrfField(); ?>
+                            <input type="hidden" name="delete_attendance" value="<?php echo $attendance_id; ?>">
+                            <input type="hidden" name="date" value="<?php echo htmlspecialchars($date, ENT_QUOTES, 'UTF-8'); ?>">
+                            <button type="submit" class="w-full flex items-center justify-center gap-1.5 py-2 rounded-xl text-sm font-medium bg-red-50 text-red-500 hover:bg-red-100 transition">
+                                <i class="fas fa-trash"></i> Delete
+                            </button>
+                        </form>
+                        <?php endif; ?>
+                    </div>
+                </div>
+                <?php endforeach; ?>
+            <?php else: ?>
+                <div class="p-12 text-center text-slate-500">
+                    <i class="fas fa-users text-5xl mb-3 block text-slate-300"></i>
+                    <p class="text-sm">No employees found</p>
+                </div>
+            <?php endif; ?>
         </div>
     </div>
 
@@ -635,7 +785,7 @@ $all_employees = mysqli_query($conn, "SELECT id, name, employee_id FROM employee
                 <label class="block text-gray-700 text-sm font-semibold mb-2">Select Employee</label>
                 <select name="manual_employee_id" required class="w-full px-4 py-2.5 border-2 border-gray-200 rounded-xl focus:border-green-500 focus:outline-none">
                     <option value="">-- Select Employee --</option>
-                    <?php
+                    <?php 
                     mysqli_data_seek($all_employees, 0);
                     while($emp = mysqli_fetch_assoc($all_employees)):
                     ?>
@@ -687,6 +837,7 @@ $all_employees = mysqli_query($conn, "SELECT id, name, employee_id FROM employee
         <form method="POST" class="p-6 space-y-4" action="">
             <?php echo csrfField(); ?>
             <input type="hidden" name="attendance_id" id="editAttendanceId">
+            <input type="hidden" name="employee_id" id="editEmployeeId">
             <input type="hidden" name="date" value="<?php echo $date; ?>">
             
             <div>
@@ -780,8 +931,14 @@ $all_employees = mysqli_query($conn, "SELECT id, name, employee_id FROM employee
         fetch(`load_more_attendance.php?page=${nextPage}&date=${currentDate}&search=${encodeURIComponent(currentSearch)}`)
             .then(response => response.text())
             .then(data => {
-                // Append new rows to table
-                document.getElementById('attendanceTableBody').insertAdjacentHTML('beforeend', data);
+                // The response holds two renderings of the same page of rows -- <tr>s for the
+                // desktop table and cards for the mobile layout -- split on their markers and
+                // append each half to its own container.
+                const midpoint = data.indexOf('<!--MOBILE-->');
+                const desktopHtml = data.slice('<!--DESKTOP-->'.length, midpoint === -1 ? undefined : midpoint);
+                const mobileHtml = midpoint === -1 ? '' : data.slice(midpoint + '<!--MOBILE-->'.length);
+                document.getElementById('attendanceTableBody').insertAdjacentHTML('beforeend', desktopHtml);
+                document.getElementById('attendanceCardsBody').insertAdjacentHTML('beforeend', mobileHtml);
                 currentPage = nextPage;
                 
                 // Hide load more button if reached last page
@@ -807,7 +964,8 @@ $all_employees = mysqli_query($conn, "SELECT id, name, employee_id FROM employee
     }
     
     function openEditModal(employee, date) {
-        document.getElementById('editAttendanceId').value = employee.id;
+        document.getElementById('editAttendanceId').value = employee.id || '';
+        document.getElementById('editEmployeeId').value = employee.emp_id;
         document.getElementById('editEmployeeName').innerHTML = employee.name + ' (' + employee.employee_id + ')';
         
         if (employee.clock_in) {

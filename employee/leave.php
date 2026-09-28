@@ -16,6 +16,51 @@ $edit_leave_id = 0;
 $emp_info = mysqli_fetch_assoc(mysqli_query($conn, "SELECT employee_type FROM employees WHERE id = $user_id"));
 $is_intern = isset($emp_info['employee_type']) && $emp_info['employee_type'] == 'intern';
 
+// Nothing used to stop an employee submitting two leave requests covering the same days.
+// Admin approval only guards each row on its own status, so both could get approved,
+// crediting leave balance twice (and double-deducting unpaid days in payroll) for the same
+// calendar days. Returns the conflicting row, or null if the range is clear.
+// The one legitimate overlap: two half-day requests on the same single day for different
+// halves (morning off + afternoon off) -- allowed.
+function findOverlappingLeave(mysqli $conn, int $user_id, string $start, string $end, string $half_day, int $exclude_id = 0) {
+    $start_e = mysqli_real_escape_string($conn, $start);
+    $end_e   = mysqli_real_escape_string($conn, $end);
+    $excl    = $exclude_id > 0 ? "AND id != $exclude_id" : '';
+    $q = mysqli_query($conn, "SELECT id, half_day, start_date, end_date FROM leaves
+        WHERE employee_id = $user_id AND status IN ('pending','approved') $excl
+        AND start_date <= '$end_e' AND end_date >= '$start_e'");
+    while ($row = mysqli_fetch_assoc($q)) {
+        $both_half = ($half_day !== 'none' && $row['half_day'] !== 'none');
+        $same_day  = ($start === $end && $row['start_date'] === $start && $row['end_date'] === $end);
+        if ($both_half && $same_day && $half_day !== $row['half_day']) continue;
+        return $row;
+    }
+    return null;
+}
+
+// Annual/medical requests bigger than what's left used to go straight through: nothing
+// checked the balance at apply or approve time, so an employee could book 31 annual days
+// against a 14-day entitlement and have every one of them paid. Days already tied up in
+// other pending requests of the same type count against the balance too. Returns the
+// remaining days when the request doesn't fit, or null when it does (or the type is
+// unpaid/emergency, which have no balance).
+function leaveExceedsBalance(mysqli $conn, int $user_id, string $type, float $days, int $exclude_id = 0) {
+    $cols = ['annual' => ['annual_leave_entitlement', 'used_annual_leave'], 'medical' => ['medical_leave_entitlement', 'used_medical_leave']];
+    if (!isset($cols[$type])) return null;
+    [$ent, $used] = $cols[$type];
+    $e = mysqli_fetch_assoc(mysqli_query($conn, "SELECT $ent AS ent, $used AS used FROM employees WHERE id = $user_id"));
+    $excl = $exclude_id > 0 ? "AND id != $exclude_id" : '';
+    $t = mysqli_real_escape_string($conn, $type);
+    $pend = mysqli_fetch_assoc(mysqli_query($conn, "SELECT COALESCE(SUM(total_days),0) AS d FROM leaves WHERE employee_id = $user_id AND leave_type = '$t' AND status = 'pending' $excl"));
+    $remaining = (float)$e['ent'] - (float)$e['used'] - (float)$pend['d'];
+    return $days > $remaining ? max(0, $remaining) : null;
+}
+
+function describeLeaveRange(array $row) {
+    $s = date('d M Y', strtotime($row['start_date']));
+    return $row['end_date'] !== $row['start_date'] ? $s . ' – ' . date('d M Y', strtotime($row['end_date'])) : $s;
+}
+
 // ========================================
 // HANDLE EDIT LEAVE (Load data for editing)
 // ========================================
@@ -41,8 +86,9 @@ if (isset($_POST['update_leave'])) {
     $half_day = mysqli_real_escape_string($conn, $_POST['half_day'] ?? '');
     $start_date = mysqli_real_escape_string($conn, $_POST['start_date'] ?? '');
     $end_date = mysqli_real_escape_string($conn, $_POST['end_date'] ?? '');
-    $reason = mysqli_real_escape_string($conn, $_POST['reason'] ?? '');
-    
+    $reason_raw = trim($_POST['reason'] ?? '');
+    $reason = mysqli_real_escape_string($conn, $reason_raw);
+
     // Calculate total days
     if ($half_day != 'none') {
         $total_days = 0.5;
@@ -55,10 +101,16 @@ if (isset($_POST['update_leave'])) {
         $error = 'Please select a leave type.';
     } elseif (strtotime($end_date) < strtotime($start_date)) {
         $error = 'End date must be on or after start date.';
+    } elseif ($reason_raw === '') {
+        $error = 'Please provide a reason for leave.';
     } else {
     // Interns can only apply for Medical or Unpaid leave
     if ($is_intern && !in_array($leave_type, ['medical', 'unpaid'])) {
         $error = 'Interns can only apply for Medical or Unpaid Leave.';
+    } elseif ($overlap = findOverlappingLeave($conn, $user_id, $start_date, $end_date, $half_day, $leave_id)) {
+        $error = 'You already have a leave request covering ' . describeLeaveRange($overlap) . '. Please pick different dates.';
+    } elseif (($left = leaveExceedsBalance($conn, $user_id, $leave_type, (float)$total_days, $leave_id)) !== null) {
+        $error = 'Not enough ' . $leave_type . ' leave balance: ' . $left . ' day(s) left, but you requested ' . $total_days . '.';
     } else {
     // Atomic guard: re-check status='pending' in the UPDATE itself, not just an earlier
     // SELECT — otherwise an admin approving this exact request between the check and the
@@ -177,15 +229,18 @@ if (isset($_POST['apply_leave']) && !$edit_mode) {
         header('Location: leave.php'); exit;
     }
     $leave_type = mysqli_real_escape_string($conn, $_POST['leave_type'] ?? '');
+    $reason_raw = trim($_POST['reason'] ?? '');
     if (empty($leave_type)) {
         $error = 'Please select a leave type.';
     } elseif ($is_intern && !in_array($leave_type, ['medical', 'unpaid'])) {
         $error = 'Interns can only apply for Medical or Unpaid Leave.';
+    } elseif ($reason_raw === '') {
+        $error = 'Please provide a reason for leave.';
     } else {
         $half_day   = mysqli_real_escape_string($conn, $_POST['half_day'] ?? '');
         $start_date = mysqli_real_escape_string($conn, $_POST['start_date'] ?? '');
         $end_date   = mysqli_real_escape_string($conn, $_POST['end_date'] ?? '');
-        $reason     = mysqli_real_escape_string($conn, $_POST['reason'] ?? '');
+        $reason     = mysqli_real_escape_string($conn, $reason_raw);
 
         if ($half_day != 'none') {
             $total_days = 0.5;
@@ -198,6 +253,14 @@ if (isset($_POST['apply_leave']) && !$edit_mode) {
             } else {
                 $total_days = (strtotime($end_date) - strtotime($start_date)) / 86400 + 1;
             }
+        }
+
+        if (empty($error) && ($overlap = findOverlappingLeave($conn, $user_id, $start_date, $end_date, $half_day))) {
+            $error = 'You already have a leave request covering ' . describeLeaveRange($overlap) . '. Please pick different dates.';
+        }
+
+        if (empty($error) && ($left = leaveExceedsBalance($conn, $user_id, $leave_type, (float)$total_days)) !== null) {
+            $error = 'Not enough ' . $leave_type . ' leave balance: ' . $left . ' day(s) left, but you requested ' . $total_days . '.';
         }
 
         if (empty($error)) {
@@ -469,7 +532,7 @@ $balance = getLeaveBalance($user_id);
             
             <div>
                 <label class="block text-gray-700 text-sm font-semibold mb-2">Reason <span class="text-gray-400 font-normal">(Optional)</span></label>
-                <textarea name="reason" rows="3" placeholder="Please provide reason for leave..." class="w-full px-4 py-2.5 border border-gray-200 rounded-xl focus:border-indigo-400 focus:ring-2 focus:ring-indigo-100 transition"><?php echo $edit_mode ? htmlspecialchars($edit_leave['reason']) : ''; ?></textarea>
+                <textarea name="reason" rows="3" required placeholder="Please provide reason for leave..." class="w-full px-4 py-2.5 border border-gray-200 rounded-xl focus:border-indigo-400 focus:ring-2 focus:ring-indigo-100 transition"><?php echo $edit_mode ? htmlspecialchars($edit_leave['reason']) : ''; ?></textarea>
             </div>
             
             <div id="attachmentContainer">

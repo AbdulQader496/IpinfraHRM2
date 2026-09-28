@@ -3,6 +3,7 @@ require_once '../includes/auth.php';
 redirectIfNotLoggedIn();
 require_once '../includes/db.php';
 /** @var mysqli $conn */
+require_once '../includes/functions.php';
 require_once '../includes/toast_fn.php';
 
 $user_id = intval($_SESSION['user_id']);
@@ -70,7 +71,8 @@ if (isset($_POST['change_password'])) {
         showToast('New password and confirm password do not match.', 'error'); header('Location: profile.php'); exit();
     } else {
         $new_password = mysqli_real_escape_string($conn, password_hash($new_password, PASSWORD_DEFAULT));
-        if (mysqli_query($conn, "UPDATE employees SET password='$new_password' WHERE id=$user_id")) {
+        if (mysqli_query($conn, "UPDATE employees SET password='$new_password', remember_token=NULL WHERE id=$user_id")) {
+            logAction('password_change', 'Changed own password', $user_id, 'employee');
             showToast('Password changed successfully!'); header('Location: profile.php'); exit();
         } else {
             showToast('Error changing password. Please try again.', 'error'); header('Location: profile.php'); exit();

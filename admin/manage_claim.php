@@ -30,6 +30,17 @@ $status_filter = isset($_GET['status']) && in_array($_GET['status'], $allowed_st
 $type_filter = isset($_GET['type']) ? mysqli_real_escape_string($conn, $_GET['type']) : '';
 $date_from = isset($_GET['date_from']) && preg_match('/^\d{4}-\d{2}-\d{2}$/', $_GET['date_from']) ? $_GET['date_from'] : '';
 $date_to = isset($_GET['date_to']) && preg_match('/^\d{4}-\d{2}-\d{2}$/', $_GET['date_to']) ? $_GET['date_to'] : '';
+// Month picker: expands to a first-day/last-day range so every existing link, redirect and
+// pagination URL (which all carry date_from/date_to) keeps working unchanged.
+if (isset($_GET['month']) && preg_match('/^\d{4}-(0[1-9]|1[0-2])$/', $_GET['month'])) {
+    $date_from = $_GET['month'] . '-01';
+    $date_to   = date('Y-m-t', strtotime($date_from));
+}
+$month_val = '';
+if ($date_from && $date_to && substr($date_from, 0, 7) === substr($date_to, 0, 7)
+    && substr($date_from, 8, 2) === '01' && $date_to === date('Y-m-t', strtotime($date_from))) {
+    $month_val = substr($date_from, 0, 7);
+}
 
 // Build WHERE clause
 $where = "WHERE 1=1";
@@ -48,6 +59,20 @@ if (!empty($date_from)) {
 if (!empty($date_to)) {
     $where .= " AND c.applied_at <= '$date_to 23:59:59'";
 }
+
+// Period summary (ignores the status filter so all three statuses are shown together)
+$where_nostatus = "WHERE 1=1";
+if (!empty($search))      $where_nostatus .= " AND (e.name LIKE '%$search%' OR e.employee_id LIKE '%$search%')";
+if (!empty($type_filter)) $where_nostatus .= " AND c.claim_type = '$type_filter'";
+if (!empty($date_from))   $where_nostatus .= " AND c.applied_at >= '$date_from'";
+if (!empty($date_to))     $where_nostatus .= " AND c.applied_at <= '$date_to 23:59:59'";
+$period = ['pending' => [0, 0.0], 'approved' => [0, 0.0], 'rejected' => [0, 0.0]];
+if ($date_from || $date_to) {
+    $pq = mysqli_query($conn, "SELECT c.status, COUNT(*) n, COALESCE(SUM(c.amount),0) amt
+        FROM claims c JOIN employees e ON c.employee_id = e.id $where_nostatus GROUP BY c.status");
+    while ($pr = mysqli_fetch_assoc($pq)) { $period[$pr['status']] = [(int)$pr['n'], (float)$pr['amt']]; }
+}
+$month_nav_base = "?per_page=$per_page&search=" . urlencode($search) . "&status=$status_filter&type=" . urlencode($type_filter);
 
 // Get total count for pagination
 $count_query = "SELECT COUNT(*) as total FROM claims c JOIN employees e ON c.employee_id = e.id $where";
@@ -175,6 +200,31 @@ if (isset($_POST['undo_claim']) && validateCsrfToken($_POST['csrf_token'] ?? '')
             logAction('update', 'Reverted ' . $claim['status'] . ' claim to pending', $id, 'claim');
             showToast('Claim reverted to pending.', 'success');
         }
+    }
+    header("Location: manage_claim.php?page=$page&per_page=$per_page&search=" . urlencode($search) . "&status=$status_filter&type=$type_filter&date_from=$date_from&date_to=$date_to");
+    exit();
+}
+
+// ========================================
+// DELETE CLAIM (admin cleanup of old records — any status)
+// ========================================
+// Deleting the claim row never touches payroll: approved_claims on a payroll record is a
+// frozen snapshot taken when that payroll was generated, not a live sum, so removing an
+// already-paid claim afterward can't corrupt a historical payslip — it only removes this
+// claim's own audit-trail row.
+if (isset($_POST['delete_claim']) && validateCsrfToken($_POST['csrf_token'] ?? '')) {
+    $id = intval($_POST['delete_claim']);
+    $claim = mysqli_fetch_assoc(mysqli_query($conn, "SELECT id FROM claims WHERE id=$id"));
+    if ($claim) {
+        $attach_q = mysqli_query($conn, "SELECT file_path FROM claim_attachments WHERE claim_id=$id");
+        while ($att = mysqli_fetch_assoc($attach_q)) {
+            $fp = "../uploads/claims/" . $att['file_path'];
+            if (file_exists($fp)) unlink($fp);
+        }
+        mysqli_query($conn, "DELETE FROM claim_attachments WHERE claim_id=$id");
+        mysqli_query($conn, "DELETE FROM claims WHERE id=$id");
+        logAction('delete', 'Deleted claim record', $id, 'claim');
+        showToast('Claim deleted.', 'info');
     }
     header("Location: manage_claim.php?page=$page&per_page=$per_page&search=" . urlencode($search) . "&status=$status_filter&type=$type_filter&date_from=$date_from&date_to=$date_to");
     exit();
@@ -321,7 +371,7 @@ if (isset($_POST['undo_claim']) && validateCsrfToken($_POST['csrf_token'] ?? '')
 
     <!-- Search & Filter Bar -->
     <div class="bg-white rounded-xl shadow-md p-4 mb-6">
-        <form method="GET" class="grid grid-cols-1 md:grid-cols-6 gap-3">
+        <form method="GET" class="grid grid-cols-1 md:grid-cols-4 lg:grid-cols-8 gap-3">
             <div class="md:col-span-2">
                 <div class="relative">
                     <i class="fas fa-search absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 text-sm"></i>
@@ -349,6 +399,9 @@ if (isset($_POST['undo_claim']) && validateCsrfToken($_POST['csrf_token'] ?? '')
                 </select>
             </div>
             <div>
+                <input type="month" name="month" value="<?php echo $month_val; ?>" title="Month" class="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm">
+            </div>
+            <div>
                 <input type="date" name="date_from" value="<?php echo $date_from; ?>" placeholder="From" class="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm">
             </div>
             <div>
@@ -360,6 +413,27 @@ if (isset($_POST['undo_claim']) && validateCsrfToken($_POST['csrf_token'] ?? '')
             </div>
         </form>
     </div>
+
+    <?php if ($date_from || $date_to):
+        $period_label = $month_val ? date('F Y', strtotime($month_val . '-01'))
+            : (($date_from ? date('d M Y', strtotime($date_from)) : 'start') . ' - ' . ($date_to ? date('d M Y', strtotime($date_to)) : 'today')); ?>
+    <div class="bg-white rounded-xl shadow-md p-4 mb-6">
+        <div class="flex items-center justify-between flex-wrap gap-2 mb-3">
+            <h3 class="font-semibold text-gray-800 text-sm"><i class="fas fa-calendar-alt text-blue-500 mr-2"></i>Claims submitted: <?php echo htmlspecialchars($period_label); ?></h3>
+            <?php if ($month_val): $pm = date('Y-m', strtotime($month_val . '-01 -1 month')); $nm = date('Y-m', strtotime($month_val . '-01 +1 month')); ?>
+            <div class="flex gap-2 text-sm">
+                <a href="<?php echo $month_nav_base . '&month=' . $pm; ?>" class="px-3 py-1 bg-gray-100 rounded-lg hover:bg-gray-200"><i class="fas fa-chevron-left"></i> <?php echo date('M Y', strtotime($pm . '-01')); ?></a>
+                <a href="<?php echo $month_nav_base . '&month=' . $nm; ?>" class="px-3 py-1 bg-gray-100 rounded-lg hover:bg-gray-200"><?php echo date('M Y', strtotime($nm . '-01')); ?> <i class="fas fa-chevron-right"></i></a>
+            </div>
+            <?php endif; ?>
+        </div>
+        <div class="grid grid-cols-3 gap-3">
+            <div class="bg-green-50 rounded-lg p-3"><p class="text-xs text-green-700 font-semibold">Approved (<?php echo $period['approved'][0]; ?>)</p><p class="text-base sm:text-lg font-bold text-green-700">RM <?php echo number_format($period['approved'][1], 2); ?></p></div>
+            <div class="bg-amber-50 rounded-lg p-3"><p class="text-xs text-amber-700 font-semibold">Pending (<?php echo $period['pending'][0]; ?>)</p><p class="text-base sm:text-lg font-bold text-amber-700">RM <?php echo number_format($period['pending'][1], 2); ?></p></div>
+            <div class="bg-red-50 rounded-lg p-3"><p class="text-xs text-red-700 font-semibold">Rejected (<?php echo $period['rejected'][0]; ?>)</p><p class="text-base sm:text-lg font-bold text-red-700">RM <?php echo number_format($period['rejected'][1], 2); ?></p></div>
+        </div>
+    </div>
+    <?php endif; ?>
 
     <!-- Results Summary -->
     <?php
@@ -440,12 +514,14 @@ if (isset($_POST['undo_claim']) && validateCsrfToken($_POST['csrf_token'] ?? '')
                                 </div>
                             </div>
                             
-                            <?php if($row['description']): ?>
-                                <div class="mt-3 p-3 bg-gray-50 rounded-xl">
-                                    <p class="text-xs text-gray-500 mb-1"><i class="fas fa-comment mr-1"></i> Description:</p>
+                            <div class="mt-3 p-3 bg-gray-50 rounded-xl">
+                                <p class="text-xs text-gray-500 mb-1"><i class="fas fa-comment mr-1"></i> Description:</p>
+                                <?php if ($row['description']): ?>
                                     <p class="text-sm text-gray-700"><?php echo nl2br(htmlspecialchars($row['description'])); ?></p>
-                                </div>
-                            <?php endif; ?>
+                                <?php else: ?>
+                                    <p class="text-sm text-gray-400 italic">No description provided</p>
+                                <?php endif; ?>
+                            </div>
                             
                             <!-- Attachments Section -->
                             <?php
@@ -510,6 +586,16 @@ if (isset($_POST['undo_claim']) && validateCsrfToken($_POST['csrf_token'] ?? '')
                                     </form>
                                 </div>
                             <?php endif; ?>
+                            <div class="mt-2">
+                                <form method="POST" data-confirm="Delete this claim record permanently? This cannot be undone." data-confirm-title="Delete Claim">
+                                    <?php echo csrfField(); ?>
+                                    <input type="hidden" name="delete_claim" value="<?php echo $row['id']; ?>">
+                                    <button type="submit"
+                                        class="inline-flex items-center gap-1.5 text-xs text-red-500 hover:text-red-700 bg-red-50 hover:bg-red-100 border border-red-200 hover:border-red-300 px-2.5 py-1.5 rounded-lg transition font-medium">
+                                        <i class="fas fa-trash text-[10px]"></i> Delete
+                                    </button>
+                                </form>
+                            </div>
                             <?php if ($row['status'] == 'pending'): ?>
                                 <div class="flex gap-2 mt-4">
                                     <form method="POST" action="manage_claim.php?page=<?php echo $page; ?>&per_page=<?php echo $per_page; ?>&search=<?php echo urlencode($search); ?>&status=<?php echo $status_filter; ?>&type=<?php echo urlencode($type_filter); ?>&date_from=<?php echo $date_from; ?>&date_to=<?php echo $date_to; ?>" style="display:contents;">

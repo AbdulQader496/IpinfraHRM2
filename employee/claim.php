@@ -21,6 +21,11 @@ $edit_mode = false;
 $edit_claim_id = 0;
 $edit_claim = null;
 
+// Matches claims.claim_type's ENUM in the DB. Under MYSQLI_REPORT_STRICT an out-of-set
+// value from a crafted (non-UI) request throws an uncaught mysqli_sql_exception instead of
+// being rejected gracefully -- same bug class already fixed for leaves.leave_type.
+$allowed_claim_types = ['travel', 'meal', 'medical', 'toll', 'parking', 'other'];
+
 // ========================================
 // SHARED ATTACHMENT UPLOAD HANDLER
 // ========================================
@@ -129,9 +134,22 @@ if (isset($_POST['update_claim'])) {
         showToast('Security error.', 'error'); header('Location: claim.php'); exit;
     }
     $claim_id = intval($_POST['claim_id'] ?? 0);
-    $claim_type = mysqli_real_escape_string($conn, $_POST['claim_type'] ?? '');
+    $claim_type_raw = $_POST['claim_type'] ?? '';
+    if (!in_array($claim_type_raw, $allowed_claim_types, true)) {
+        showToast('Please choose a valid claim type.', 'error'); header("Location: claim.php?edit=$claim_id"); exit;
+    }
+    $claim_type = mysqli_real_escape_string($conn, $claim_type_raw);
     $amount = floatval($_POST['amount'] ?? 0);
-    $description = mysqli_real_escape_string($conn, $_POST['description'] ?? '');
+    // A hand-crafted POST (bypassing the type="number" input) could otherwise submit zero or
+    // a negative amount -- approved and swept into payroll, a negative claim would REDUCE net pay.
+    if ($amount <= 0) {
+        showToast('Claim amount must be greater than 0.', 'error'); header("Location: claim.php?edit=$claim_id"); exit;
+    }
+    $description_raw = trim($_POST['description'] ?? '');
+    if ($description_raw === '') {
+        showToast('Please describe the claim purpose.', 'error'); header("Location: claim.php?edit=$claim_id"); exit;
+    }
+    $description = mysqli_real_escape_string($conn, $description_raw);
 
     // Atomic guard: re-check status='pending' in the UPDATE itself, not just an earlier
     // SELECT — an admin approving this exact claim in between would otherwise still get
@@ -165,7 +183,7 @@ if (isset($_POST['delete_attachment'])) {
     if (!validateCsrfToken($_POST['csrf_token'] ?? '')) {
         showToast('Security error.', 'error'); header('Location: claim.php'); exit;
     }
-    $attach_id = intval($_POST['attach_id'] ?? 0);
+    $attach_id = intval($_POST['delete_attachment'] ?? 0);
     $claim_id = intval($_POST['claim_id'] ?? 0);
 
     // Only allow deleting an attachment off a claim that's still pending (matches the
@@ -215,13 +233,24 @@ if (isset($_POST['apply_claim'])) {
     if (!validateCsrfToken($_POST['csrf_token'] ?? '')) {
         showToast('Security error.', 'error'); header('Location: claim.php'); exit;
     }
-    $claim_type = mysqli_real_escape_string($conn, $_POST['claim_type'] ?? '');
+    $claim_type_raw = $_POST['claim_type'] ?? '';
+    if (!in_array($claim_type_raw, $allowed_claim_types, true)) {
+        showToast('Please choose a valid claim type.', 'error'); header('Location: claim.php'); exit;
+    }
+    $claim_type = mysqli_real_escape_string($conn, $claim_type_raw);
     $amount = floatval($_POST['amount'] ?? 0);
-    $description = mysqli_real_escape_string($conn, $_POST['description'] ?? '');
-    
+    if ($amount <= 0) {
+        showToast('Claim amount must be greater than 0.', 'error'); header('Location: claim.php'); exit;
+    }
+    $description_raw = trim($_POST['description'] ?? '');
+    if ($description_raw === '') {
+        showToast('Please describe the claim purpose.', 'error'); header('Location: claim.php'); exit;
+    }
+    $description = mysqli_real_escape_string($conn, $description_raw);
+
     $query = "INSERT INTO claims (employee_id, claim_type, amount, description)
               VALUES ($user_id, '$claim_type', $amount, '$description')";
-    
+
     if (mysqli_query($conn, $query)) {
         $claim_id = mysqli_insert_id($conn);
 
@@ -246,9 +275,22 @@ if ($per_page < 1) $per_page = 10;
 $allowed_statuses = ['pending', 'approved', 'rejected'];
 $status_filter = isset($_GET['status']) && in_array($_GET['status'], $allowed_statuses) ? $_GET['status'] : '';
 
+$month = (isset($_GET['month']) && preg_match('/^\d{4}-(0[1-9]|1[0-2])$/', $_GET['month'])) ? $_GET['month'] : '';
 $where = "WHERE employee_id = $user_id";
 if (!empty($status_filter)) {
     $where .= " AND status = '$status_filter'";
+}
+$month_sql = '';
+if ($month) {
+    $m_start = $month . '-01';
+    $m_end   = date('Y-m-t', strtotime($m_start));
+    $month_sql = " AND applied_at >= '$m_start' AND applied_at <= '$m_end 23:59:59'";
+    $where .= $month_sql;
+}
+$month_summary = ['pending' => [0, 0.0], 'approved' => [0, 0.0], 'rejected' => [0, 0.0]];
+if ($month) {
+    $msq = mysqli_query($conn, "SELECT status, COUNT(*) n, COALESCE(SUM(amount),0) amt FROM claims WHERE employee_id = $user_id $month_sql GROUP BY status");
+    while ($mr = mysqli_fetch_assoc($msq)) { $month_summary[$mr['status']] = [(int)$mr['n'], (float)$mr['amt']]; }
 }
 
 $count_query = "SELECT COUNT(*) as total FROM claims $where";
@@ -423,7 +465,7 @@ $pending_total = mysqli_fetch_assoc(mysqli_query($conn, "SELECT SUM(amount) as t
             
             <div>
                 <label class="block text-gray-700 text-sm font-semibold mb-2">Description</label>
-                <textarea name="description" rows="3" placeholder="Please describe the claim purpose..." class="form-input w-full px-4 py-2.5 border border-gray-200 rounded-xl focus:border-indigo-400 focus:ring-2 focus:ring-indigo-100 transition"><?php echo $edit_mode ? htmlspecialchars($edit_claim['description']) : ''; ?></textarea>
+                <textarea name="description" rows="3" required placeholder="Please describe the claim purpose..." class="form-input w-full px-4 py-2.5 border border-gray-200 rounded-xl focus:border-indigo-400 focus:ring-2 focus:ring-indigo-100 transition"><?php echo $edit_mode ? htmlspecialchars($edit_claim['description']) : ''; ?></textarea>
             </div>
             
             <!-- Existing Attachments (Edit Mode) -->
@@ -441,14 +483,15 @@ $pending_total = mysqli_fetch_assoc(mysqli_query($conn, "SELECT SUM(amount) as t
                             <span class="text-sm text-gray-600"><?php echo htmlspecialchars($att['file_name']); ?></span>
                             <span class="text-xs text-gray-400">(<?php echo round($att['file_size'] / 1024, 1); ?> KB)</span>
                         </div>
-                        <form method="POST" style="display:inline;" onsubmit="return confirm('Delete this attachment?');">
-                            <?php echo csrfField(); ?>
-                            <input type="hidden" name="attach_id" value="<?php echo $att['id']; ?>">
-                            <input type="hidden" name="claim_id" value="<?php echo $edit_claim['id']; ?>">
-                            <button type="submit" name="delete_attachment" class="text-red-500 hover:text-red-700">
-                                <i class="fas fa-trash"></i>
-                            </button>
-                        </form>
+                        <!-- Bound to the outer #claimForm via the form="" attribute rather than
+                             its own nested <form> -- a <form> inside another <form> is invalid
+                             HTML and browsers silently truncate the DOM at the first inner
+                             </form>, which was cutting off the Update button below it entirely. -->
+                        <button type="submit" name="delete_attachment" value="<?php echo $att['id']; ?>" form="claimForm"
+                            onclick="return confirm('Delete this attachment?');"
+                            class="text-red-500 hover:text-red-700">
+                            <i class="fas fa-trash"></i>
+                        </button>
                     </div>
                     <?php endwhile; ?>
                 </div>
@@ -502,6 +545,7 @@ $pending_total = mysqli_fetch_assoc(mysqli_query($conn, "SELECT SUM(amount) as t
                         <option value="approved" <?php echo $status_filter == 'approved' ? 'selected' : ''; ?>>Approved</option>
                         <option value="rejected" <?php echo $status_filter == 'rejected' ? 'selected' : ''; ?>>Rejected</option>
                     </select>
+                    <input type="month" name="month" value="<?php echo htmlspecialchars($month); ?>" title="Month" class="text-sm border border-gray-200 rounded-lg px-3 py-1.5">
                     <select name="per_page" class="text-sm border border-gray-200 rounded-lg px-3 py-1.5">
                         <option value="5"  <?php echo $per_page == 5  ? 'selected' : ''; ?>>5 / page</option>
                         <option value="10" <?php echo $per_page == 10 ? 'selected' : ''; ?>>10 / page</option>
@@ -511,13 +555,24 @@ $pending_total = mysqli_fetch_assoc(mysqli_query($conn, "SELECT SUM(amount) as t
                     </select>
                     <input type="hidden" name="page" value="1">
                     <button type="submit" class="bg-indigo-600 text-white px-3 py-1.5 rounded-lg text-sm">Apply</button>
-                    <?php if($status_filter || $per_page != 10): ?>
+                    <?php if($status_filter || $month || $per_page != 10): ?>
                         <a href="claim.php" class="bg-gray-200 text-gray-700 px-3 py-1.5 rounded-lg text-sm">Clear</a>
                     <?php endif; ?>
                 </form>
             </div>
         </div>
         
+        <?php if ($month): ?>
+        <div class="px-5 py-3 border-b bg-gray-50">
+            <p class="text-xs font-semibold text-gray-600 mb-2"><i class="fas fa-calendar-alt text-indigo-500 mr-1"></i> Submitted in <?php echo date('F Y', strtotime($month . '-01')); ?></p>
+            <div class="grid grid-cols-3 gap-2">
+                <div class="bg-green-50 rounded-lg p-2"><p class="text-[11px] text-green-700 font-semibold">Approved (<?php echo $month_summary['approved'][0]; ?>)</p><p class="text-sm font-bold text-green-700">RM <?php echo number_format($month_summary['approved'][1], 2); ?></p></div>
+                <div class="bg-amber-50 rounded-lg p-2"><p class="text-[11px] text-amber-700 font-semibold">Pending (<?php echo $month_summary['pending'][0]; ?>)</p><p class="text-sm font-bold text-amber-700">RM <?php echo number_format($month_summary['pending'][1], 2); ?></p></div>
+                <div class="bg-red-50 rounded-lg p-2"><p class="text-[11px] text-red-700 font-semibold">Rejected (<?php echo $month_summary['rejected'][0]; ?>)</p><p class="text-sm font-bold text-red-700">RM <?php echo number_format($month_summary['rejected'][1], 2); ?></p></div>
+            </div>
+        </div>
+        <?php endif; ?>
+
         <?php if(mysqli_num_rows($history) > 0): ?>
             <div class="divide-y divide-gray-100">
                 <?php while ($row = mysqli_fetch_assoc($history)):
@@ -581,15 +636,15 @@ $pending_total = mysqli_fetch_assoc(mysqli_query($conn, "SELECT SUM(amount) as t
                 </p>
                 <div class="flex gap-1">
                     <?php if($page > 1): ?>
-                        <a href="?page=1&per_page=<?php echo $per_page; ?>&status=<?php echo $status_filter; ?>" class="px-3 py-1 bg-white border rounded-lg text-sm hover:bg-gray-100">First</a>
-                        <a href="?page=<?php echo $page-1; ?>&per_page=<?php echo $per_page; ?>&status=<?php echo $status_filter; ?>" class="px-3 py-1 bg-white border rounded-lg text-sm hover:bg-gray-100">← Prev</a>
+                        <a href="?page=1&per_page=<?php echo $per_page; ?>&status=<?php echo $status_filter; ?>&month=<?php echo $month; ?>" class="px-3 py-1 bg-white border rounded-lg text-sm hover:bg-gray-100">First</a>
+                        <a href="?page=<?php echo $page-1; ?>&per_page=<?php echo $per_page; ?>&status=<?php echo $status_filter; ?>&month=<?php echo $month; ?>" class="px-3 py-1 bg-white border rounded-lg text-sm hover:bg-gray-100">← Prev</a>
                     <?php endif; ?>
                     
                     <span class="px-3 py-1 bg-indigo-600 text-white rounded-lg text-sm"><?php echo $page; ?></span>
                     
                     <?php if($page < $total_pages): ?>
-                        <a href="?page=<?php echo $page+1; ?>&per_page=<?php echo $per_page; ?>&status=<?php echo $status_filter; ?>" class="px-3 py-1 bg-white border rounded-lg text-sm hover:bg-gray-100">Next →</a>
-                        <a href="?page=<?php echo $total_pages; ?>&per_page=<?php echo $per_page; ?>&status=<?php echo $status_filter; ?>" class="px-3 py-1 bg-white border rounded-lg text-sm hover:bg-gray-100">Last</a>
+                        <a href="?page=<?php echo $page+1; ?>&per_page=<?php echo $per_page; ?>&status=<?php echo $status_filter; ?>&month=<?php echo $month; ?>" class="px-3 py-1 bg-white border rounded-lg text-sm hover:bg-gray-100">Next →</a>
+                        <a href="?page=<?php echo $total_pages; ?>&per_page=<?php echo $per_page; ?>&status=<?php echo $status_filter; ?>&month=<?php echo $month; ?>" class="px-3 py-1 bg-white border rounded-lg text-sm hover:bg-gray-100">Last</a>
                     <?php endif; ?>
                 </div>
             </div>

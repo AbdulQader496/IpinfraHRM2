@@ -71,7 +71,7 @@ try {
 } catch (Exception $ex) { }
 
 // Get announcements for employees
-$announcements = mysqli_query($conn, "SELECT * FROM announcements WHERE is_active = 1 AND (target_role = 'all' OR target_role = 'employee') AND (end_date IS NULL OR end_date >= CURDATE()) ORDER BY
+$announcements = mysqli_query($conn, "SELECT * FROM announcements WHERE is_active = 1 AND (target_role = 'all' OR target_role = 'employee') AND start_date <= CURDATE() AND (end_date IS NULL OR end_date >= CURDATE()) ORDER BY
     CASE announcement_type
         WHEN 'urgent' THEN 1
         WHEN 'holiday' THEN 2

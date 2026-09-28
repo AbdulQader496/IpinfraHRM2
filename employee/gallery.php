@@ -62,7 +62,7 @@ if (isset($_POST['edit_photo'])) {
         if (!in_array($file_ext, $allowed_ext) || !in_array($mime, $allowed_mime)) {
             showToast('Invalid file type.', 'error'); header('Location: gallery.php'); exit();
         }
-        $new_image = time() . '_' . $user_id . '.' . $file_ext;
+        $new_image = time() . '_' . $user_id . '_' . bin2hex(random_bytes(4)) . '.' . $file_ext;
         $target_dir = "../uploads/gallery/";
         if (!is_dir($target_dir)) mkdir($target_dir, 0777, true);
         if (move_uploaded_file($_FILES['photo']['tmp_name'], $target_dir . $new_image)) {
@@ -216,11 +216,16 @@ while ($r = mysqli_fetch_assoc($gallery)) $photos[] = $r;
                 <?php endif; ?>
                 <?php if ($is_owner): ?>
                 <div class="flex gap-2 mt-2">
-                    <button onclick='openEditModal(<?php echo json_encode([
+                    <?php /* Raw json_encode() here (no escaping) inside a single-quoted attribute
+                             is fine against double quotes, but a caption containing a literal
+                             apostrophe -- "Boss's Day", "Team's Outing" -- would still close the
+                             attribute early. htmlspecialchars(..., ENT_QUOTES) is what actually
+                             makes this HTML-attribute-safe, matching the pattern used elsewhere. */ ?>
+                    <button onclick='openEditModal(<?php echo htmlspecialchars(json_encode([
                         "id"            => $photo["id"],
                         "caption"       => $photo["caption"],
                         "activity_date" => $photo["activity_date"],
-                    ]); ?>)'
+                    ]), ENT_QUOTES); ?>)'
                             class="flex-1 flex items-center justify-center gap-1.5 py-1.5 rounded-lg bg-indigo-50 hover:bg-indigo-100 text-indigo-600 text-xs font-semibold transition">
                         <i class="fas fa-pencil-alt text-[11px]"></i>Edit
                     </button>

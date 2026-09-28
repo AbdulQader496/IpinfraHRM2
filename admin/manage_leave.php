@@ -315,6 +315,51 @@ if (isset($_POST['undo_leave'])) {
 }
 
 // ========================================
+// DELETE LEAVE (admin cleanup of old records — any status)
+// ========================================
+// If the leave being removed was approved, its days were already added to
+// used_annual_leave / used_medical_leave at approval time -- give them back here,
+// the same way "Undo" already does, so deleting a record never leaves a balance
+// inflated for leave that no longer has any trace in the leaves table.
+if (isset($_POST['delete_leave'])) {
+    if (!validateCsrfToken($_POST['csrf_token'] ?? '')) {
+        showToast('Security error.', 'error');
+        header('Location: manage_leave.php'); exit();
+    }
+    $id = intval($_POST['delete_leave']);
+    // Read the row under a lock inside the transaction: otherwise a concurrent approve/undo
+    // could change status between this read and the DELETE, and the balance restore below
+    // would act on a stale status (restoring days never deducted, or missing ones that were).
+    mysqli_begin_transaction($conn);
+    $leave = mysqli_fetch_assoc(mysqli_query($conn, "SELECT * FROM leaves WHERE id=$id FOR UPDATE"));
+    if ($leave) {
+        mysqli_query($conn, "DELETE FROM leaves WHERE id=$id");
+        if (mysqli_affected_rows($conn) > 0) {
+            if ($leave['status'] == 'approved') {
+                $days = (isset($leave['half_day']) && $leave['half_day'] != 'none') ? 0.5
+                      : (strtotime($leave['end_date']) - strtotime($leave['start_date'])) / 86400 + 1;
+                if ($leave['leave_type'] == 'annual') {
+                    mysqli_query($conn, "UPDATE employees SET used_annual_leave = GREATEST(0, used_annual_leave - $days) WHERE id = {$leave['employee_id']}");
+                } elseif ($leave['leave_type'] == 'medical') {
+                    mysqli_query($conn, "UPDATE employees SET used_medical_leave = GREATEST(0, used_medical_leave - $days) WHERE id = {$leave['employee_id']}");
+                }
+            }
+            mysqli_commit($conn);
+            if (!empty($leave['attachment']) && file_exists("../uploads/" . $leave['attachment'])) {
+                unlink("../uploads/" . $leave['attachment']);
+            }
+            logAction('delete', 'Deleted ' . $leave['leave_type'] . ' leave record', $id, 'leave');
+            showToast('Leave record deleted.', 'info');
+        } else {
+            mysqli_rollback($conn);
+        }
+    } else {
+        mysqli_rollback($conn);
+    }
+    header('Location: manage_leave.php'); exit();
+}
+
+// ========================================
 // ADJUST LEAVE BALANCE
 // ========================================
 if (isset($_POST['adjust_leave'])) {
@@ -609,9 +654,7 @@ $leave_type_options = mysqli_query($conn, "SELECT DISTINCT leave_type FROM leave
                                     </p>
                                     <p class="col-span-2"><span class="text-gray-500">Dates:</span> <?php echo date('d M Y', strtotime($row['start_date'])); ?> - <?php echo date('d M Y', strtotime($row['end_date'])); ?></p>
                                 </div>
-                                <?php if($row['reason']): ?>
-                                    <p class="text-xs text-gray-500 mt-2">Reason: <?php echo substr(htmlspecialchars($row['reason']), 0, 100); ?></p>
-                                <?php endif; ?>
+                                <p class="text-xs text-gray-500 mt-2">Reason: <?php echo $row['reason'] ? substr(htmlspecialchars($row['reason']), 0, 100) : '<span class="italic text-gray-400">No reason provided</span>'; ?></p>
                                 <?php if($row['attachment']): ?>
                                     <a href="../uploads/<?php echo htmlspecialchars($row['attachment']); ?>" target="_blank" class="text-xs text-blue-600 mt-1 inline-block">
                                         <i class="fas fa-paperclip"></i> View Attachment
@@ -641,6 +684,16 @@ $leave_type_options = mysqli_query($conn, "SELECT DISTINCT leave_type FROM leave
                                         </form>
                                     </div>
                                 <?php endif; ?>
+                                <div class="mt-2">
+                                    <form method="POST" data-confirm="Delete this leave record permanently? <?php echo $row['status'] == 'approved' ? 'Its days will be given back to the employee\'s balance. ' : ''; ?>This cannot be undone." data-confirm-title="Delete Leave">
+                                        <?php echo csrfField(); ?>
+                                        <input type="hidden" name="delete_leave" value="<?php echo $row['id']; ?>">
+                                        <button type="submit"
+                                            class="inline-flex items-center gap-1.5 text-xs text-red-500 hover:text-red-700 bg-red-50 hover:bg-red-100 border border-red-200 hover:border-red-300 px-2.5 py-1.5 rounded-lg transition font-medium">
+                                            <i class="fas fa-trash text-[10px]"></i> Delete
+                                        </button>
+                                    </form>
+                                </div>
                                 <?php if ($row['status'] == 'pending'): ?>
                                     <?php
                                     $modal_days = (isset($row['half_day']) && $row['half_day'] != 'none') ? 0.5
@@ -841,7 +894,7 @@ $leave_type_options = mysqli_query($conn, "SELECT DISTINCT leave_type FROM leave
                                 </span>
                             </td>
                             <td class="p-3">
-                                <button onclick='openEditTypeModal(<?php echo json_encode($type); ?>)' class="text-blue-600 mr-2">Edit</button>
+                                <button onclick='openEditTypeModal(<?php echo htmlspecialchars(json_encode($type), ENT_QUOTES); ?>)' class="text-blue-600 mr-2">Edit</button>
                                 <form id="del_type_<?php echo $type['id']; ?>" method="POST" style="display:inline" onsubmit="return false;">
                                     <?php echo csrfField(); ?>
                                     <input type="hidden" name="delete_type" value="<?php echo $type['id']; ?>">

@@ -1,5 +1,3 @@
-USE hrmmanagement;
-
 -- Login matches "WHERE email = ? AND status = 'active'" expecting exactly one row. With
 -- no uniqueness constraint, two active employees sharing an email silently locks BOTH of
 -- them out (the query returns 2 rows, the app requires exactly 1). employees.php now

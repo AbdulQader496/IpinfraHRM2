@@ -109,13 +109,10 @@ if (isset($_POST['update_employee'])) {
     $phone = mysqli_real_escape_string($conn, $_POST['phone']);
     $bank_name = mysqli_real_escape_string($conn, $_POST['bank_name']);
     $bank_account = mysqli_real_escape_string($conn, $_POST['bank_account']);
-    $annual_leave = intval($_POST['annual_leave_entitlement']);
-    $medical_leave = intval($_POST['medical_leave_entitlement']);
     $status = mysqli_real_escape_string($conn, $_POST['status']);
     $join_date = mysqli_real_escape_string($conn, $_POST['join_date']);
     $employee_type = mysqli_real_escape_string($conn, $_POST['employee_type'] ?? 'regular');
-    if ($employee_type === 'intern') $annual_leave = 0; // interns have no annual leave
-    
+
     // Handle profile picture upload
     $profile_pic = mysqli_real_escape_string($conn, $_POST['existing_profile_pic']);
     if (isset($_FILES['profile_pic']) && $_FILES['profile_pic']['error'] == 0) {
@@ -161,8 +158,6 @@ if (isset($_POST['update_employee'])) {
                 phone='$phone',
                 bank_name='$bank_name',
                 bank_account='$bank_account',
-                annual_leave_entitlement='$annual_leave',
-                medical_leave_entitlement='$medical_leave',
                 status='$status',
                 join_date='$join_date',
                 profile_pic='$profile_pic',
@@ -1092,10 +1087,16 @@ $employees = mysqli_query($conn, "SELECT * FROM employees WHERE role='employee' 
                 
                 <div class="border-t border-gray-100 pt-4">
                     <h3 class="font-semibold text-gray-700 mb-3">Leave Entitlement</h3>
-                    <div class="grid grid-cols-2 gap-3">
-                        <input type="number" name="annual_leave_entitlement" id="edit_annual_leave" placeholder="Annual Leave" class="w-full px-4 py-3 border border-gray-200 rounded-xl">
-                        <input type="number" name="medical_leave_entitlement" id="edit_medical_leave" placeholder="Medical Leave" class="w-full px-4 py-3 border border-gray-200 rounded-xl">
+                    <!-- Not editable here: this form only ever saves whatever number was showing
+                         when the modal was opened, so if the entitlement changed in the meantime
+                         (Manage Leave > Balances, or another admin/tab) saving an unrelated field
+                         like phone would silently overwrite it back. Balances tab updates it with
+                         a live +/- against the database instead, so it can't go stale like this. -->
+                    <div class="grid grid-cols-2 gap-3 text-sm">
+                        <div class="bg-gray-50 rounded-xl px-4 py-3"><span class="text-gray-500">Annual:</span> <span id="edit_annual_leave" class="font-semibold text-gray-800">-</span> days</div>
+                        <div class="bg-gray-50 rounded-xl px-4 py-3"><span class="text-gray-500">Medical:</span> <span id="edit_medical_leave" class="font-semibold text-gray-800">-</span> days</div>
                     </div>
+                    <p class="text-xs text-gray-400 mt-2">To change entitlement, use Manage Leave &rarr; Balances.</p>
                 </div>
 
                 <div class="border-t border-gray-100 pt-4">
@@ -1319,8 +1320,8 @@ $employees = mysqli_query($conn, "SELECT * FROM employees WHERE role='employee' 
             document.getElementById('edit_phone').value = employee.phone || '';
             document.getElementById('edit_bank').value = employee.bank_name || '';
             document.getElementById('edit_account').value = employee.bank_account || '';
-            document.getElementById('edit_annual_leave').value = employee.annual_leave_entitlement || 14;
-            document.getElementById('edit_medical_leave').value = employee.medical_leave_entitlement || 14;
+            document.getElementById('edit_annual_leave').textContent = employee.annual_leave_entitlement ?? 0;
+            document.getElementById('edit_medical_leave').textContent = employee.medical_leave_entitlement ?? 0;
             document.getElementById('edit_status').value = employee.status || 'active';
             document.getElementById('edit_employee_type').value = employee.employee_type || 'regular';
             document.getElementById('edit_join_date').value = employee.join_date || '';
